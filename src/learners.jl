@@ -1,11 +1,17 @@
 module Learners
 
-import ..NeuroTabModels: mk_rng
-
 import MLJModelInterface as MMI
 import MLJModelInterface: fit, update, predict, schema
 
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
+
+"""
+    mk_rng
+
+make a Random Number Generator object
+"""
+mk_rng(rng::Random.AbstractRNG) = rng
+mk_rng(rng::T) where {T<:Integer} = Random.MersenneTwister(rng)
 
 mutable struct NeuroTabRegressor <: MMI.Deterministic
   model_type::Symbol

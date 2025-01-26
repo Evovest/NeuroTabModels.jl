@@ -1,12 +1,4 @@
 """
-    mk_rng
-
-make a Random Number Generator object
-"""
-mk_rng(rng::Random.AbstractRNG) = rng
-mk_rng(rng::T) where {T<:Integer} = Random.MersenneTwister(rng)
-
-"""
     optimiser
 """
 # function get_optim(conf)

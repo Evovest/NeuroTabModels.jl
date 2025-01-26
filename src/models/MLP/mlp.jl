@@ -6,9 +6,9 @@ import Flux: logσ, logsoftmax, softmax, softmax!, relu, sigmoid, sigmoid_fast, 
 import Flux: BatchNorm, Dense, MultiHeadAttention, Parallel, SkipConnection
 
 import ..Models: get_loss_type, GaussianMLE
-import ..Models: get_model_chain, ModelType
+import ..Models: get_model_chain, ArchType
 
-function get_model_chain(::Type{ModelType{:MLP}}, config; nfeats, outsize, kwargs...)
+function get_model_chain(::Type{ArchType{:MLP}}, config; nfeats, outsize, kwargs...)
 
     L = get_loss_type(config.loss)
     hsize = 64

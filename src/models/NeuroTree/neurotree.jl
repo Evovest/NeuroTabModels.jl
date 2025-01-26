@@ -13,132 +13,81 @@ using ChainRulesCore
 import ChainRulesCore: rrule
 
 import ..Losses: get_loss_type, GaussianMLE
-import ..Models: get_model_chain, ModelType
+import ..Models: get_model_chain, ArchType
 
-include("leaf_weights.jl")
+include("model.jl")
 
-struct NeuroTree{W,B,P,F<:Function}
-    w::W
-    b::B
-    p::P
-    actA::F
-end
-@layer NeuroTree
-# Flux.trainable(m::NeuroTree) = (w=m.w, b=m.b, p=m.p)
-
-function node_weights(m::NeuroTree, x)
-    # [N X T, F] * [F, B] => [N x T, B]
-    # nw = sigmoid_fast.(m.w * x .+ m.b)
-    nw = sigmoid_fast.(m.actA.(m.w) * x .+ m.b)
-    # [N x T, B] -> [N, T, B]
-    return reshape(nw, :, size(m.p, 3), size(x, 2))
+struct NeuroTreeConfig
+    loss::Symbol
+    nrounds::Int
+    lr::Float32
+    wd::Float32
+    batchsize::Int
+    actA::Symbol
+    depth::Int
+    ntrees::Int
+    hidden_size::Int
+    stack_size::Int
+    init_scale::Float32
+    MLE_tree_split::Bool
 end
 
-function (m::NeuroTree{W,B,P,F})(x::W) where {W,B,P,F}
-    # [F, B] -> [N, T, B]
-    nw = node_weights(m, x)
-    # [N, T, B] -> [L, T, B]
-    (_, lw) = leaf_weights!(nw)
-    # [L, T, B], [P, L, T] -> [P, B]
-    pred = dot_prod_agg(lw, m.p) ./ size(m.p, 3)
-    return pred
-end
+function NeuroTreeConfig(; kwargs...)
 
-dot_prod_agg(lw, p) = dropdims(sum(reshape(lw, 1, size(lw)...) .* p, dims=(2, 3)), dims=(2, 3))
-
-"""
-    NeuroTree(; ins, outs, depth=4, ntrees=64, actA=identity, init_scale=1.0)
-    NeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; depth=4, ntrees=64, actA=identity, init_scale=1.0)
-
-Initialization of a NeuroTree.
-"""
-function NeuroTree(; ins, outs, depth=4, ntrees=64, actA=identity, init_scale=1.0)
-    nnodes = 2^depth - 1
-    nleaves = 2^depth
-    nt = NeuroTree(
-        Flux.glorot_uniform(nnodes * ntrees, ins), # w
-        zeros(Float32, nnodes * ntrees), # b
-        Float32.((rand(outs, nleaves, ntrees) .- 0.5) .* sqrt(12) .* init_scale), # p
-        # Float32.(randn(outs, nleaves, ntrees) ./ 1 .* init_scale), # p
-        actA,
+    # defaults arguments
+    args = Dict{Symbol,Any}(
+        :loss => :mse,
+        :nrounds => 100,
+        :lr => 1.0f-2,
+        :wd => 0.0f0,
+        :batchsize => 2048,
+        :actA => :tanh,
+        :depth => 4,
+        :ntrees => 64,
+        :hidden_size => 1,
+        :stack_size => 1,
+        :init_scale => 0.1,
+        :MLE_tree_split => false,
     )
-    return nt
-end
-function NeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; depth=4, ntrees=64, actA=identity, init_scale=1.0)
-    nnodes = 2^depth - 1
-    nleaves = 2^depth
-    nt = NeuroTree(
-        Flux.glorot_uniform(nnodes * ntrees, ins), # w
-        zeros(Float32, nnodes * ntrees), # b
-        Float32.((rand(outs, nleaves, ntrees) .- 0.5) .* sqrt(12) .* init_scale), # p
-        # Float32.(randn(outs, nleaves, ntrees) ./ 1 .* init_scale), # p
-        actA,
+
+    args_ignored = setdiff(keys(kwargs), keys(args))
+    args_ignored_str = join(args_ignored, ", ")
+    length(args_ignored) > 0 &&
+        @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
+
+    args_default = setdiff(keys(args), keys(kwargs))
+    args_default_str = join(args_default, ", ")
+    length(args_default) > 0 &&
+        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
+
+    args_override = intersect(keys(args), keys(kwargs))
+    for arg in args_override
+        args[arg] = kwargs[arg]
+    end
+
+    args[:loss] = Symbol(args[:loss])
+    args[:loss] ∉ [:mse, :mae, :logloss, :gaussian_mle, :tweedie_deviance] && error("The provided kwarg `loss`: `$(args[:loss])` is not supported.")
+
+    config = NeuroTreeConfig(
+        args[:loss],
+        args[:nrounds],
+        Float32(args[:lr]),
+        Float32(args[:wd]),
+        args[:batchsize],
+        Symbol(args[:actA]),
+        args[:depth],
+        args[:ntrees],
+        args[:hidden_size],
+        args[:stack_size],
+        args[:init_scale],
+        args[:MLE_tree_split],
     )
-    return nt
+
+    return config
 end
 
-"""
-    StackTree
-A StackTree is made of a collection of NeuroTree.
-"""
-struct StackTree
-    trees::Vector{NeuroTree}
-end
-@layer StackTree
 
-function StackTree((ins, outs)::Pair{<:Integer,<:Integer}; depth=4, ntrees=64, stack_size=2, hidden_size=8, actA=identity, init_scale=1.0)
-    @assert stack_size == 1 || hidden_size >= outs
-    trees = []
-    for i in 1:stack_size
-        if i == 1
-            if i < stack_size
-                tree = NeuroTree(ins => hidden_size; depth, ntrees, actA, init_scale)
-                push!(trees, tree)
-            else
-                tree = NeuroTree(ins => outs; depth, ntrees, actA, init_scale)
-                push!(trees, tree)
-            end
-        elseif i < stack_size
-            tree = NeuroTree(hidden_size => hidden_size; depth, ntrees, actA, init_scale)
-            push!(trees, tree)
-        else
-            tree = NeuroTree(hidden_size => outs; depth, ntrees, actA, init_scale)
-            push!(trees, tree)
-        end
-    end
-    m = StackTree(trees)
-    return m
-end
-
-function (m::StackTree)(x::AbstractMatrix)
-    p = m.trees[1](x)
-    for i in 2:length(m.trees)
-        if i < length(m.trees)
-            p = p .+ m.trees[i](p)
-        else
-            _p = m.trees[i](p)
-            p = view(p, 1:size(_p, 1), :) .+ _p
-        end
-    end
-    return p
-end
-# function (m::StackTree)(x::AbstractMatrix)
-#     p = m.trees[1](x)
-#     for i in 2:length(m.trees)
-#         p = m.trees[i](p)
-#     end
-#     return p
-# end
-
-const _act_dict = Dict(
-    :identity => identity,
-    :tanh => tanh,
-    :hardtanh => hardtanh,
-    :sigmoid => sigmoid,
-    :hardsigmoid => hardsigmoid
-)
-
-function get_model_chain(::Type{ModelType{:neurotree}}, config; nfeats, outsize, kwargs...)
+function get_model_chain(::Type{ArchType{:neurotree}}, config; nfeats, outsize, kwargs...)
 
     L = get_loss_type(config.loss)
 
@@ -177,9 +126,49 @@ function get_model_chain(::Type{ModelType{:neurotree}}, config; nfeats, outsize,
         )
 
     end
-
     return chain
+end
+function get_model_chain(config::NeuroTreeConfig)
 
+    L = get_loss_type(config.loss)
+
+    if L <: GaussianMLE && config.MLE_tree_split
+        outsize = config.outsize
+        chain = Chain(
+            BatchNorm(config.nfeats),
+            Parallel(
+                vcat,
+                StackTree(config.nfeats => outsize;
+                    depth=config.depth,
+                    ntrees=config.ntrees,
+                    stack_size=config.stack_size,
+                    hidden_size=config.hidden_size,
+                    actA=_act_dict[config.actA],
+                    init_scale=config.init_scale),
+                StackTree(config.nfeats => outsize;
+                    depth=config.depth,
+                    ntrees=config.ntrees,
+                    stack_size=config.stack_size,
+                    hidden_size=config.hidden_size,
+                    actA=_act_dict[config.actA],
+                    init_scale=config.init_scale)
+            )
+        )
+    else
+        outsize = L <: GaussianMLE ? 2 * config.outsize : config.outsize
+        chain = Chain(
+            BatchNorm(config.nfeats),
+            StackTree(config.nfeats => outsize;
+                depth=config.depth,
+                ntrees=config.ntrees,
+                stack_size=config.stack_size,
+                hidden_size=config.hidden_size,
+                actA=_act_dict[config.actA],
+                init_scale=config.init_scale)
+        )
+
+    end
+    return chain
 end
 
 end

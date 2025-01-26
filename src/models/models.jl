@@ -10,7 +10,7 @@ using ..Losses
 # import Flux
 import Flux: @layer, Chain
 
-abstract type ModelType{T} end
+abstract type ArchType{T} end
 
 """
     NeuroTabModel
@@ -23,7 +23,7 @@ end
 @layer NeuroTabModel
 
 function get_model_chain(config; nfeats, outsize, kwargs...)
-    chain = get_model_chain(ModelType{config.model_type}, config; nfeats, outsize, kwargs...)
+    chain = get_model_chain(ArchType{config.model_type}, config; nfeats, outsize, kwargs...)
     return chain
 end
 
