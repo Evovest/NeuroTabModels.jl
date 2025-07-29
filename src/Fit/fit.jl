@@ -27,9 +27,9 @@ function init(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    device=:cpu,
 )
 
+    device = config.device
     batchsize = config.batchsize
     nfeats = length(feature_names)
     loss = get_loss_fn(config.loss)
@@ -46,15 +46,16 @@ function init(
     elseif L <: GaussianMLE
         outsize = 2
     end
+
     dtrain = get_df_loader_train(df; feature_names, target_name, weight_name, offset_name, batchsize, device)
 
-    chain = config.arch(; nfeats, outsize)
     info = Dict(
-        :device => device,
         :nrounds => 0,
         :feature_names => feature_names,
         :target_levels => target_levels,
         :target_isordered => target_isordered)
+
+    chain = config.arch(; nfeats, outsize)
     m = NeuroTabModel(L, chain, info)
     if device == :gpu
         m = m |> gpu
@@ -157,7 +158,7 @@ end
 function fit_iter!(m, cache)
     loss, opts, data = cache[:loss], cache[:opts], cache[:dtrain]
     GC.gc(true)
-    if m.info[:device] == :gpu
+    if typeof(cache[:dtrain]) <: CUDA.CuIterator
         CUDA.reclaim()
     end
     for d in data

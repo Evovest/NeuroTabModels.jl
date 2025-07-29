@@ -49,12 +49,8 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     init_scale=0.1,
     MLE_tree_split=true
 )
-# arch = NeuroTabModels.MLPConfig(;
-#     act=:relu,
-#     stack_size=1,
-#     hidden_size=64,
-# )
 
+device = :gpu
 learner = NeuroTabRegressor(
     arch;
     loss=:gaussian_mle,
@@ -62,7 +58,7 @@ learner = NeuroTabRegressor(
     early_stopping_rounds=2,
     lr=1e-3,
     batchsize=2048,
-    device=:gpu
+    device
 )
 
 m = NeuroTabModels.fit(
@@ -74,7 +70,7 @@ m = NeuroTabModels.fit(
     print_every_n=5,
 )
 
-p_test = m(dtest);
+p_test = m(dtest; device);
 mse_test = mean((p_test[:, 1] .- dtest.y_norm) .^ 2) * std(df_tot.y_raw)^2
 @info "MSE - dtest" mse_test
 

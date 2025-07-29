@@ -41,7 +41,6 @@ deval = df_tot[eval_idx, :];
 dtest = df_tot[(end-51630+1):end, :];
 
 
-
 arch = NeuroTabModels.NeuroTreeConfig(;
     actA=:tanh,
     depth=4,
@@ -49,7 +48,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     stack_size=1,
     hidden_size=1,
     init_scale=0.1,
-    MLE_tree_split=true
+    MLE_tree_split=false
 )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
@@ -57,14 +56,17 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     hidden_size=64,
 # )
 
+device = :gpu
+loss = :mse
+
 learner = NeuroTabRegressor(
     arch;
-    loss=:mse,
+    loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=3e-4,
+    lr=1e-3,
     batchsize=2048,
-    device=:gpu
+    device
 )
 
 m = NeuroTabModels.fit(
@@ -76,10 +78,10 @@ m = NeuroTabModels.fit(
     print_every_n=5,
 )
 
-p_eval = m(deval);
+p_eval = m(deval; device);
 mse_eval = mean((p_eval .- deval.y_norm) .^ 2)
-@info "MSE raw - deval" mse_eval
+@info "MSE - deval" mse_eval
 
-p_test = m(dtest);
+p_test = m(dtest; device);
 mse_test = mean((p_test .- dtest.y_norm) .^ 2) * std(df_tot.y_raw)^2
 @info "MSE - dtest" mse_test

@@ -7,6 +7,7 @@ import MLUtils: DataLoader
 
 using DataFrames
 using CategoricalArrays
+using CUDA: CuIterator
 
 """
     ContainerTrain

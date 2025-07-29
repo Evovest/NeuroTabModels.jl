@@ -4,10 +4,10 @@ using ..Data
 using ..Losses
 using ..Models
 
-using Flux: sigmoid, softmax!
+using Flux: sigmoid, softmax!, cpu, gpu
 using DataFrames: AbstractDataFrame
 import MLUtils: DataLoader
-import CUDA: CuIterator
+import CUDA: CuIterator, device!
 
 export infer
 
@@ -23,8 +23,13 @@ infer(m::NeuroTabModel, data)
 
 Return the inference of a `NeuroTabModel` over `data`, where `data` is `AbstractDataFrame`.
 """
-function infer(m::NeuroTabModel, data::AbstractDataFrame)
-    dinfer = get_df_loader_infer(data; feature_names=m.info[:feature_names], batchsize=2048, device=m.info[:device])
+function infer(m::NeuroTabModel, data::AbstractDataFrame; device=:cpu, gpuID=0)
+    if device == :gpu
+        device!(gpuID)
+    end
+    m = device == :gpu ? m |> gpu : m |> cpu
+    dinfer = get_df_loader_infer(data; feature_names=m.info[:feature_names], batchsize=2048, device)
+    p = infer(m, dinfer)
     p = infer(m, dinfer)
     return p
 end
@@ -43,8 +48,12 @@ function (m::NeuroTabModel)(x::AbstractMatrix)
     end
     return p
 end
-function (m::NeuroTabModel)(data::AbstractDataFrame)
-    dinfer = get_df_loader_infer(data; feature_names=m.info[:feature_names], batchsize=2048, device=m.info[:device])
+function (m::NeuroTabModel)(data::AbstractDataFrame; device=:cpu, gpuID=0)
+    if device == :gpu
+        device!(gpuID)
+    end
+    m = device == :gpu ? m |> gpu : m |> cpu
+    dinfer = get_df_loader_infer(data; feature_names=m.info[:feature_names], batchsize=2048, device)
     p = infer(m, dinfer)
     return p
 end
