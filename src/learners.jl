@@ -139,7 +139,7 @@ mach = machine(m, X, y) |> fit!
 p = predict(mach, X)
 ```
 """
-function NeuroTabRegressor(arch::Architecture=NeuroTreeConfig(); kwargs...)
+function NeuroTabRegressor(arch::Architecture; kwargs...)
 
   # defaults arguments
   args = Dict{Symbol,Any}(
