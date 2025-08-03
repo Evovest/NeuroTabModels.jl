@@ -1,4 +1,5 @@
-include("leaf_weights.jl")
+# include("leaf_weights.jl")
+include("leaf_weights_v2-auto.jl")
 
 struct NeuroTree{W,B,P,F<:Function}
     w::W
