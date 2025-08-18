@@ -5,7 +5,7 @@ export MLPConfig
 import Flux
 import Flux: @functor, trainmode!, gradient, Chain, DataLoader, cpu, gpu
 import Flux: logσ, logsoftmax, softmax, softmax!, relu, sigmoid, sigmoid_fast, hardsigmoid, tanh, tanh_fast, hardtanh, softplus, onecold, onehotbatch
-import Flux: BatchNorm, Dense, MultiHeadAttention, Parallel, SkipConnection
+import Flux: BatchNorm, Dense, Dropout, MultiHeadAttention, Parallel, SkipConnection
 
 import ..Models: get_loss_type, GaussianMLE
 import ..Models: Architecture
@@ -14,6 +14,7 @@ struct MLPConfig <: Architecture
     act::Symbol
     hidden_size::Int
     stack_size::Int
+    MLE_tree_split::Bool
 end
 
 function MLPConfig(; kwargs...)
@@ -23,6 +24,7 @@ function MLPConfig(; kwargs...)
         :act => :relu,
         :hidden_size => 64,
         :stack_size => 1,
+        :MLE_tree_split => false
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -44,6 +46,7 @@ function MLPConfig(; kwargs...)
         Symbol(args[:act]),
         args[:hidden_size],
         args[:stack_size],
+        args[:MLE_tree_split]
     )
 
     return config
@@ -52,40 +55,41 @@ end
 function (config::MLPConfig)(; nfeats, outsize)
 
     hsize = config.hidden_size
-    # if L <: GaussianMLE && config.MLE_tree_split
-    #     chain = Chain(
-    #         BatchNorm(nfeats),
-    #         Dense(nfeats => hsize),
-    #         Parallel(
-    #             vcat,
-    #             Chain(
-    #                 BatchNorm(hsize, relu),
-    #                 Dense(relu => hsize),
-    #                 BatchNorm(hsize, relu),
-    #                 Dense(hsize => outsize)
-    #             ),
-    #             Chain(
-    #                 BatchNorm(hsize, relu),
-    #                 Dense(relu => hsize),
-    #                 BatchNorm(hsize, relu),
-    #                 Dense(hsize => outsize)
-    #             )
-    #         )
-    #     )
-    # else
-    # outsize = L <: GaussianMLE ? 2 * outsize : outsize
-    chain = Chain(
-        BatchNorm(nfeats),
-        Dense(nfeats => hsize),
-        BatchNorm(hsize, relu),
-        SkipConnection(Chain(
-                Dense(hsize => hsize),
-                BatchNorm(hsize, relu)),
-            vcat
-        ),
-        Dense(2 * hsize => outsize)
-    )
-    # end
+
+    if config.MLE_tree_split && outsize == 2
+        outsize ÷= 2
+        chain = Chain(
+            BatchNorm(nfeats),
+            Dense(nfeats => hsize),
+            Parallel(
+                vcat,
+                Chain(
+                    BatchNorm(hsize, relu),
+                    Dense(relu => hsize),
+                    BatchNorm(hsize, relu),
+                    Dense(hsize => outsize)
+                ),
+                Chain(
+                    BatchNorm(hsize, relu),
+                    Dense(relu => hsize),
+                    BatchNorm(hsize, relu),
+                    Dense(hsize => outsize)
+                )
+            )
+        )
+    else
+        chain = Chain(
+            BatchNorm(nfeats),
+            Dense(nfeats => hsize),
+            BatchNorm(hsize, relu),
+            SkipConnection(Chain(
+                    Dense(hsize => hsize),
+                    BatchNorm(hsize, relu)),
+                vcat
+            ),
+            Dense(2 * hsize => outsize)
+        )
+    end
 
     return chain
 end

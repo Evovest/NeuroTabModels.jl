@@ -1,7 +1,7 @@
 module Models
 
 export NeuroTabModel, Architecture
-export NeuroTreeConfig, MLPConfig
+export NeuroTreeConfig, MLPConfig, ResNetConfig
 
 using ..Losses
 import Flux: @layer, Chain
@@ -22,5 +22,7 @@ include("NeuroTree/neurotrees.jl")
 using .NeuroTrees
 include("MLP/mlp.jl")
 using .MLP
+include("ResNet/resnet.jl")
+using .ResNet
 
 end

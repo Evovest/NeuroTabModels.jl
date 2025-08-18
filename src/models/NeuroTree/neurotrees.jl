@@ -8,7 +8,7 @@ using CUDA
 import Flux
 import Flux: @layer, trainmode!, gradient, Chain, DataLoader, cpu, gpu
 import Flux: logσ, logsoftmax, softmax, softmax!, sigmoid, sigmoid_fast, hardsigmoid, tanh, tanh_fast, hardtanh, softplus, onecold, onehotbatch
-import Flux: BatchNorm, Dense, MultiHeadAttention, Parallel
+import Flux: BatchNorm, Dense, Dropout, MultiHeadAttention, Parallel
 
 using ChainRulesCore
 import ChainRulesCore: rrule
@@ -74,7 +74,7 @@ end
 
 function (config::NeuroTreeConfig)(; nfeats, outsize)
 
-    if config.MLE_tree_split
+    if config.MLE_tree_split && outsize == 2
         outsize ÷= 2
         chain = Chain(
             BatchNorm(nfeats),
