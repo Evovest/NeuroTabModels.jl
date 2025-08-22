@@ -116,13 +116,13 @@ function (config::ResNetConfig)(; nfeats, outsize)
             Parallel(
                 vcat,
                 Chain(
-                    ResBlock_v1(; hsize, dropout),
+                    ResBlock_v2A(; hsize, dropout),
                     # BatchNorm(hsize),
                     Dense(hsize => outsize),
                     # BatchNorm(outsize),
                 ),
                 Chain(
-                    ResBlock_v1(; hsize, dropout),
+                    ResBlock_v2A(; hsize, dropout),
                     # BatchNorm(hsize),
                     Dense(hsize => outsize),
                     # BatchNorm(outsize),
@@ -134,7 +134,7 @@ function (config::ResNetConfig)(; nfeats, outsize)
             BatchNorm(nfeats),
             Dense(nfeats => hsize),
             BatchNorm(hsize, relu),
-            ResBlock_v1(; hsize, dropout),
+            ResBlock_v2A(; hsize, dropout),
             # BatchNorm(hsize),
             Dense(hsize => outsize),
             # BatchNorm(outsize),
