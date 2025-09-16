@@ -31,7 +31,7 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/Evovest/NeuroTabModels.jl", # this must be the full URL!
-    target="build", # this is where Vitepress stores its output
+    # target="build", # this is where Vitepress stores its output
     branch="gh-pages",
     devbranch="main",
     push_preview=true

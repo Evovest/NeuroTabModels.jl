@@ -31,6 +31,10 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v2
+      - uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.NEUROTABMODELS_KEY }}
       - uses: julia-actions/julia-buildpkg@latest
         with:
           git_cli: true # = JULIA_PKG_USE_CLI_GIT. Options: true | false (default)

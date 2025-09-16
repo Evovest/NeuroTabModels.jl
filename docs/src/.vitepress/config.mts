@@ -15,21 +15,7 @@ const baseTemp = {
 }
 
 const navTemp = {
-  nav: [
-    { text: 'Home', link: '/' },
-    { text: 'Quick start', link: '/quick-start' },
-    { text: 'Design', link: '/design' },
-    { text: 'Models', link: '/models' },
-    { text: 'API', link: '/API' },
-    {
-      text: 'Tutorials',
-      items: [
-        { text: 'Regression', link: '/tutorials/regression-boston' },
-        { text: 'Logistic', link: '/tutorials/logistic-titanic' },
-        { text: 'Classification', link: '/tutorials/classification-iris' },
-      ]
-    }
-  ]
+  nav: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
 }
 
 const nav = [
@@ -49,17 +35,35 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', href: 'REPLACE_ME_DOCUMENTER_VITEPRESS_FAVICON' }],
     ['script', { src: `${getBaseRepository(baseTemp.base)}versions.js` }],
+    // ['script', {src: '/versions.js'], for custom domains, I guess if deploy_url is available.
     ['script', { src: `${baseTemp.base}siteinfo.js` }]
   ],
   vite: {
+    define: {
+      __DEPLOY_ABSPATH__: JSON.stringify('REPLACE_ME_DOCUMENTER_VITEPRESS_DEPLOY_ABSPATH'),
+    },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '../components')
+      }
+    },
     build: {
       assetsInlineLimit: 0, // so we can tell whether we have created inlined images or not, we don't let vite inline them
     },
     optimizeDeps: {
       exclude: [
+        '@nolebase/vitepress-plugin-enhanced-readabilities/client',
         'vitepress',
+        '@nolebase/ui',
       ],
-    }
+    },
+    ssr: {
+      noExternal: [
+        // If there are other packages that need to be processed by Vite, you can add them here.
+        '@nolebase/vitepress-plugin-enhanced-readabilities',
+        '@nolebase/ui',
+      ],
+    },
   },
 
   markdown: {
@@ -83,21 +87,7 @@ export default defineConfig({
       }
     },
     nav,
-    sidebar: [
-      { text: 'Home', link: '/' },
-      { text: 'Quick start', link: '/quick-start' },
-      { text: 'Design', link: '/design' },
-      { text: 'Models', link: '/models' },
-      { text: 'API', link: '/API' },
-      {
-        text: 'Tutorials',
-        items: [
-          { text: 'Regression', link: '/tutorials/regression-boston' },
-          { text: 'Logistic', link: '/tutorials/logistic-titanic' },
-          { text: 'Classification', link: '/tutorials/classification-iris' },
-        ]
-      }
-    ],
+    sidebar: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
     editLink: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
     socialLinks: [
       { icon: 'github', link: 'REPLACE_ME_DOCUMENTER_VITEPRESS' }
