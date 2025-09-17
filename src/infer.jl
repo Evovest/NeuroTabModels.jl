@@ -4,7 +4,7 @@ using ..Data
 using ..Losses
 using ..Models
 
-using Flux: sigmoid, softmax!, cpu, gpu
+using Flux: sigmoid, softmax!, cpu, gpu, onecold
 using DataFrames: AbstractDataFrame
 import MLUtils: DataLoader
 import CUDA: CuIterator, device!

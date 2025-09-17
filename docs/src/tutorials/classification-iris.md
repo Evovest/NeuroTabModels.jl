@@ -8,6 +8,7 @@ To begin, we will load the required packages and the dataset:
 
 ```julia
 using NeuroTabModels
+using NeuroTabModels.Models
 using MLDatasets
 using DataFrames
 using Statistics: mean
@@ -42,10 +43,12 @@ Then, we use [`NeuroTabModels.fit`](@ref) to train a boosted tree model. We pass
 
 ```julia
 config = NeuroTabClassifier(
+    NeuroTreeConfig(depth=4);
     nrounds=400,
-    depth=4,
     lr=5e-2,
     batchsize=60,
+    print_every_n=10,
+    early_stopping_rounds=2
 )
 
 m = NeuroTabModels.fit(
@@ -54,9 +57,6 @@ m = NeuroTabModels.fit(
     deval,
     target_name,
     feature_names,
-    metric=:mlogloss,
-    print_every_n=10,
-    early_stopping_rounds=2,
 )
 ```
 
@@ -70,12 +70,12 @@ p_eval = m(deval)
 ```
 
 Note that the raw predictions for a classification task a `Matrix` where each row is the vector of probability for each of the target levels.
-It can be converted into a predicted class index using `NeuroTabModels.onecold` (imported from Flux), or `[argmax(p) for p in eachrow(p_train)]`.
+It can be converted into a predicted class index using `NeuroTabModels.Infer.onecold` (imported from Flux), or `[argmax(p) for p in eachrow(p_train)]`.
 
 ```julia-repl
-julia> mean(levelcode.(dtrain[!, target_name]) .== NeuroTabModels.onecold(p_train'))
+julia> mean(levelcode.(dtrain[!, target_name]) .== NeuroTabModels.Infer.onecold(p_train'))
 0.975
 
-julia> mean(levelcode.(deval[!, target_name]) .== NeuroTabModels.onecold(p_eval'))
+julia> mean(levelcode.(deval[!, target_name]) .== NeuroTabModels.Infer.onecold(p_eval'))
 1.0
 ```

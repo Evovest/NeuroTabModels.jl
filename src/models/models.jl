@@ -16,7 +16,7 @@ struct NeuroTabModel{L<:LossType,C<:Chain}
     chain::C
     info::Dict{Symbol,Any}
 end
-@layer NeuroTabModel
+@layer NeuroTabModel trainable=(chain,)
 
 include("NeuroTree/neurotrees.jl")
 using .NeuroTrees

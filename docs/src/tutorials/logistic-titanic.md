@@ -40,7 +40,6 @@ transform!(df, :Age => (x -> coalesce.(x, median(skipmissing(x)))) => :Age);
 
 # remove unneeded variables
 df = df[:, Not([:PassengerId, :Name, :Embarked, :Cabin, :Ticket])]
-
 ```
 
 The full data can now be split according to train and eval indices. 
@@ -64,10 +63,13 @@ Then, we use [`NeuroTabModels.fit`](@ref) to train a boosted tree model. We pass
 
 ```julia
 config = NeuroTabRegressor(
+    NeuroTreeConfig(depth=4);
     loss=:logloss,
     nrounds=400,
-    depth=4,
     lr=2e-2,
+    print_every_n=10,
+    early_stopping_rounds=2,
+    device=:cpu
 )
 
 m = NeuroTabModels.fit(
@@ -75,11 +77,7 @@ m = NeuroTabModels.fit(
     dtrain;
     deval,
     target_name,
-    feature_names,
-    metric=:logloss,
-    print_every_n=10,
-    early_stopping_rounds=2,
-    device=:cpu
+    feature_names
 )
 ```
 
