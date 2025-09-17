@@ -8,6 +8,7 @@ To begin, we will load the required packages and the dataset:
 
 ```julia
 using NeuroTabModels
+using NeuroTabModels.Models
 using MLDatasets
 using DataFrames
 using Statistics: mean, std
@@ -48,7 +49,6 @@ config = NeuroTabRegressor(
     loss=:mse,
     nrounds=400,
     lr=2e-2,
-    print_every_n=10,
     early_stopping_rounds=2,
     device=:cpu
 )
@@ -58,7 +58,8 @@ m = NeuroTabModels.fit(
     dtrain;
     deval,
     target_name,
-    feature_names
+    feature_names,
+    print_every_n=10,
 )
 ```
 

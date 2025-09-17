@@ -47,7 +47,6 @@ config = NeuroTabClassifier(
     nrounds=400,
     lr=5e-2,
     batchsize=60,
-    print_every_n=10,
     early_stopping_rounds=2
 )
 
@@ -57,6 +56,7 @@ m = NeuroTabModels.fit(
     deval,
     target_name,
     feature_names,
+    print_every_n=10
 )
 ```
 
