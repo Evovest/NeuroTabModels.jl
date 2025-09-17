@@ -229,12 +229,6 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 
 # Hyper-parameters
 
-- `loss=:mse`:              Loss to be be minimized during training. One of:
-  - `:mse`
-  - `:mae`
-  - `:logloss`
-  - `:mlogloss`
-  - `:gaussian_mle`
 - `nrounds=100`:             Max number of rounds (epochs).
 - `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.   
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.

@@ -21,7 +21,7 @@ hero:
       link: /models
     - theme: alt
       text: Tutorials
-      link: /tutorials-logistic-titanic.md
+      link: /tutorials/regression-boston.md
     - theme: alt
       text: Source code
       link: https://github.com/Evovest/NeuroTabModels.jl
