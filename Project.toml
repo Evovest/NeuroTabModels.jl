@@ -1,7 +1,7 @@
 name = "NeuroTabModels"
 uuid = "f03403ce-56d7-46f9-9b5e-ff6add8ca7b3"
 authors = ["jeremie.db <jeremie.db@evovest.com>"]
-version = "0.2.1"
+version = "0.2.2"
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
