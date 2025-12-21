@@ -152,7 +152,8 @@ function fit(
     end
 
     m.info[:logger] = logger
-    return m |> cpu
+    return m
+    # return m |> cpu
 end
 
 function fit_iter!(m, cache)

@@ -79,7 +79,7 @@ function predict(::NeuroTabClassifier, fitresult, A; device=:cpu, gpuID=0)
   df = DataFrame(A)
   Tables.istable(A) ? df = DataFrame(A) : error("`A` must be a Table")
   pred = fitresult(df; device, gpuID)
-  return MMI.UnivariateFinite(fitresult.info[:target_levels], pred, pool=missing, ordered=fitresult.info[:target_isordered])
+  return MMI.UnivariateFinite(fitresult.info[:target_levels], pred)
 end
 
 # Metadata

@@ -17,7 +17,7 @@ struct CallBack{F,D}
 end
 
 function (cb::CallBack)(logger, iter, m)
-    metric = Metrics.eval(m, cb.feval, cb.deval)
+    metric = Metrics.get_metric(m, cb.feval, cb.deval)
     update_logger!(logger; iter, metric)
     return nothing
 end

@@ -7,14 +7,6 @@ import Random
 using ..Models
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
 
-"""
-    mk_rng
-
-make a Random Number Generator object
-"""
-mk_rng(rng::Random.AbstractRNG) = rng
-mk_rng(rng::T) where {T<:Integer} = Random.MersenneTwister(rng)
-
 mutable struct NeuroTabRegressor <: MMI.Deterministic
   loss::Symbol
   metric::Symbol
@@ -24,7 +16,7 @@ mutable struct NeuroTabRegressor <: MMI.Deterministic
   lr::Float32
   wd::Float32
   batchsize::Int
-  rng::Any
+  seed::Int
   device::Symbol
   gpuID::Int
 end
@@ -47,7 +39,7 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 - `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.   
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
-- `rng=123`:                Either an integer used as a seed to the random number generator or an actual random number generator (`::Random.AbstractRNG`).
+- `seed=123`:               An integer used as a seed to the random number generator.
 - `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
 - `gpuID=0`:                GPU device to use, only relveant if `device = :gpu` 
 
@@ -147,7 +139,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :lr => 1.0f-2,
     :wd => 0.0f0,
     :batchsize => 2048,
-    :rng => 123,
+    :seed => 123,
     :device => :cpu,
     :gpuID => 0
   )
@@ -180,7 +172,6 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     error("Invalid metric. Must be one of: $_metric_list")
   end
 
-  rng = mk_rng(args[:rng])
   device = Symbol(args[:device])
 
   config = NeuroTabRegressor(
@@ -192,7 +183,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     Float32(args[:lr]),
     Float32(args[:wd]),
     args[:batchsize],
-    rng,
+    args[:seed],
     device,
     args[:gpuID]
   )
@@ -216,7 +207,7 @@ mutable struct NeuroTabClassifier <: MMI.Probabilistic
   lr::Float32
   wd::Float32
   batchsize::Int
-  rng::Any
+  seed::Int
   device::Symbol
   gpuID::Int
 end
@@ -233,7 +224,7 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 - `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.   
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
-- `rng=123`:                Either an integer used as a seed to the random number generator or an actual random number generator (`::Random.AbstractRNG`).
+- `seed=123`:               An integer used as a seed to the random number generator.
 - `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
 - `gpuID=0`:                GPU device to use, only relveant if `device = :gpu` 
 
@@ -332,7 +323,7 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     :lr => 1.0f-2,
     :wd => 0.0f0,
     :batchsize => 2048,
-    :rng => 123,
+    :seed => 123,
     :device => :cpu,
     :gpuID => 0
   )
@@ -352,7 +343,6 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     args[arg] = kwargs[arg]
   end
 
-  rng = mk_rng(args[:rng])
   device = Symbol(args[:device])
 
   config = NeuroTabClassifier(
@@ -364,7 +354,7 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     Float32(args[:lr]),
     Float32(args[:wd]),
     args[:batchsize],
-    rng,
+    args[:seed],
     device,
     args[:gpuID]
   )
