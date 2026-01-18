@@ -31,12 +31,22 @@ A model configuration is defined with on of the constructor:
 
 ```julia
 using NeuroTabModels, DataFrames
+using NeuroTabModels.Models
 
+arch = NeuroTreeConfig(depth=4, ntrees=16);
 config = NeuroTabRegressor(
+    arch;
     loss = :mse,
     nrounds = 10,
-    num_trees = 16,
     depth = 5,
+)
+
+# alternative kwarg-only syntax
+config = NeuroTabRegressor(;
+    arch_name = "NeuroTreeConfig",
+    arch_config = Dict(:depth => 4, :ntrees => 16),
+    loss = :mse,
+    nrounds = 10,
 )
 ```
 
@@ -66,7 +76,7 @@ NeuroTabModels.jl supports the [MLJ](https://github.com/alan-turing-institute/ML
 
 ```julia
 using MLJBase, NeuroTabModels
-m = NeuroTabRegressor(depth=5, nrounds=10)
+m = NeuroTabRegressor(depth=4, nrounds=10)
 X, y = @load_boston
 mach = machine(m, X, y) |> fit!
 p = predict(mach, X)

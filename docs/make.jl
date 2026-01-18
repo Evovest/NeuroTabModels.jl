@@ -22,7 +22,6 @@ makedocs(;
         repo="github.com/Evovest/NeuroTabModels.jl", # this must be the full URL!
         devbranch="main",
         devurl="dev";
-        deploy_url="https://probable-funicular-9q97m6m.pages.github.io"
     ),
     modules=[NeuroTabModels],
     warnonly=true,
