@@ -13,7 +13,7 @@ function (m::NeuroTree)(x)
     nw = reshape(nw, size(m.mask, 1), :) # [1,NTB] => [N,TB]
     lw = softmax(m.mask' * nw) # [N,TB] => [L,TB]
     lw = reshape(lw, :, size(x, 2)) # [L,TB] => [LT,B]
-    p = m.p * lw ./ 16 # [LT,B] => [P,B]
+    p = m.p * lw ./ size(m.mask, 2) # [LT,B] => [P,B]
     return p
 end
 # function (m::NeuroTree)(x)
@@ -21,7 +21,7 @@ end
 #     nw = reshape(nw, size(m.mask, 1), :) # [NT,B] => [N,TB]
 #     lw = softmax(m.mask' * nw) # [N,TB] => [L,TB]
 #     lw = reshape(lw, :, size(x, 2)) # [L,TB] => [LT,B]
-#     p = m.p * lw ./ 16 # [LT,B] => [P,B]
+#     p = m.p * lw ./ size(m.mask, 2) # [LT,B] => [P,B]
 #     return p
 # end
 
