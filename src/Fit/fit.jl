@@ -9,7 +9,7 @@ using ..Losses
 using ..Metrics
 
 import MLJModelInterface: fit
-import CUDA
+import CUDA, cuDNN
 import Optimisers
 import Optimisers: OptimiserChain, WeightDecay, Adam, NAdam, Nesterov, Descent, Momentum, AdaDelta
 import Flux: trainmode!, gradient, cpu, gpu
