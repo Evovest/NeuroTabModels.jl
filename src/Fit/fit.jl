@@ -10,7 +10,8 @@ using ..Metrics
 
 import MLJModelInterface: fit
 import CUDA, cuDNN
-import Enzyme: Duplicated, Const
+import Enzyme
+import Enzyme: Duplicated, Const, Reverse, set_runtime_activity
 import Enzyme.API
 import Optimisers
 import Optimisers: OptimiserChain, WeightDecay, Adam
@@ -23,12 +24,12 @@ using CategoricalArrays
 include("callback.jl")
 using .CallBacks
 
-function compute_grads(loss, model, batch)
-    dup_model = Duplicated(model)
-    const_args = map(Const, batch)
-    grads = Flux.gradient((m, args...) -> loss(m, args...), dup_model, const_args...)
-    return grads[1]
-end
+# function compute_grads(loss, model, batch)
+#     dup_model = Duplicated(model)
+#     const_args = map(Const, batch)
+#     grads = Flux.gradient((m, args...) -> loss(m, args...), dup_model, const_args...)
+#     return grads[1]
+# end
 
 function init(
     config::LearnerTypes,
@@ -73,8 +74,10 @@ function init(
 
     optim = OptimiserChain(Adam(config.lr), WeightDecay(config.wd))
     opts = Optimisers.setup(optim, m)
-
     cache = (dtrain=dtrain, loss=loss, opts=opts, info=info)
+    # dm = Duplicated(m)
+    # opts = Optimisers.setup(optim, m)
+    # cache = (dm=dm, dtrain=dtrain, loss=loss, opts=opts, info=info)
     return m, cache
 end
 
@@ -158,18 +161,35 @@ function fit(
     return m
 end
 
+# function fit_iter!(dm, cache)
+#     loss, opts, data = cache[:loss], cache[:opts], cache[:dtrain]
+#     # GC.gc(true)
+#     # if typeof(cache[:dtrain]) <: CUDA.CuIterator
+#     #     CUDA.reclaim()
+#     # end
+#     for d in data
+#         const_args = map(Const, d)
+#         _ = Flux.gradient((m, args...) -> loss(m, args...), dm, const_args...)
+#         Optimisers.update!(opts, dm)
+#     end
+#     return nothing
+# end
 function fit_iter!(m, cache)
     loss, opts, data = cache[:loss], cache[:opts], cache[:dtrain]
-    GC.gc(true)
-    if typeof(cache[:dtrain]) <: CUDA.CuIterator
-        CUDA.reclaim()
-    end
     for d in data
-        grads = compute_grads(loss, m, d)
-        Optimisers.update!(opts, m, grads)
+        const_args = map(Const, d)
+        grads = Enzyme.gradient(set_runtime_activity(Reverse), (m, args...) -> loss(m, args...), m, const_args...)
+        Optimisers.update!(opts, m, grads[1])
     end
     m.info[:nrounds] += 1
     return nothing
 end
+
+# function compute_grads(loss, model, batch)
+#     dup_model = Duplicated(model)
+#     const_args = map(Const, batch)
+#     grads = Flux.gradient((m, args...) -> loss(m, args...), dup_model, const_args...)
+#     return grads[1]
+# end
 
 end
