@@ -49,7 +49,7 @@ learner = NeuroTabRegressor(
     nrounds=200,
     early_stopping_rounds=2,
     lr=3e-2,
-    device=:gpu
+    device=:cpu
 )
 
 @time m = NeuroTabModels.fit(
