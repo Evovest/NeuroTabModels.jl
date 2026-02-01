@@ -24,13 +24,6 @@ using CategoricalArrays
 include("callback.jl")
 using .CallBacks
 
-# function compute_grads(loss, model, batch)
-#     dup_model = Duplicated(model)
-#     const_args = map(Const, batch)
-#     grads = Flux.gradient((m, args...) -> loss(m, args...), dup_model, const_args...)
-#     return grads[1]
-# end
-
 function init(
     config::LearnerTypes,
     df::AbstractDataFrame;
@@ -161,6 +154,16 @@ function fit(
     return m
 end
 
+function fit_iter!(m, cache)
+    loss, opts, data = cache[:loss], cache[:opts], cache[:dtrain]
+    for d in data
+        const_args = map(Const, d)
+        grads = Enzyme.gradient(set_runtime_activity(Reverse), (m, args...) -> loss(m, args...), m, const_args...)
+        Optimisers.update!(opts, m, grads[1])
+    end
+    m.info[:nrounds] += 1
+    return nothing
+end
 # function fit_iter!(dm, cache)
 #     loss, opts, data = cache[:loss], cache[:opts], cache[:dtrain]
 #     # GC.gc(true)
@@ -174,16 +177,6 @@ end
 #     end
 #     return nothing
 # end
-function fit_iter!(m, cache)
-    loss, opts, data = cache[:loss], cache[:opts], cache[:dtrain]
-    for d in data
-        const_args = map(Const, d)
-        grads = Enzyme.gradient(set_runtime_activity(Reverse), (m, args...) -> loss(m, args...), m, const_args...)
-        Optimisers.update!(opts, m, grads[1])
-    end
-    m.info[:nrounds] += 1
-    return nothing
-end
 
 # function compute_grads(loss, model, batch)
 #     dup_model = Duplicated(model)
