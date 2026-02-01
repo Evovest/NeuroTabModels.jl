@@ -42,11 +42,6 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     hidden_size=1,
     actA=:identity,
 )
-# arch = NeuroTabModels.MLPConfig(;
-#     act=:relu,
-#     stack_size=1,
-#     hidden_size=64,
-# )
 
 learner = NeuroTabRegressor(
     arch;
@@ -54,23 +49,8 @@ learner = NeuroTabRegressor(
     nrounds=200,
     early_stopping_rounds=2,
     lr=3e-2,
-    device=:cpu
+    device=:gpu
 )
-
-# learner = NeuroTabRegressor(;
-#     arch_name="NeuroTreeConfig",
-#     arch_config=Dict(
-#         :actA => :identity,
-#         :init_scale => 1.0,
-#         :depth => 4,
-#         :ntrees => 32,
-#         :stack_size => 1,
-#         :hidden_size => 1),
-#     loss=:logloss,
-#     nrounds=400,
-#     early_stopping_rounds=2,
-#     lr=1e-2,
-# )
 
 @time m = NeuroTabModels.fit(
     learner,
