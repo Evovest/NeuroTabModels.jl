@@ -39,7 +39,7 @@ learner = NeuroTabRegressor(
     nrounds=10,
     lr=1e-2,
     batchsize=2048,
-    device=:cpu
+    device=:gpu
 )
 
 # Reactant GPU: 5.970480 seconds (2.33 M allocations: 5.242 GiB, 3.80% gc time, 0.00% compilation time)
