@@ -37,21 +37,23 @@ learner = NeuroTabRegressor(
     arch;
     loss=:mse,
     nrounds=10,
-    early_stopping_rounds=2,
     lr=1e-2,
     batchsize=2048,
     device=:gpu
 )
 
-# desktop gpu: 13.476383 seconds (26.42 M allocations: 5.990 GiB, 9.44% gc time)
+# desktop gpu - no-eval: 11.239302 seconds (30.63 M allocations: 6.101 GiB, 3.60% gc time)
+# desktop gpu - eval: 15.708276 seconds (23.57 k allocations: 13.156 GiB, 2.02% gc time)
 #  13.557744 seconds (26.40 M allocations: 5.989 GiB, 9.60% gc time)
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
+    # deval=dtrain,
     target_name,
     feature_names,
     print_every_n=10,
 );
 
-# desktop: 0.771839 seconds (369.20 k allocations: 1.522 GiB, 5.94% gc time)
-@time p_train = m(dtrain; device=:gpu);
+# desktop gpu: 0.947362 seconds (484.31 k allocations: 1.526 GiB, 19.83% gc time)
+# desktop cpu: 15.708276 seconds (23.57 k allocations: 13.156 GiB, 2.02% gc time)
+@time p_train = m(dtrain; device=:cpu);
