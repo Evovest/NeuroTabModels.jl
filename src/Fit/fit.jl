@@ -174,25 +174,5 @@ function fit_iter!(m, cache)
     m.info[:nrounds] += 1
     return nothing
 end
-# function fit_iter!(m, cache)
-#     loss, opts, data = cache[:loss], cache[:opts], cache[:dtrain]
-#     GC.gc(true)
-#     if typeof(cache[:dtrain]) <: CUDA.CuIterator
-#         CUDA.reclaim()
-#     end
-#     for d in data
-#         grads = compute_grads(loss, m, d)
-#         Optimisers.update!(opts, m, grads)
-#     end
-#     m.info[:nrounds] += 1
-#     return nothing
-# end
-
-# function compute_grads(loss, model, batch)
-#     dup_model = Duplicated(model)
-#     const_args = map(Const, batch)
-#     grads = Flux.gradient((m, args...) -> loss(m, args...), dup_model, const_args...)
-#     return grads[1]
-# end
 
 end
