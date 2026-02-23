@@ -26,6 +26,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     stack_size=1,
     hidden_size=1,
     scaler=false,
+    MLE_tree_split=false
 )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
@@ -35,7 +36,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 
 learner = NeuroTabRegressor(
     arch;
-    loss=:mse,
+    loss=:gaussian_mle, # gaussian_mle, mse
     nrounds=10,
     lr=1e-2,
     batchsize=2048,
