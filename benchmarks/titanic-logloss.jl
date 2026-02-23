@@ -49,13 +49,13 @@ learner = NeuroTabRegressor(
     nrounds=100,
     early_stopping_rounds=2,
     lr=3e-2,
-    device=:cpu
+    device=:gpu
 )
 
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
-    deval, # FIXME: important slowdown when deval is used
+    # deval, # FIXME: important slowdown when deval is used
     target_name,
     feature_names,
     print_every_n=10,

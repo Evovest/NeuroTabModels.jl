@@ -48,7 +48,7 @@ learner = NeuroTabRegressor(
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
-    # deval=dtrain, # FIXME: very slow when deval is used / crashed on GPU
+    deval=dtrain, # FIXME: very slow when deval is used / crashed on GPU
     target_name,
     feature_names,
     print_every_n=2,

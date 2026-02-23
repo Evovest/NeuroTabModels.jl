@@ -50,7 +50,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     hidden_size=1,
     init_scale=0.0,
     scaler=true,
-    MLE_tree_split=false
+    MLE_tree_split=true
 )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
@@ -65,8 +65,8 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     MLE_tree_split=false
 # )
 
-device = :cpu
-loss = :mse # :mse :gaussian_mle :tweedie
+device = :gpu
+loss = :gaussian_mle # :mse :gaussian_mle :tweedie
 
 learner = NeuroTabRegressor(
     arch;
@@ -75,13 +75,13 @@ learner = NeuroTabRegressor(
     early_stopping_rounds=2,
     lr=1e-3,
     batchsize=1024,
-    device
+    device,
 )
 
 m = NeuroTabModels.fit(
     learner,
     dtrain;
-    # deval,
+    deval,
     target_name,
     feature_names,
     print_every_n=5,
