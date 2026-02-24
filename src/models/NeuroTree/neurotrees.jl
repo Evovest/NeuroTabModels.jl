@@ -98,7 +98,7 @@ function (config::NeuroTreeConfig)(; nfeats, outsize)
         iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
         head_outsize = outsize ÷ 2
         chain = Chain(
-            BatchNorm(nfeats, track_stats=false),
+            BatchNorm(nfeats),
             Parallel(
                 vcat,
                 build_block(nfeats, head_outsize),

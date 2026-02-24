@@ -126,23 +126,25 @@ gaussian_loss_elt(μ, σ, y) = -σ - (y - μ)^2 / (2 * max(2.0f-7, exp(2 * σ)))
     gaussian_mle(m, x, y, w; agg=mean)
     gaussian_mle(m, x, y, w, offset; agg=mean)
 """
+_softplus(x) = log(one(x) + exp(x))
+
 function gaussian_mle(m, x, y; agg=mean)
     p = m(x)
-    μ = view(p, :, 1)
-    σ = view(p, :, 2)
-    return agg(gaussian_loss_elt.(μ, σ, vec(y)))
+    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    return agg(log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2))
 end
 function gaussian_mle(m, x, y, w; agg=mean)
     p = m(x)
-    μ = view(p, :, 1)
-    σ = view(p, :, 2)
-    return agg(gaussian_loss_elt.(μ, σ, vec(y)) .* vec(w))
+    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    return agg((log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* vec(w))
 end
 function gaussian_mle(m, x, y, w, offset; agg=mean)
     p = m(x) .+ offset
-    μ = view(p, :, 1)
-    σ = view(p, :, 2)
-    return agg(gaussian_loss_elt.(μ, σ, vec(y)) .* vec(w))
+    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    return agg((log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* vec(w))
 end
 
 function get_metric(ts::Training.TrainState, data, eval_compiled)

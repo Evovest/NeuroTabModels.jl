@@ -69,21 +69,34 @@ function (::MLog_Loss)(p::AbstractArray, y, w, offset)
     sum(vec(per_sample) .* vec(w)) / sum(w)
 end
 
+_softplus(x) = log(one(x) + exp(x))
+
 struct GaussianMLE_Loss <: Lux.AbstractLossFunction end
 function (::GaussianMLE_Loss)(p::AbstractArray, y)
-    μ, σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
-    mean(-(-σ .- (y .- μ) .^ 2 ./ (2 .* max.(T(2e-7), exp.(2 .* σ)))))
+    μ = view(p, 1, :)
+    raw_σ = view(p, 2, :)
+    y = vec(y)
+    T = eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    mean(log.(σ) .+ (y .- μ) .^ 2 ./ (2 .* σ .^ 2))
 end
 function (::GaussianMLE_Loss)(p::AbstractArray, y, w)
-    μ, σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
-    sum(-(-σ .- (y .- μ) .^ 2 ./ (2 .* max.(T(2e-7), exp.(2 .* σ)))) .* w) / sum(w)
+    μ = view(p, 1, :)
+    raw_σ = view(p, 2, :)
+    y = vec(y)
+    T = eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    sum((log.(σ) .+ (y .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* w) / sum(w)
 end
 function (::GaussianMLE_Loss)(p::AbstractArray, y, w, offset)
     p_adj = p .+ offset
-    μ, σ, T = view(p_adj, 1, :), view(p_adj, 2, :), eltype(p_adj)
-    sum(-(-σ .- (y .- μ) .^ 2 ./ (2 .* max.(T(2e-7), exp.(2 .* σ)))) .* w) / sum(w)
+    μ = view(p_adj, 1, :)
+    raw_σ = view(p_adj, 2, :)
+    y = vec(y)
+    T = eltype(p_adj)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    sum((log.(σ) .+ (y .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* w) / sum(w)
 end
-
 const _loss_type_dict = Dict(
     :mse => MSE,
     :mae => MAE,
