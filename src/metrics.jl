@@ -126,23 +126,25 @@ gaussian_loss_elt(μ, σ, y) = -σ - (y - μ)^2 / (2 * max(2.0f-7, exp(2 * σ)))
     gaussian_mle(m, x, y, w; agg=mean)
     gaussian_mle(m, x, y, w, offset; agg=mean)
 """
+_softplus(x) = log(one(x) + exp(x))
+
 function gaussian_mle(m, x, y; agg=mean)
     p = m(x)
-    μ = view(p, :, 1)
-    σ = view(p, :, 2)
-    return agg(gaussian_loss_elt.(μ, σ, vec(y)))
+    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    return agg(log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2))
 end
 function gaussian_mle(m, x, y, w; agg=mean)
     p = m(x)
-    μ = view(p, :, 1)
-    σ = view(p, :, 2)
-    return agg(gaussian_loss_elt.(μ, σ, vec(y)) .* vec(w))
+    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    return agg((log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* vec(w))
 end
 function gaussian_mle(m, x, y, w, offset; agg=mean)
     p = m(x) .+ offset
-    μ = view(p, :, 1)
-    σ = view(p, :, 2)
-    return agg(gaussian_loss_elt.(μ, σ, vec(y)) .* vec(w))
+    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
+    σ = _softplus.(raw_σ) .+ T(1e-4)
+    return agg((log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* vec(w))
 end
 
 function get_metric(ts::Training.TrainState, data, eval_compiled)
@@ -158,8 +160,9 @@ function get_metric(ts::Training.TrainState, data, eval_compiled)
         ws_accum = ws_accum .+ w_val
     end
 
-    to_cpu(x) = x isa Reactant.ConcretePJRTNumber || x isa Reactant.ConcretePJRTArray ? first(Array(x)) : x
-    return Float32(to_cpu(metric_accum)) / Float32(to_cpu(ws_accum))
+    _to_f64(x) = x isa Reactant.ConcretePJRTNumber ? Float64(x) :
+                 x isa Reactant.ConcretePJRTArray ? Float64(first(Array(x))) : Float64(x)
+    return _to_f64(metric_accum) / _to_f64(ws_accum)
 end
 
 const metric_dict = Dict(

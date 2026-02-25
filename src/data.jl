@@ -121,7 +121,7 @@ function get_df_loader_infer(
 
     container = ContainerInfer(x, offset)
     batchsize = min(batchsize, length(container))
-    dinfer = DataLoader(container; shuffle=false, batchsize, partial=false, parallel=false)
+    dinfer = DataLoader(container; shuffle=false, batchsize, partial=true, parallel=false)
     return dinfer
 end
 
