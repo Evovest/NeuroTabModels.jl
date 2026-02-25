@@ -11,10 +11,6 @@ struct NeuroTree{M,V,F}
 end
 @layer NeuroTree trainable = (w, b, s, p)
 
-# h = m.d_in(x) # [F,B] => [HNT,B]
-# h = reshape(h, size(m.d_proj.weight, 2), :) # [HNT,B] => [H,NTB]
-# nw = m.d_proj(h) # [H,NTB] => [1,NTB]
-# nw = reshape(nw, size(m.lmask, 2), :) # [1,NTB] => [N,TB]
 function (m::NeuroTree)(x)
     if m.scaler
         nw = softplus(m.s) .* (m.actA(m.w) * x .+ m.b) # [F,B] => [NT,B]
@@ -29,8 +25,8 @@ function (m::NeuroTree)(x)
 end
 
 """
-    NeuroTree(; ins, outs, depth=4, ntrees=64, actA=identity, init_scale=1e-1)
-    NeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; depth=4, ntrees=64, actA=identity, init_scale=1e-1)
+    NeuroTree(; ins, outs, , tree_type=:binary, depth=4, ntrees=64, proj_size=1, actA=identity, scaler=true, init_scale=1e-1)
+    NeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, depth=4, ntrees=64, proj_size=1, actA=identity, scaler=true, init_scale=1e-1)
 
 Initialization of a NeuroTree.
 """
@@ -76,6 +72,9 @@ end
 
 """
     get_logits_mask(::Val{:binary}, depth::Integer)
+    get_logits_mask(::Val{:oblivious}, depth::Integer)
+
+Returns a masking matrix for logits for tree leaves probabilities.
 """
 function get_logits_mask(::Val{:binary}, depth::Integer)
     nodes = 2^depth - 1
@@ -107,6 +106,9 @@ end
 
 """
     get_softplus_mask(::Val{:binary}, depth::Integer)
+    get_softplus_mask(::Val{:oblivious}, depth::Integer)
+
+Returns a masking matrix for softplus terms for tree leaves probabilities.
 """
 function get_softplus_mask(::Val{:binary}, depth::Integer)
     nodes = 2^depth - 1
@@ -128,37 +130,9 @@ function get_softplus_mask(::Val{:oblivious}, depth::Integer)
     return mask
 end
 
-function get_mask(::Val{:binary}, depth::Integer)
-    nodes = 2^depth - 1
-    leaves = 2^depth
-    mask = zeros(Float32, nodes, leaves)
-    for d in 1:depth
-        blocks = 2^(d - 1)
-        k = 2^(depth - d)
-        stride = 2 * k
-        for b in 1:blocks
-            view(mask, 2^(d - 1) + b - 1, (b-1)*stride+1:(b-1)*stride+k) .= 1
-        end
-    end
-    return mask
-end
-function get_mask(::Val{:oblivious}, depth::Integer)
-    leaves = 2^depth
-    mask = zeros(Bool, depth, leaves)
-    for d in 1:depth
-        blocks = 2^(d - 1)
-        k = 2^(depth - d)
-        stride = 2 * k
-        for b in 1:blocks
-            view(mask, d, (b-1)*stride+1:(b-1)*stride+k) .= true
-        end
-    end
-    return mask
-end
-
-
 """
     StackTree
+
 A StackTree is made of a collection of NeuroTree.
 """
 struct StackTree
