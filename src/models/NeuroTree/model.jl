@@ -39,19 +39,20 @@ function LuxCore.initialstates(rng::AbstractRNG, l::NeuroTree)
     )
 end
 
+_softplus(x) = log(one(x) + exp(x))
+
 function (l::NeuroTree)(x, ps, st)
     if l.scaler
-        nw = softplus(ps.s) .* (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NT,B]
+        nw = _softplus.(ps.s) .* (l.actA(ps.w) * x .+ ps.b)   
     else
-        nw = (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NT,B]
+        nw = (l.actA(ps.w) * x .+ ps.b)
     end
-    nw = reshape(nw, size(st.ml, 2), :) # [NT,B] => [N,TB]
-    lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TB] => [L,TB]
-    lw = reshape(lw, :, size(x, 2)) # [L,TB] => [LT,B]
-    y = ps.p * lw ./ l.trees # [P,LT] * [LT,B] => [P,B]
+    nw = reshape(nw, size(st.ml, 2), :)
+    lw = exp.(st.ml * nw .- st.ms * _softplus.(nw))           
+    lw = reshape(lw, :, size(x, 2))
+    y = ps.p * lw ./ l.trees
     return y, st
 end
-
 
 """
     get_logits_mask(::Val{:binary}, depth::Integer)
