@@ -46,7 +46,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 
 learner = NeuroTabRegressor(
     arch;
-    loss=:logloss, # FIXME: gaussian_mle don't train
+    loss=:gaussian_mle, # FIXME: gaussian_mle don't train
     nrounds=100,
     early_stopping_rounds=2,
     lr=3e-2,
@@ -56,14 +56,14 @@ learner = NeuroTabRegressor(
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
-    # deval, # FIXME: important slowdown when deval is used
+    deval, # FIXME: important slowdown when deval is used + NaN returns
     target_name,
     feature_names,
     print_every_n=10,
 );
 
 # commented out - inference not yet adapted
-p_train = m(dtrain)
-p_eval = m(deval)
+p_train = m(dtrain)[:, 1]
+p_eval = m(deval)[:, 1]
 @info mean((p_train .> 0.5) .== (dtrain[!, target_name] .> 0.5))
 @info mean((p_eval .> 0.5) .== (deval[!, target_name] .> 0.5))
