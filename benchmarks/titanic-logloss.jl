@@ -41,11 +41,12 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     stack_size=1,
     hidden_size=1,
     actA=:identity,
+    MLE_tree_split=false,
 )
 
 learner = NeuroTabRegressor(
     arch;
-    loss=:logloss,
+    loss=:logloss, # FIXME: gaussian_mle don't train
     nrounds=100,
     early_stopping_rounds=2,
     lr=3e-2,
@@ -55,7 +56,7 @@ learner = NeuroTabRegressor(
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
-    deval, # FIXME: important slowdown when deval is used
+    # deval, # FIXME: important slowdown when deval is used
     target_name,
     feature_names,
     print_every_n=10,

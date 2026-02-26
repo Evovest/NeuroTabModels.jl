@@ -118,17 +118,24 @@ end
 function _identity_act(x)
     return x ./ sum(abs.(x), dims=2)
 end
-
 function _tanh_act(x)
-    x = tanh_fast.(x)
+    x = Flux.tanh_fast.(x)
     return x ./ sum(abs.(x), dims=2)
 end
-
 function _hardtanh_act(x)
-    x = hardtanh.(x)
+    x = Flux.hardtanh.(x)
     return x ./ sum(abs.(x), dims=2)
 end
 
+"""
+    act_dict = Dict(
+        :identity => _identity_act,
+        :tanh => _tanh_act,
+        :hardtanh => _hardtanh_act,
+    )
+
+Dictionary mapping features activation name to their function.
+"""
 const act_dict = Dict(
     :identity => _identity_act,
     :tanh => _tanh_act,

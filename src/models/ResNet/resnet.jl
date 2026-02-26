@@ -4,7 +4,7 @@ export ResNetConfig
 
 import Flux
 import Flux: @functor, trainmode!, gradient, Chain, DataLoader, cpu, gpu
-import Flux: logσ, logsoftmax, softmax, softmax!, relu, sigmoid, sigmoid_fast, hardsigmoid, tanh, tanh_fast, hardtanh, softplus, onecold, onehotbatch
+import Flux: logsoftmax, softmax, softmax!, relu, sigmoid, sigmoid_fast, hardsigmoid, tanh, tanh_fast, hardtanh, softplus, onecold, onehotbatch
 import Flux: BatchNorm, Dense, Dropout, MultiHeadAttention, Parallel, SkipConnection
 
 import ..Models: get_loss_type, GaussianMLE

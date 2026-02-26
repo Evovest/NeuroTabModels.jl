@@ -84,4 +84,4 @@ p = predict(mach, X)
 
 ## Benchmarks
 
-Benchmarking against prominent ML libraries for tabular is performed at [MLBenchmarks.jl](https://github.com/Evovest/MLBenchmarks.jl).
+Benchmarking against prominent ML algos for tabular data is performed at [MLBenchmarks.jl](https://github.com/Evovest/MLBenchmarks.jl).
