@@ -5,8 +5,6 @@ export metric_dict, is_maximise, get_metric
 import Statistics: mean, std
 import NNlib: logsigmoid, logsoftmax, softmax, relu, hardsigmoid
 using Lux
-using Lux: Training
-using Reactant
 
 """
     mse(m, x, y; agg=mean)
@@ -38,7 +36,6 @@ function mae(m, x, y, w, offset; agg=mean)
     return agg(abs.(vec(m(x)) .+ vec(offset) .- vec(y)) .* vec(w))
 end
 
-
 """
     logloss(m, x, y; agg=mean)
     logloss(m, x, y, w; agg=mean)
@@ -60,7 +57,6 @@ function logloss(m, x, y, w, offset; agg=mean)
     return agg(((1 .- y) .* p .- logsigmoid.(p)) .* vec(w))
 end
 
-
 """
     tweedie(m, x, y; agg=mean)
     tweedie(m, x, y, w; agg=mean)
@@ -70,7 +66,7 @@ function tweedie(m, x, y; agg=mean)
     rho = eltype(x)(1.5)
     p = exp.(vec(m(x)))
     y = vec(y)
-    return agg(2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) - y .* p .^ (1 - rho) / (1 - rho) +
+    return agg(2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
                      p .^ (2 - rho) / (2 - rho)))
 end
 function tweedie(m, x, y, w; agg=mean)
@@ -78,7 +74,7 @@ function tweedie(m, x, y, w; agg=mean)
     p = exp.(vec(m(x)))
     y = vec(y)
     w = vec(w)
-    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) - y .* p .^ (1 - rho) / (1 - rho) +
+    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
                           p .^ (2 - rho) / (2 - rho)))
 end
 function tweedie(m, x, y, w, offset; agg=mean)
@@ -86,7 +82,7 @@ function tweedie(m, x, y, w, offset; agg=mean)
     p = exp.(vec(m(x)) .+ vec(offset))
     y = vec(y)
     w = vec(w)
-    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) - y .* p .^ (1 - rho) / (1 - rho) +
+    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
                           p .^ (2 - rho) / (2 - rho)))
 end
 
@@ -96,9 +92,9 @@ end
     mlogloss(m, x, y, w, offset; agg=mean)
 """
 function mlogloss(m, x, y; agg=mean)
-    p = m(x)                                                 # (k, batch)
+    p = m(x)
     k = size(p, 1)
-    y_oh = (UInt32(1):UInt32(k)) .== reshape(y, 1, :)       # (k, batch)
+    y_oh = (UInt32(1):UInt32(k)) .== reshape(y, 1, :)
     lsm = logsoftmax(p; dims=1)
     return agg(vec(-sum(y_oh .* lsm; dims=1)))
 end
@@ -117,52 +113,49 @@ function mlogloss(m, x, y, w, offset; agg=mean)
     return agg(vec(-sum(y_oh .* lsm; dims=1)) .* vec(w))
 end
 
-
-gaussian_loss_elt(μ, σ, y) = -σ - (y - μ)^2 / (2 * max(2.0f-7, exp(2 * σ)))
-
-
 """
     gaussian_mle(m, x, y; agg=mean)
     gaussian_mle(m, x, y, w; agg=mean)
     gaussian_mle(m, x, y, w, offset; agg=mean)
 """
-_softplus(x) = log(one(x) + exp(x))
+_gaussian_mle_elt(μ, σ, y) =
+    -σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))
+
+_gaussian_mle_elt(μ, σ, y, w) =
+    (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))) * w
 
 function gaussian_mle(m, x, y; agg=mean)
     p = m(x)
-    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
-    σ = _softplus.(raw_σ) .+ T(1e-4)
-    return agg(log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2))
+    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y)))
+    return metric
 end
 function gaussian_mle(m, x, y, w; agg=mean)
     p = m(x)
-    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
-    σ = _softplus.(raw_σ) .+ T(1e-4)
-    return agg((log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* vec(w))
+    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
+    return metric
 end
 function gaussian_mle(m, x, y, w, offset; agg=mean)
     p = m(x) .+ offset
-    μ, raw_σ, T = view(p, 1, :), view(p, 2, :), eltype(p)
-    σ = _softplus.(raw_σ) .+ T(1e-4)
-    return agg((log.(σ) .+ (vec(y) .- μ) .^ 2 ./ (2 .* σ .^ 2)) .* vec(w))
+    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
+    return metric
 end
 
-function get_metric(ts::Training.TrainState, data, eval_compiled)
-    ps, st = ts.parameters, Lux.testmode(ts.states)
-
-    d0 = first(data)
-    metric_accum, ws_accum = eval_compiled(d0..., ps, st)
-
-    for (i, d) in enumerate(data)
-        i == 1 && continue
-        m_val, w_val = eval_compiled(d..., ps, st)
-        metric_accum = metric_accum .+ m_val
-        ws_accum = ws_accum .+ w_val
+function get_metric(ts, data, eval_compiled)
+    metric = 0.0f0
+    ws = 0.0f0
+    st = Lux.testmode(ts.states)
+    for d in data
+        if length(d) == 2
+            m_val, w_val = eval_compiled(d[1], d[2], ts.parameters, st)
+        elseif length(d) == 3
+            m_val, w_val = eval_compiled(d[1], d[2], d[3], ts.parameters, st)
+        else
+            m_val, w_val = eval_compiled(d[1], d[2], d[3], d[4], ts.parameters, st)
+        end
+        metric += Float32(m_val)
+        ws += Float32(w_val)
     end
-
-    _to_f64(x) = x isa Reactant.ConcretePJRTNumber ? Float64(x) :
-                 x isa Reactant.ConcretePJRTArray ? Float64(first(Array(x))) : Float64(x)
-    return _to_f64(metric_accum) / _to_f64(ws_accum)
+    return Float64(metric / ws)
 end
 
 const metric_dict = Dict(
