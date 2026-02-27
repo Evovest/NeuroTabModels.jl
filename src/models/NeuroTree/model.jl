@@ -39,18 +39,16 @@ function LuxCore.initialstates(rng::AbstractRNG, l::NeuroTree)
     )
 end
 
-_softplus(x) = log(one(x) + exp(x))
-
 function (l::NeuroTree)(x, ps, st)
     if l.scaler
-        nw = _softplus.(ps.s) .* (l.actA(ps.w) * x .+ ps.b)   
+        nw = softplus(ps.s) .* (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NT,B]
     else
-        nw = (l.actA(ps.w) * x .+ ps.b)
+        nw = (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NT,B]
     end
-    nw = reshape(nw, size(st.ml, 2), :)
-    lw = exp.(st.ml * nw .- st.ms * _softplus.(nw))           
-    lw = reshape(lw, :, size(x, 2))
-    y = ps.p * lw ./ l.trees
+    nw = reshape(nw, size(st.ml, 2), :) # [NT,B] => [N,TB]
+    lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TB] => [L,TB]
+    lw = reshape(lw, :, size(x, 2)) # [L,TB] => [LT,B]
+    y = ps.p * lw ./ l.trees # [P,LT] * [LT,B] => [P,B]
     return y, st
 end
 
