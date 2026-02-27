@@ -24,10 +24,11 @@ end
 
 # Define the Lux interface
 function LuxCore.initialparameters(rng::AbstractRNG, l::NeuroTree)
+    nnodes = l.tree_type == :binary ? l.nodes : l.depth
     return (
-        w=Float32.((rand(rng, l.nodes * l.trees, l.feats) .- 0.5) ./ 4), # w
-        b=zeros(Float32, l.nodes * l.trees), # b
-        s=Float32.(fill(log(exp(1) - 1), l.nodes * l.trees)), # s
+        w=Float32.((rand(rng, nnodes * l.trees, l.feats) .- 0.5) ./ 4), # w
+        b=zeros(Float32, nnodes * l.trees), # b
+        s=Float32.(fill(log(exp(1) - 1), nnodes * l.trees)), # s
         p=Float32.(randn(rng, l.outs, l.leaves * l.trees) .* l.init_scale), # p
     )
 end

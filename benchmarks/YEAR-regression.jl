@@ -42,15 +42,15 @@ dtest = df_tot[(end-51630+1):end, :];
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
-    proj_size=4,
+    proj_size=1,
     actA=:identity,
-    depth=4,
+    depth=5,
     ntrees=32,
     stack_size=1,
     hidden_size=1,
     init_scale=0.0,
     scaler=true,
-    MLE_tree_split=true
+    MLE_tree_split=false
 )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
@@ -66,7 +66,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-loss = :gaussian_mle # :mse :gaussian_mle :tweedie
+loss = :mse # :mse :gaussian_mle :tweedie
 
 learner = NeuroTabRegressor(
     arch;
