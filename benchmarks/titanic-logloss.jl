@@ -46,7 +46,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 
 learner = NeuroTabRegressor(
     arch;
-    loss=:gaussian_mle, # FIXME: gaussian_mle don't train
+    loss=:mse, # FIXME: gaussian_mle don't train
     nrounds=100,
     early_stopping_rounds=2,
     lr=3e-2,
