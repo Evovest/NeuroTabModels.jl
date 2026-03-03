@@ -9,17 +9,18 @@ using Lux: Chain
 
 abstract type Architecture end
 
-struct NeuroTabModel{L<:LossType,C<:Chain}
+"""
+    NeuroTabModel
+"""
+struct NeuroTabModel{L<:LossType,C}
     _loss_type::Type{L}
     chain::C
     info::Dict{Symbol,Any}
 end
-
-# 1. Embeddings
+# @functor NeuroTabModel (chain,)
 include("embeddings/embeddings.jl")
 using .Embeddings
 
-# 2. Architectures
 include("NeuroTree/neurotrees.jl")
 using .NeuroTrees
 
