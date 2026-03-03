@@ -22,6 +22,7 @@ end
 function Lux.initialparameters(rng::AbstractRNG, l::Periodic)
     bound = l.sigma * 3f0
     w = clamp.(l.sigma .* randn(rng, Float32, l.n_frequencies, l.n_features), -bound, bound)
+    w = reshape(2f0 * Float32(π) .* w, l.n_frequencies, l.n_features, 1)
     return (weight=w,)
 end
 
@@ -29,8 +30,7 @@ Lux.initialstates(::AbstractRNG, ::Periodic) = (;)
 
 function (l::Periodic)(x::AbstractMatrix, ps, st)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
-    w = reshape(ps.weight, size(ps.weight, 1), size(ps.weight, 2), 1)
-    z = 2f0 * Float32(π) .* w .* x_r
+    z = ps.weight .* x_r
     return vcat(cos.(z), sin.(z)), st
 end
 
@@ -80,7 +80,7 @@ end
 function (m::PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
     h, st_p = m.periodic(x, ps.periodic, st.periodic)
 
-    h, st_l = if m.lite
+    h_lin, st_l = if m.lite
         d_in, n, b = size(h)
         h_flat = reshape(h, d_in, n * b)
         out_flat, st_sub = m.linear(h_flat, ps.linear, st.linear)
@@ -90,7 +90,8 @@ function (m::PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
     end
 
     if m.activation
-        h = NNlib.relu.(h)
+        h_lin = NNlib.relu.(h_lin)
     end
-    return h, (periodic=st_p, linear=st_l)
+    
+    return h_lin, (periodic=st_p, linear=st_l)
 end

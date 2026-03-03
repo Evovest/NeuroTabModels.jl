@@ -4,25 +4,6 @@ using NNlib
 
 _broadcast_relu_ple(x) = NNlib.relu.(x)
 
-function _ple_activate(x::AbstractArray{T,3}, single_bin_mask) where {T}
-    M, N, B = size(x)
-    if M == 1
-        return x
-    end
-
-    first_row = min.(view(x, 1:1, :, :), one(T))
-    mid_rows = clamp.(view(x, 2:M-1, :, :), zero(T), one(T))
-    last_row_raw = view(x, M:M, :, :)
-
-    last_row = if isnothing(single_bin_mask)
-        max.(last_row_raw, zero(T))
-    else
-        ifelse.(single_bin_mask, last_row_raw, max.(last_row_raw, zero(T)))
-    end
-
-    return cat(first_row, mid_rows, last_row; dims=1)
-end
-
 """
     PiecewiseLinearEncoding(bins)
 
@@ -50,43 +31,61 @@ end
 Lux.initialparameters(::AbstractRNG, ::PiecewiseLinearEncoding) = (;)
 
 function Lux.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
-    weight = zeros(Float32, l.max_n_bins, l.n_features)
-    bias = zeros(Float32, l.max_n_bins, l.n_features)
-    n_bins_list = [length(b) - 1 for b in l.bins]
+    M, N = l.max_n_bins, l.n_features
+
+    weight = zeros(Float32, M, N)
+    bias   = zeros(Float32, M, N)
+    lo     = zeros(Float32, M, N)
+    hi     = ones(Float32, M, N)
 
     for (i, bin_edges) in enumerate(l.bins)
         bin_width = diff(bin_edges)
         w = 1f0 ./ bin_width
         b = -bin_edges[1:end-1] ./ bin_width
-        nb = n_bins_list[i]
+        nb = length(bin_edges) - 1
+
         weight[end, i] = w[end]
-        bias[end, i] = b[end]
+        bias[end, i]   = b[end]
         if nb > 1
             weight[1:nb-1, i] = w[1:end-1]
-            bias[1:nb-1, i] = b[1:end-1]
+            bias[1:nb-1, i]   = b[1:end-1]
+        end
+
+        # Pre-compute per-element clamp bounds matching original activation:
+        #   first row  -> min(h, 1)    => lo=-Inf, hi=1
+        #   middle     -> clamp(h,0,1) => lo=0,    hi=1  (default)
+        #   last row   -> max(h, 0)    => lo=0,    hi=+Inf
+        #   single bin -> unclamped    => lo=-Inf, hi=+Inf
+        if nb == 1
+            lo[end, i] = -Inf32
+            hi[end, i] =  Inf32
+        else
+            lo[1, i]   = -Inf32
+            hi[end, i] =  Inf32
         end
     end
 
-    sbm_vec = [nb == 1 for nb in n_bins_list]
-    single_bin_mask = any(sbm_vec) ? reshape(sbm_vec, 1, :, 1) : nothing
-
-    return (weight=weight, bias=bias, single_bin_mask=single_bin_mask)
+    # Pre-reshape to 3D to avoid per-call reshape in forward pass
+    return (
+        weight = reshape(weight, M, N, 1),
+        bias   = reshape(bias,   M, N, 1),
+        lo     = reshape(lo,     M, N, 1),
+        hi     = reshape(hi,     M, N, 1),
+    )
 end
 
 function (l::PiecewiseLinearEncoding)(x::AbstractMatrix, ps, st)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
-    w = reshape(st.weight, size(st.weight, 1), size(st.weight, 2), 1)
-    b = reshape(st.bias, size(st.bias, 1), size(st.bias, 2), 1)
-    h = b .+ w .* x_r
-    return _ple_activate(h, st.single_bin_mask), st
+    h = clamp.(muladd.(st.weight, x_r, st.bias), st.lo, st.hi)
+    return h, st
 end
 
 """
     PiecewiseLinearEmbeddings(bins, d_embedding; activation=false, version=:B)
 
 Learnable embeddings on top of `PiecewiseLinearEncoding`.
-Version `:A`: PLE → NLinear (with bias).
-Version `:B`: PLE → NLinear (zero-init, no bias) + LinearEmbeddings residual.
+Version `:A`: PLE -> NLinear (with bias).
+Version `:B`: PLE -> NLinear (zero-init, no bias) + LinearEmbeddings residual.
 Output shape `(d_embedding, n_features, batch)`.
 
 # Arguments

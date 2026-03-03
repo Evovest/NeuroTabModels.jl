@@ -5,8 +5,8 @@ using NNlib
 """
     NLinear(n, in_features, out_features; bias=true)
 
-A batch of `n` independent linear layers applied in parallel via `batched_matmul`.
-Input shape `(in_features, batch, n)` → output shape `(out_features, batch, n)`.
+A batch of `n` independent linear layers applied in parallel via `batched_mul`.
+Input shape `(in_features, n, batch)` → output shape `(out_features, n, batch)`.
 
 # Arguments
 - `n::Int`: Number of independent linear layers (typically one per feature).
@@ -39,8 +39,8 @@ end
 Lux.initialstates(::AbstractRNG, ::NLinear) = (;)
 
 function (l::NLinear)(x::AbstractArray{T, 3}, ps, st) where T
-    x_perm = permutedims(x, (1, 3, 2))
-    out = batched_matmul(ps.weight, x_perm)
+    x_perm = PermutedDimsArray(x, (1, 3, 2))
+    out = batched_mul(ps.weight, x_perm)
 
     if l.use_bias
         out = out .+ ps.bias

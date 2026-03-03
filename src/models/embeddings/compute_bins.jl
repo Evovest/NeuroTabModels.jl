@@ -22,11 +22,14 @@ function compute_bins(X::AbstractMatrix; n_bins::Int=48)
     quantile_probs = range(0f0, 1f0, length=n_bins + 1)
 
     bins = Vector{Vector{Float32}}(undef, n_features)
+    col_buf = Vector{eltype(X)}(undef, n_samples)  
     for j in 1:n_features
-        col = sort(X[:, j])
-        edges = [Float32(quantile(col, p)) for p in quantile_probs]
-        bins[j] = unique(edges)
-        @assert length(bins[j]) >= 2 "Feature $j has fewer than 2 unique bin edges"
+        copyto!(col_buf, view(X, :, j))  
+        sort!(col_buf)
+        edges = Float32[quantile(col_buf, p; sorted=true) for p in quantile_probs]
+        unique!(edges)
+        @assert length(edges) >= 2 "Feature $j has fewer than 2 unique bin edges"
+        bins[j] = edges
     end
 
     return bins
