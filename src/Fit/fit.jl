@@ -10,7 +10,7 @@ using ..Metrics
 
 import Random: Xoshiro
 import MLJModelInterface: fit
-import Optimisers: OptimiserChain, WeightDecay, NAdam
+import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
 
 using Lux
 using Reactant

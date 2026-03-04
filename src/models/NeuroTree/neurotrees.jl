@@ -5,7 +5,7 @@ export NeuroTreeConfig
 using Random
 using Lux
 using LuxCore
-using NNlib: softplus, sigmoid, sigmoid_fast, hardsigmoid, tanh_fast, hardtanh
+using NNlib: softplus, sigmoid_fast, hardsigmoid, tanh_fast, hardtanh, tanhshrink
 
 import ..Losses: get_loss_type, GaussianMLE
 import ..Models: Architecture
@@ -85,7 +85,7 @@ function (config::NeuroTreeConfig)(; nfeats, outsize)
 
         layers = Any[create_tree(n_in, config.hidden_size)]
 
-        for _ in 1:(config.stack_size - 2)
+        for _ in 1:(config.stack_size-2)
             push!(layers, SkipConnection(create_tree(config.hidden_size, config.hidden_size), +))
         end
 
@@ -126,12 +126,17 @@ function _hardtanh_act(x)
     x = hardtanh.(x)
     return x ./ sum(abs.(x), dims=2)
 end
+function _tanhshrink_act(x)
+    x = tanhshrink.(x)
+    return x ./ sum(abs.(x), dims=2)
+end
 
 """
     act_dict = Dict(
         :identity => _identity_act,
         :tanh => _tanh_act,
         :hardtanh => _hardtanh_act,
+        :tanhshrink => _tanhshrink_act,
     )
 
 Dictionary mapping features activation name to their function.
@@ -140,6 +145,7 @@ const act_dict = Dict(
     :identity => _identity_act,
     :tanh => _tanh_act,
     :hardtanh => _hardtanh_act,
+    :tanhshrink => _tanhshrink_act,
 )
 
 end
