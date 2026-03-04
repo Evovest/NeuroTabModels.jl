@@ -6,11 +6,50 @@ using Random
 using Lux
 using LuxCore
 using NNlib: softplus, sigmoid, sigmoid_fast, hardsigmoid, tanh_fast, hardtanh
-
 import ..Losses: get_loss_type, GaussianMLE
 import ..Models: Architecture
 
 include("model.jl")
+
+function _identity_act(x)
+    return x ./ sum(abs.(x), dims=2)
+end
+
+function _tanh_act(x)
+    x = tanh_fast.(x)
+    return x ./ sum(abs.(x), dims=2)
+end
+
+function _hardtanh_act(x)
+    x = hardtanh.(x)
+    return x ./ sum(abs.(x), dims=2)
+end
+
+const act_dict = Dict(
+    :identity => _identity_act,
+    :tanh => _tanh_act,
+    :hardtanh => _hardtanh_act,
+)
+
+struct StackedNeuroTree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
+    chain::L
+end
+
+function StackedNeuroTree(; feats::Int, outs::Int, hidden_size::Int, stack_size::Int, tree_kwargs...)
+    if stack_size == 1
+        return StackedNeuroTree(NeuroTree(; feats, outs, tree_kwargs...))
+    end
+
+    layers = Any[NeuroTree(; feats, outs=hidden_size, tree_kwargs...)]
+    for _ in 1:(stack_size - 2)
+        push!(layers, SkipConnection(
+            NeuroTree(; feats=hidden_size, outs=hidden_size, tree_kwargs...), +
+        ))
+    end
+    push!(layers, NeuroTree(; feats=hidden_size, outs, tree_kwargs...))
+
+    return StackedNeuroTree(Chain(layers...))
+end
 
 struct NeuroTreeConfig <: Architecture
     tree_type::Symbol
@@ -66,33 +105,19 @@ function NeuroTreeConfig(; kwargs...)
     )
 end
 
+function _tree_kwargs(config::NeuroTreeConfig)
+    return (
+        tree_type = config.tree_type,
+        depth = config.depth,
+        trees = config.ntrees,
+        actA = act_dict[config.actA],
+        scaler = config.scaler,
+        init_scale = config.init_scale,
+    )
+end
+
 function (config::NeuroTreeConfig)(; nfeats, outsize)
-    function build_block(n_in, n_out)
-        create_tree(in_dim, out_dim) = NeuroTree(;
-            feats=in_dim,
-            outs=out_dim,
-            tree_type=config.tree_type,
-            depth=config.depth,
-            trees=config.ntrees,
-            actA=act_dict[config.actA],
-            scaler=config.scaler,
-            init_scale=config.init_scale
-        )
-
-        if config.stack_size == 1
-            return create_tree(n_in, n_out)
-        end
-
-        layers = Any[create_tree(n_in, config.hidden_size)]
-
-        for _ in 1:(config.stack_size - 2)
-            push!(layers, SkipConnection(create_tree(config.hidden_size, config.hidden_size), +))
-        end
-
-        push!(layers, create_tree(config.hidden_size, n_out))
-
-        return Chain(layers...)
-    end
+    kwargs = _tree_kwargs(config)
 
     if config.MLE_tree_split
         iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
@@ -101,45 +126,18 @@ function (config::NeuroTreeConfig)(; nfeats, outsize)
             BatchNorm(nfeats, track_stats=false),
             Parallel(
                 vcat,
-                build_block(nfeats, head_outsize),
-                build_block(nfeats, head_outsize),
-            )
+                StackedNeuroTree(; feats=nfeats, outs=head_outsize, hidden_size=config.hidden_size, stack_size=config.stack_size, kwargs...),
+                StackedNeuroTree(; feats=nfeats, outs=head_outsize, hidden_size=config.hidden_size, stack_size=config.stack_size, kwargs...),
+            ),
         )
     else
         chain = Chain(
             BatchNorm(nfeats),
-            build_block(nfeats, outsize)
+            StackedNeuroTree(; feats=nfeats, outs=outsize, hidden_size=config.hidden_size, stack_size=config.stack_size, kwargs...),
         )
     end
 
     return chain
 end
-
-function _identity_act(x)
-    return x ./ sum(abs.(x), dims=2)
-end
-function _tanh_act(x)
-    x = tanh_fast.(x)
-    return x ./ sum(abs.(x), dims=2)
-end
-function _hardtanh_act(x)
-    x = hardtanh.(x)
-    return x ./ sum(abs.(x), dims=2)
-end
-
-"""
-    act_dict = Dict(
-        :identity => _identity_act,
-        :tanh => _tanh_act,
-        :hardtanh => _hardtanh_act,
-    )
-
-Dictionary mapping features activation name to their function.
-"""
-const act_dict = Dict(
-    :identity => _identity_act,
-    :tanh => _tanh_act,
-    :hardtanh => _hardtanh_act,
-)
 
 end
