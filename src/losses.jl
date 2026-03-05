@@ -22,8 +22,9 @@ For 3D ensemble output `(D, K, B)`, averages over K → `(D, B)`.
 reduce_pred(y::AbstractArray{T,3}) where {T} =
     dropdims(mean(y; dims=2); dims=2)
 
-_bcast(y::AbstractVector) = reshape(y, 1, 1, :)
-_bcast(y::AbstractMatrix) = reshape(y, size(y, 1), 1, size(y, 2))
+# zero-copy reshape to broadcast targets over K heads
+_bcast(y::AbstractVector) = reshape(y, 1, 1, :)       # (B,) → (1, 1, B)
+_bcast(y::AbstractMatrix) = reshape(y, size(y, 1), 1, size(y, 2))  # (D, B) → (D, 1, B)
 
 function mse_loss(model, ps, st, data::Tuple{Any,Any})
     pred, st_ = model(data[1], ps, st)
@@ -32,7 +33,7 @@ function mse_loss(model, ps, st, data::Tuple{Any,Any})
 end
 function mse_loss(model, ps, st, data::Tuple{Any,Any,Any})
     pred, st_ = model(data[1], ps, st)
-    r2 = mean((pred .- _bcast(data[2])) .^ 2; dims=2)
+    r2 = mean((pred .- _bcast(data[2])) .^ 2; dims=2)  # avg over heads → (D, 1, B)
     w = _bcast(data[3])
     return sum(r2 .* w) / sum(w), st_, NamedTuple()
 end
@@ -84,8 +85,8 @@ end
 function mlogloss(model, ps, st, data::Tuple{Any,Any})
     pred, st_ = model(data[1], ps, st)
     k = size(pred, 1)
-    y_oh = (UInt32(1):UInt32(k)) .== reshape(data[2], 1, 1, :)
-    lsm = logsoftmax(pred; dims=1)
+    y_oh = (UInt32(1):UInt32(k)) .== reshape(data[2], 1, 1, :)  # (C, 1, B) one-hot
+    lsm = logsoftmax(pred; dims=1)  # softmax per head independently
     loss = mean(-sum(y_oh .* lsm; dims=1))
     return loss, st_, NamedTuple()
 end
@@ -136,6 +137,7 @@ function tweedie(model, ps, st, data::Tuple{Any,Any,Any,Any})
     return sum(per_head .* w) / sum(w), st_, NamedTuple()
 end
 
+# simplified: -sum(-σ - ...) ≡ mean(σ + ...)
 gaussian_mle_loss(μ, σ, y) =
     mean(σ .+ (y .- μ) .^ 2 ./ (2 .* max.(oftype.(σ, 2e-7), exp.(2 .* σ))))
 
@@ -144,7 +146,7 @@ gaussian_mle_loss(μ, σ, y, w) =
 
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any})
     pred, st_ = model(data[1], ps, st)
-    μ = pred[1:1, :, :]; σ = pred[2:2, :, :]
+    μ = pred[1:1, :, :]; σ = pred[2:2, :, :]  # slice keeps 3D for broadcasting
     loss = gaussian_mle_loss(μ, σ, _bcast(data[2]))
     return loss, st_, NamedTuple()
 end
