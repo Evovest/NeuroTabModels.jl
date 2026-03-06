@@ -67,9 +67,6 @@ struct EnsembleView <: AbstractLuxLayer
     k::Int
 end
 
-LuxCore.initialparameters(::AbstractRNG, ::EnsembleView) = (;)
-LuxCore.initialstates(::AbstractRNG, ::EnsembleView) = (;)
-
 function (m::EnsembleView)(x::AbstractMatrix, ps, st)
     D, B = size(x)
     return repeat(reshape(x, D, 1, B), 1, m.k, 1), st
@@ -135,8 +132,6 @@ function LuxCore.initialparameters(rng::AbstractRNG, m::LinearBatchEnsemble)
     return d
 end
 
-LuxCore.initialstates(::AbstractRNG, ::LinearBatchEnsemble) = (;)
-
 function (m::LinearBatchEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
     in_f, k, batch = size(x)
     x = x .* reshape(ps.r, m.in_features, m.k, 1)
@@ -169,8 +164,6 @@ function LuxCore.initialparameters(rng::AbstractRNG, m::SharedDense)
         bias = _init_rsqrt_uniform(rng, (m.out_features,), m.in_features),
     )
 end
-
-LuxCore.initialstates(::AbstractRNG, ::SharedDense) = (;)
 
 function (m::SharedDense)(x::AbstractArray{T,3}, ps, st) where {T}
     d_in, k, batch = size(x)
@@ -206,8 +199,6 @@ function LuxCore.initialparameters(rng::AbstractRNG, m::LinearEnsemble)
     end
     return d
 end
-
-LuxCore.initialstates(::AbstractRNG, ::LinearEnsemble) = (;)
 
 function (m::LinearEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
     xp = permutedims(x, (1, 3, 2))
@@ -259,8 +250,6 @@ function LuxCore.initialparameters(rng::AbstractRNG, m::ScaleEnsemble)
     return d
 end
 
-LuxCore.initialstates(::AbstractRNG, ::ScaleEnsemble) = (;)
-
 function (m::ScaleEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
     w = reshape(ps.weight, m.d, m.k, 1)
     if m.use_bias
@@ -277,9 +266,6 @@ Averages over the ensemble (K) dimension: `(D, K, B)` → `(D, B)`.
 Equivalent to `reduce_pred` but as a Lux layer.
 """
 struct MeanEnsemble <: AbstractLuxLayer end
-
-LuxCore.initialparameters(::AbstractRNG, ::MeanEnsemble) = (;)
-LuxCore.initialstates(::AbstractRNG, ::MeanEnsemble) = (;)
 
 function (::MeanEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
     k = size(x, 2)
