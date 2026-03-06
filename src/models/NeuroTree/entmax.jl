@@ -1,6 +1,5 @@
 # Reference: https://github.com/deep-spin/entmax/blob/master/entmax/activations.py
 one_to_vec(x) = reshape(vec(1:size(x, 2)), 1, :)
-one_to_vec(x::AnyCuArray) = reshape(CUDA.CuArray(1:size(x, 2)), 1, :)
 
 function entmax_threshold_and_support(x)
 
