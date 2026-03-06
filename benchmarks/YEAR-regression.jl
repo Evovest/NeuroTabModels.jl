@@ -40,17 +40,29 @@ dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
 dtest = df_tot[(end-51630+1):end, :];
 
-arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    proj_size=4,
-    actA=:identity,
-    depth=4,
-    ntrees=32,
-    stack_size=1,
-    hidden_size=1,
-    init_scale=0.0,
-    scaler=true,
-    MLE_tree_split=false
+# arch = NeuroTabModels.NeuroTreeConfig(;
+#     tree_type=:binary,
+#     proj_size=4,
+#     actA=:identity,
+#     depth=4,
+#     ntrees=32,
+#     stack_size=1,
+#     hidden_size=1,
+#     init_scale=0.0,
+#     scaler=true,
+#     MLE_tree_split=false
+# )
+arch = NeuroTabModels.TabMConfig(;
+    arch_type=:tabm,
+    k=32,
+    d_block=128,
+    n_blocks=3,
+    dropout=0.1,
+    bins=nothing,
+    use_embeddings=true,
+    embedding_type=:linear, # periodic, piecewise, linear
+    d_embedding=8,
+    scaling_init=:normal,
 )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
@@ -73,7 +85,7 @@ learner = NeuroTabRegressor(
     loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=1e-3,
+    lr=2e-3,
     batchsize=1024,
     device
 )
