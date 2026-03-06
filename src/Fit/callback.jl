@@ -4,6 +4,7 @@ using DataFrames
 using Statistics: mean, median
 
 using ..Learners: LearnerTypes
+using ..Losses: reduce_pred
 using ..Data: get_df_loader_train
 using ..Metrics
 
@@ -47,19 +48,19 @@ end
 function _compile_eval_step(chain, feval, d0, ps, st)
     if length(d0) == 2
         function _step2(x, y, ps, st)
-            m = x -> first(chain(x, ps, st))
+            m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, x, y; agg=sum), eltype(y)(last(size(y)))
         end
         return @compile _step2(d0[1], d0[2], ps, st)
     elseif length(d0) == 3
         function _step3(x, y, w, ps, st)
-            m = x -> first(chain(x, ps, st))
+            m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, x, y, w; agg=sum), sum(w)
         end
         return @compile _step3(d0[1], d0[2], d0[3], ps, st)
     else
         function _step4(x, y, w, offset, ps, st)
-            m = x -> first(chain(x, ps, st))
+            m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, x, y, w, offset; agg=sum), sum(w)
         end
         return @compile _step4(d0[1], d0[2], d0[3], d0[4], ps, st)

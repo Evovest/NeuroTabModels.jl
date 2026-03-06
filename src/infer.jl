@@ -2,8 +2,8 @@ module Infer
 
 using ..Data
 using ..Losses
+using ..Losses: reduce_pred
 using ..Models
-using ..Learners
 
 using Lux
 using Lux: cpu_device, reactant_device
@@ -21,19 +21,27 @@ function _get_device(device::Symbol)
     return reactant_device()
 end
 
+_activation(::Type{<:MLogLoss}) = x -> softmax(x; dims=1)
+_activation(::Type{<:LogLoss}) = x -> sigmoid.(x)
+_activation(::Type{<:Tweedie}) = x -> exp.(x)
+_activation(::Type) = identity
+
+function _forward_reduce(chain, x, ps, st)
+    y_pred, st_ = chain(x, ps, st)
+    return reduce_pred(y_pred), st_
+end
+
 function _postprocess(::Type{<:Union{MSE,MAE}}, raw_preds)
     return vcat([vec(p) for p in raw_preds]...)
 end
 
 function _postprocess(::Type{<:LogLoss}, raw_preds)
-    p = vcat([vec(p) for p in raw_preds]...)
-    return sigmoid.(p)
+    return vcat([vec(p) for p in raw_preds]...)
 end
 
 function _postprocess(::Type{<:MLogLoss}, raw_preds)
     p_full = reduce(hcat, raw_preds)
-    p_soft = softmax(p_full; dims=1)
-    return Matrix(p_soft')
+    return Matrix(p_full')
 end
 
 function _postprocess(::Type{<:GaussianMLE}, raw_preds)
@@ -44,8 +52,7 @@ function _postprocess(::Type{<:GaussianMLE}, raw_preds)
 end
 
 function _postprocess(::Type{<:Tweedie}, raw_preds)
-    p = vcat([vec(p) for p in raw_preds]...)
-    return exp.(p)
+    return vcat([vec(p) for p in raw_preds]...)
 end
 
 function infer(m::NeuroTabModel{L}, data; device=:cpu) where {L}
@@ -53,21 +60,22 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu) where {L}
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
+    act = _activation(L)
 
     raw_preds = Vector{AbstractArray}()
 
     b_first = first(data)
     x0 = b_first isa Tuple ? b_first[1] : b_first
-    model_compiled = @compile m.chain(dev(x0), ps, st)
+    compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
 
     for b in data
         x = b isa Tuple ? b[1] : b
         if size(x) == size(x0)
-            y_pred, _ = model_compiled(dev(x), ps, st)
+            y_reduced, _ = compiled(m.chain, dev(x), ps, st)
         else
-            y_pred, _ = Reactant.@jit Lux.apply(m.chain, dev(x), ps, st)
+            y_reduced, _ = Reactant.@jit _forward_reduce(m.chain, dev(x), ps, st)
         end
-        push!(raw_preds, cdev(y_pred))
+        push!(raw_preds, act(cdev(y_reduced)))
     end
 
     return _postprocess(L, raw_preds)

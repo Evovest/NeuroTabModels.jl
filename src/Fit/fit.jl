@@ -65,7 +65,12 @@ function init(
         :device => config.device
     )
 
-    chain = config.arch(; nfeats, outsize)
+    if hasproperty(config.arch, :use_embeddings) && config.arch.use_embeddings && config.arch.embedding_type == :piecewise
+        X_train = Matrix{Float32}(df[:, feature_names])
+        chain = config.arch(; nfeats, outsize, X_train)
+    else
+        chain = config.arch(; nfeats, outsize)
+    end
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
