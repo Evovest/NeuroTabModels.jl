@@ -87,13 +87,13 @@ function NeuroTreeConfig(; kwargs...)
 end
 
 function _tree_kwargs(config::NeuroTreeConfig)
-    return (
-        tree_type = config.tree_type,
-        depth = config.depth,
+    return (;
+        config.tree_type,
+        config.depth,
         trees = config.ntrees,
         actA = act_dict[config.actA],
-        scaler = config.scaler,
-        init_scale = config.init_scale,
+        config.scaler,
+        config.init_scale,
     )
 end
 
@@ -107,14 +107,14 @@ function (config::NeuroTreeConfig)(; nfeats, outsize)
             BatchNorm(nfeats, track_stats=false),
             Parallel(
                 vcat,
-                StackedNeuroTree(; feats=nfeats, outs=head_outsize, hidden_size=config.hidden_size, stack_size=config.stack_size, kwargs...),
-                StackedNeuroTree(; feats=nfeats, outs=head_outsize, hidden_size=config.hidden_size, stack_size=config.stack_size, kwargs...),
+                StackedNeuroTree(; feats=nfeats, outs=head_outsize, config.hidden_size, config.stack_size, kwargs...),
+                StackedNeuroTree(; feats=nfeats, outs=head_outsize, config.hidden_size, config.stack_size, kwargs...),
             ),
         )
     else
         chain = Chain(
             BatchNorm(nfeats),
-            StackedNeuroTree(; feats=nfeats, outs=outsize, hidden_size=config.hidden_size, stack_size=config.stack_size, kwargs...),
+            StackedNeuroTree(; feats=nfeats, outs=outsize, config.hidden_size, config.stack_size, kwargs...),
         )
     end
 
