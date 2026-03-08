@@ -148,8 +148,10 @@ end
 gaussian_mle_loss(μ, σ, y) =
     mean(σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ))))
 
-gaussian_mle_loss(μ, σ, y, w) =
-    sum((σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ)))) .* w) / sum(w)
+function gaussian_mle_loss(μ, σ, y, w)
+    per_head = mean(σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ))); dims=2)
+    return sum(per_head .* w) / sum(w)
+end
 
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
