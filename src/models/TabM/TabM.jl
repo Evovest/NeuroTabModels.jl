@@ -9,19 +9,9 @@ using NNlib
 
 import ..Losses: get_loss_type, GaussianMLE
 import ..Models: Architecture
-import ..Embeddings: PeriodicEmbeddings, LinearEmbeddings, PiecewiseLinearEmbeddings
+import ..Embeddings: PeriodicEmbeddings, LinearEmbeddings, PiecewiseLinearEmbeddings, compute_bins
 
 include("layers.jl")
-
-"""
-    FlattenEmb()
-
-Reshapes 3D embedding output `(d_embedding, n_features, batch)` → `(d_embedding * n_features, batch)`.
-Passes through 2D input unchanged.
-"""
-struct FlattenEmb <: Lux.AbstractLuxLayer end
-(::FlattenEmb)(x::AbstractArray{T,3}, ps, st) where {T} = reshape(x, :, size(x, 3)), st
-(::FlattenEmb)(x::AbstractMatrix, ps, st) = x, st
 
 function _batch_ensemble_backbone(;
         d_in::Int, n_blocks::Int, d_block::Int, dropout::Float64,
@@ -50,8 +40,7 @@ function _mini_ensemble_backbone(;
         init = scaling_init, init_chunks = d_features, bias = false)]
     for i in 1:n_blocks
         d_in_i = (i == 1) ? d_in : d_block
-        push!(layers, SharedDense(d_in_i, d_block))
-        push!(layers, WrappedFunction(_broadcast_relu))
+        push!(layers, Dense(d_in_i => d_block, relu))
         dropout > 0 && push!(layers, Dropout(dropout))
     end
     return layers
@@ -91,13 +80,17 @@ The chain output is 3D: `(outsize, k, batch)`. Ensemble averaging is handled by
 - `use_embeddings::Bool`: Apply feature embeddings before the backbone (default `false`).
 - `d_embedding::Int`: Embedding dimension per feature (default `24`).
 - `embedding_type::Symbol`: `:periodic`, `:linear`, or `:piecewise` (default `:periodic`).
-- `bins::Union{Nothing,Vector{Vector{Float32}}}`: Bin edges for piecewise embeddings (default `nothing`).
+- `n_bins::Union{Int, Vector{Int}}`: Number of bins for piecewise embeddings (default `48`).
+  A single `Int` applies the same count to all features. A `Vector{Int}` specifies
+  per-feature bin counts.
 
 # Callable
-    config(; nfeats, outsize) → Lux.Chain
+    config(; nfeats, outsize, X_train=nothing) → Lux.Chain
 
 - `nfeats::Int`: Number of input features.
 - `outsize::Int`: Output dimension.
+- `X_train::Union{Nothing, AbstractMatrix}`: Training data of shape `(n_samples, n_features)`.
+  Required when `embedding_type=:piecewise` to compute bin edges via `compute_bins`.
 """
 struct TabMConfig <: Architecture
     k::Int
@@ -110,7 +103,7 @@ struct TabMConfig <: Architecture
     use_embeddings::Bool
     d_embedding::Int
     embedding_type::Symbol
-    bins::Union{Nothing,Vector{Vector{Float32}}}
+    n_bins::Union{Int, Vector{Int}}
 end
 
 function TabMConfig(; kwargs...)
@@ -127,7 +120,7 @@ function TabMConfig(; kwargs...)
         :use_embeddings => false,
         :d_embedding => 24,
         :embedding_type => :periodic,
-        :bins => nothing,
+        :n_bins => 48,
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -146,11 +139,11 @@ function TabMConfig(; kwargs...)
         args[:k], args[:n_blocks], args[:d_block], args[:dropout],
         Symbol(args[:arch_type]), Symbol(args[:scaling_init]),
         args[:MLE_tree_split], args[:use_embeddings],
-        args[:d_embedding], Symbol(args[:embedding_type]), args[:bins],
+        args[:d_embedding], Symbol(args[:embedding_type]), args[:n_bins],
     )
 end
 
-function (config::TabMConfig)(; nfeats, outsize)
+function (config::TabMConfig)(; nfeats, outsize, X_train=nothing)
     @assert config.k > 0 "k must be > 0, got $(config.k)"
     @assert nfeats > 0 "nfeats must be > 0, got $nfeats"
     @assert outsize > 0 "outsize must be > 0, got $outsize"
@@ -164,13 +157,14 @@ function (config::TabMConfig)(; nfeats, outsize)
         elseif config.embedding_type == :linear
             LinearEmbeddings(nfeats, config.d_embedding)
         elseif config.embedding_type == :piecewise
-            @assert config.bins !== nothing "Piecewise embeddings require bins"
-            @assert length(config.bins) == nfeats "Expected $nfeats bin vectors, got $(length(config.bins))"
-            PiecewiseLinearEmbeddings(config.bins, config.d_embedding)
+            @assert X_train !== nothing "Piecewise embeddings require `X_train` to compute bin edges."
+            bins = compute_bins(X_train; n_bins=config.n_bins)
+            @assert length(bins) == nfeats "Expected $nfeats bin vectors, got $(length(bins))"
+            PiecewiseLinearEmbeddings(bins, config.d_embedding)
         else
             error("Unsupported embedding type: $(config.embedding_type)")
         end
-        feature_layers = [emb_layer, FlattenEmb()]
+        feature_layers = [emb_layer, FlattenLayer()]
         d_in = nfeats * config.d_embedding
         d_features = fill(config.d_embedding, nfeats)
         effective_scaling_init = :normal

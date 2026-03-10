@@ -144,34 +144,6 @@ function (m::LinearBatchEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
 end
 
 """
-    SharedDense(in_features, out_features)
-
-Standard linear layer that broadcasts over the K (ensemble) dimension.
-Shared weight and bias across all members.
-
-# Arguments
-- `in_features::Int`: Input dimension.
-- `out_features::Int`: Output dimension.
-"""
-struct SharedDense <: AbstractLuxLayer
-    in_features::Int
-    out_features::Int
-end
-
-function LuxCore.initialparameters(rng::AbstractRNG, m::SharedDense)
-    return (;
-        weight = _init_rsqrt_uniform(rng, (m.out_features, m.in_features), m.in_features),
-        bias = _init_rsqrt_uniform(rng, (m.out_features,), m.in_features),
-    )
-end
-
-function (m::SharedDense)(x::AbstractArray{T,3}, ps, st) where {T}
-    d_in, k, batch = size(x)
-    out = ps.weight * reshape(x, d_in, k * batch) .+ ps.bias
-    return reshape(out, m.out_features, k, batch), st
-end
-
-"""
     LinearEnsemble(in_f, out_f, k; bias=true)
 
 `k` independent linear layers applied via `batched_matmul`.
@@ -257,17 +229,4 @@ function (m::ScaleEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
     else
         return x .* w, st
     end
-end
-
-"""
-    MeanEnsemble()
-
-Averages over the ensemble (K) dimension: `(D, K, B)` → `(D, B)`.
-Equivalent to `reduce_pred` but as a Lux layer.
-"""
-struct MeanEnsemble <: AbstractLuxLayer end
-
-function (::MeanEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
-    k = size(x, 2)
-    return dropdims(sum(x; dims=2); dims=2) ./ T(k), st
 end
