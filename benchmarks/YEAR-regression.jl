@@ -73,7 +73,7 @@ learner = NeuroTabRegressor(
     loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=1e-3,
+    lr=3e-4,
     batchsize=1024,
     device
 )
