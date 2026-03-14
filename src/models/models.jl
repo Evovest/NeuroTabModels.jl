@@ -4,8 +4,7 @@ export NeuroTabModel, Architecture
 export NeuroTreeConfig, MLPConfig, ResNetConfig
 
 using ..Losses
-import Flux: @layer, Chain
-import Functors: @functor
+using Lux: Chain
 
 abstract type Architecture end
 
@@ -17,13 +16,13 @@ struct NeuroTabModel{L<:LossType,C<:Chain}
     chain::C
     info::Dict{Symbol,Any}
 end
-@functor NeuroTabModel (chain,)
+# @functor NeuroTabModel (chain,)
 
 include("NeuroTree/neurotrees.jl")
 using .NeuroTrees
-include("MLP/mlp.jl")
-using .MLP
-include("ResNet/resnet.jl")
-using .ResNet
+# include("MLP/mlp.jl")
+# using .MLP
+# include("ResNet/resnet.jl")
+# using .ResNet
 
 end

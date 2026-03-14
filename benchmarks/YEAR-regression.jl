@@ -87,12 +87,12 @@ m = NeuroTabModels.fit(
     print_every_n=5,
 )
 
-p_eval = m(deval; device);
+p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]
 mse_eval = mean((p_eval .- deval.y_norm) .^ 2)
 @info "MSE - deval" mse_eval
 
-p_test = m(dtest; device);
+p_test = m(dtest; device=:cpu);
 p_test = p_test[:, 1]
 mse_test = mean((p_test .- dtest.y_norm) .^ 2) * std(df_tot.y_raw)^2
 @info "MSE - dtest" mse_test

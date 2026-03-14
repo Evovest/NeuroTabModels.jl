@@ -41,48 +41,29 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     stack_size=1,
     hidden_size=1,
     actA=:identity,
+    MLE_tree_split=false,
 )
-# arch = NeuroTabModels.MLPConfig(;
-#     act=:relu,
-#     stack_size=1,
-#     hidden_size=64,
-# )
 
 learner = NeuroTabRegressor(
     arch;
-    loss=:logloss,
-    nrounds=200,
+    loss=:logloss, # FIXME: gaussian_mle don't train
+    nrounds=100,
     early_stopping_rounds=2,
     lr=3e-2,
     device=:cpu
 )
 
-# learner = NeuroTabRegressor(;
-#     arch_name="NeuroTreeConfig",
-#     arch_config=Dict(
-#         :actA => :identity,
-#         :init_scale => 1.0,
-#         :depth => 4,
-#         :ntrees => 32,
-#         :stack_size => 1,
-#         :hidden_size => 1),
-#     loss=:logloss,
-#     nrounds=400,
-#     early_stopping_rounds=2,
-#     lr=1e-2,
-# )
-
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
-    deval,
+    # deval, # FIXME: important slowdown when deval is used
     target_name,
     feature_names,
     print_every_n=10,
 );
 
+# commented out - inference not yet adapted
 p_train = m(dtrain)
 p_eval = m(deval)
-
 @info mean((p_train .> 0.5) .== (dtrain[!, target_name] .> 0.5))
 @info mean((p_eval .> 0.5) .== (deval[!, target_name] .> 0.5))
