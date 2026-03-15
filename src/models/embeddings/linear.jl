@@ -1,6 +1,5 @@
 using Lux
 using Random
-using NNlib
 
 """
     LinearEmbeddings(n_features, d_embedding)
@@ -31,26 +30,4 @@ Lux.initialstates(::AbstractRNG, ::LinearEmbeddings) = (;)
 function (l::LinearEmbeddings)(x::AbstractMatrix, ps, st)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
     return muladd.(ps.weight, x_r, ps.bias), st
-end
-
-"""
-    LinearReLUEmbeddings(n_features, d_embedding=32)
-
-`LinearEmbeddings` followed by element-wise ReLU activation.
-
-# Arguments
-- `n_features::Int`: Number of input features.
-- `d_embedding::Int`: Embedding dimension per feature (default `32`).
-"""
-struct LinearReLUEmbeddings <: Lux.AbstractLuxContainerLayer{(:layer,)}
-    layer::LinearEmbeddings
-end
-
-function LinearReLUEmbeddings(n_features::Int, d_embedding::Int=32)
-    return LinearReLUEmbeddings(LinearEmbeddings(n_features, d_embedding))
-end
-
-function (l::LinearReLUEmbeddings)(x, ps, st)
-    y, st_l = l.layer(x, ps.layer, st.layer)
-    return NNlib.relu.(y), (layer=st_l,)
 end
