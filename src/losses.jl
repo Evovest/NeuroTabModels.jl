@@ -14,123 +14,74 @@ abstract type MLogLoss <: LossType end
 abstract type GaussianMLE <: LossType end
 abstract type Tweedie <: LossType end
 
-function mse_loss(model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred); y = vec(data[2])
-    return mean((p .- y) .^ 2), st_, NamedTuple()
-end
-function mse_loss(model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred); y = vec(data[2]); w = vec(data[3])
-    return sum((p .- y) .^ 2 .* w) / sum(w), st_, NamedTuple()
-end
-function mse_loss(model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred) .+ vec(data[4]); y = vec(data[2]); w = vec(data[3])
-    return sum((p .- y) .^ 2 .* w) / sum(w), st_, NamedTuple()
+_ensure_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
+_ensure_3d(x::AbstractArray{T,3}) where {T} = x
+
+_bcast(y::AbstractVector) = reshape(y, 1, 1, :)
+_bcast(y::AbstractMatrix) = reshape(y, size(y, 1), 1, size(y, 2))
+
+function _forward(model, ps, st, x)
+    pred, st_ = model(x, ps, st)
+    return _ensure_3d(pred), st_
 end
 
-function mae_loss(model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred); y = vec(data[2])
-    return mean(abs.(p .- y)), st_, NamedTuple()
+_reduce(loss) = mean(loss)
+_reduce(loss, w) = sum(mean(loss; dims=2) .* w) / sum(w)
+
+function _apply_loss(core, model, ps, st, data::Tuple{Any,Any})
+    pred, st_ = _forward(model, ps, st, data[1])
+    return _reduce(core(pred, _bcast(data[2]))), st_, NamedTuple()
 end
-function mae_loss(model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred); y = vec(data[2]); w = vec(data[3])
-    return sum(abs.(p .- y) .* w) / sum(w), st_, NamedTuple()
+function _apply_loss(core, model, ps, st, data::Tuple{Any,Any,Any})
+    pred, st_ = _forward(model, ps, st, data[1])
+    return _reduce(core(pred, _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
 end
-function mae_loss(model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred) .+ vec(data[4]); y = vec(data[2]); w = vec(data[3])
-    return sum(abs.(p .- y) .* w) / sum(w), st_, NamedTuple()
+function _apply_loss(core, model, ps, st, data::Tuple{Any,Any,Any,Any})
+    pred, st_ = _forward(model, ps, st, data[1])
+    return _reduce(core(pred .+ _bcast(data[4]), _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
 end
 
-function logloss(model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred); y = vec(data[2])
-    return mean((1 .- y) .* p .- logsigmoid.(p)), st_, NamedTuple()
-end
-function logloss(model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred); y = vec(data[2]); w = vec(data[3])
-    return sum(w .* ((1 .- y) .* p .- logsigmoid.(p))) / sum(w), st_, NamedTuple()
-end
-function logloss(model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    p = vec(pred) .+ vec(data[4]); y = vec(data[2]); w = vec(data[3])
-    return sum(w .* ((1 .- y) .* p .- logsigmoid.(p))) / sum(w), st_, NamedTuple()
+_mse_core(pred, y) = (pred .- y) .^ 2
+_mae_core(pred, y) = abs.(pred .- y)
+_logloss_core(pred, y) = (1 .- y) .* pred .- logsigmoid.(pred)
+
+function _mlogloss_core(pred, y)
+    nclasses = size(pred, 1)
+    classes = reshape(Int32(1):Int32(nclasses), :, 1, 1)
+    y_idx = reshape(Int32.(y), 1, 1, :)
+    y_oh = Float32.(classes .== y_idx)
+    return -sum(y_oh .* logsoftmax(pred; dims=1); dims=1)
 end
 
-function mlogloss(model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    k = size(pred, 1)
-    y_oh = (UInt32(1):UInt32(k)) .== reshape(data[2], 1, :)
-    lsm = logsoftmax(pred; dims=1)
-    return mean(-sum(y_oh .* lsm; dims=1)), st_, NamedTuple()
-end
-function mlogloss(model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    k = size(pred, 1)
-    y_oh = (UInt32(1):UInt32(k)) .== reshape(data[2], 1, :)
-    lsm = logsoftmax(pred; dims=1)
-    return sum(vec(-sum(y_oh .* lsm; dims=1)) .* vec(data[3])) / sum(data[3]), st_, NamedTuple()
-end
-function mlogloss(model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    pred = pred .+ data[4]
-    k = size(pred, 1)
-    y_oh = (UInt32(1):UInt32(k)) .== reshape(data[2], 1, :)
-    lsm = logsoftmax(pred; dims=1)
-    return sum(vec(-sum(y_oh .* lsm; dims=1)) .* vec(data[3])) / sum(data[3]), st_, NamedTuple()
+function _tweedie_core(pred, y)
+    rho = eltype(pred)(1.5)
+    ep = exp.(pred)
+    2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+
+          ep .^ (2 - rho) / (2 - rho))
 end
 
-function tweedie(model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    rho = eltype(data[1])(1.5)
-    ep = exp.(vec(pred)); y = vec(data[2])
-    loss = mean(2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+
-               ep .^ (2 - rho) / (2 - rho)))
-    return loss, st_, NamedTuple()
-end
-function tweedie(model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    rho = eltype(data[1])(1.5)
-    ep = exp.(vec(pred)); y = vec(data[2]); w = vec(data[3])
-    loss = sum(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+
-                   ep .^ (2 - rho) / (2 - rho))) / sum(w)
-    return loss, st_, NamedTuple()
-end
-function tweedie(model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    rho = eltype(data[1])(1.5)
-    ep = exp.(vec(pred) .+ vec(data[4])); y = vec(data[2]); w = vec(data[3])
-    loss = sum(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+
-                   ep .^ (2 - rho) / (2 - rho))) / sum(w)
-    return loss, st_, NamedTuple()
-end
+mse_loss(m, ps, st, d) = _apply_loss(_mse_core, m, ps, st, d)
+mae_loss(m, ps, st, d) = _apply_loss(_mae_core, m, ps, st, d)
+logloss(m, ps, st, d) = _apply_loss(_logloss_core, m, ps, st, d)
+mlogloss(m, ps, st, d) = _apply_loss(_mlogloss_core, m, ps, st, d)
+tweedie(m, ps, st, d) = _apply_loss(_tweedie_core, m, ps, st, d)
 
-gaussian_mle_loss(μ::AbstractVector, σ::AbstractVector, y::AbstractVector) =
-    -sum(-σ .- (y .- μ) .^ 2 ./ (2 .* max.(oftype.(σ, 2e-7), exp.(2 .* σ))))
-
-gaussian_mle_loss(μ::AbstractVector, σ::AbstractVector, y::AbstractVector, w::AbstractVector) =
-    -sum((-σ .- (y .- μ) .^ 2 ./ (2 .* max.(oftype.(σ, 2e-7), exp.(2 .* σ)))) .* w) / sum(w)
+function _gaussian_mle_core(μ, σ, y)
+    σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ)))
+end
 
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    loss = gaussian_mle_loss(view(pred, 1, :), view(pred, 2, :), vec(data[2]))
-    return loss, st_, NamedTuple()
+    pred, st_ = _forward(model, ps, st, data[1])
+    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _bcast(data[2]))), st_, NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    loss = gaussian_mle_loss(view(pred, 1, :), view(pred, 2, :), vec(data[2]), vec(data[3]))
-    return loss, st_, NamedTuple()
+    pred, st_ = _forward(model, ps, st, data[1])
+    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = model(data[1], ps, st)
-    pred = pred .+ data[4]
-    loss = gaussian_mle_loss(view(pred, 1, :), view(pred, 2, :), vec(data[2]), vec(data[3]))
-    return loss, st_, NamedTuple()
+    pred, st_ = _forward(model, ps, st, data[1])
+    pred = pred .+ _bcast(data[4])
+    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
 end
 
 get_loss_fn(::Type{<:MSE}) = mse_loss
@@ -141,12 +92,8 @@ get_loss_fn(::Type{<:GaussianMLE}) = gaussian_mle
 get_loss_fn(::Type{<:Tweedie}) = tweedie
 
 const _loss_type_dict = Dict(
-    :mse => MSE,
-    :mae => MAE,
-    :logloss => LogLoss,
-    :tweedie => Tweedie,
-    :gaussian_mle => GaussianMLE,
-    :mlogloss => MLogLoss,
+    :mse => MSE, :mae => MAE, :logloss => LogLoss,
+    :mlogloss => MLogLoss, :gaussian_mle => GaussianMLE, :tweedie => Tweedie,
 )
 
 get_loss_type(loss::Symbol) = _loss_type_dict[loss]

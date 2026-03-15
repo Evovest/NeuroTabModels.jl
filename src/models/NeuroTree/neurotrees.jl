@@ -22,7 +22,7 @@ function StackedNeuroTree(; feats::Int, outs::Int, hidden_size::Int, stack_size:
     end
 
     layers = Any[NeuroTree(; feats, outs=hidden_size, tree_kwargs...)]
-    for _ in 1:(stack_size - 2)
+    for _ in 1:(stack_size-2)
         push!(layers, SkipConnection(
             NeuroTree(; feats=hidden_size, outs=hidden_size, tree_kwargs...), +
         ))
@@ -90,8 +90,8 @@ function _tree_kwargs(config::NeuroTreeConfig)
     return (;
         config.tree_type,
         config.depth,
-        trees = config.ntrees,
-        actA = act_dict[config.actA],
+        trees=config.ntrees,
+        actA=act_dict[config.actA],
         config.scaler,
         config.init_scale,
     )

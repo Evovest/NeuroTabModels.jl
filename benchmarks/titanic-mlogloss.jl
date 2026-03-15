@@ -34,24 +34,31 @@ deval = df[setdiff(1:nrow(df), train_indices), :]
 
 target_name = "y_cat"
 feature_names = setdiff(names(df), ["y_cat", "Survived"])
-
 eltype(dtrain[:, "y_cat"])
-config = NeuroTabClassifier(
-    nrounds=400,
+
+arch = NeuroTabModels.NeuroTreeConfig(;
+    actA=:identity,
+    init_scale=1.0,
     depth=4,
-    lr=3e-2,
+    ntrees=16,
+    stack_size=1,
+    hidden_size=1,
+)
+
+learner = NeuroTabClassifier(
+    arch;
+    nrounds=100,
+    early_stopping_rounds=2,
+    lr=1e-2,
 )
 
 m = NeuroTabModels.fit(
-    config,
+    learner,
     dtrain;
     deval,
     target_name,
     feature_names,
-    metric=:mlogloss,
-    print_every_n=10,
-    early_stopping_rounds=3,
-    device=:cpu
+    print_every_n=2,
 )
 
 p_train = m(dtrain)
