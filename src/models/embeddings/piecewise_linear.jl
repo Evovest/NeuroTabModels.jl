@@ -2,7 +2,7 @@ using Lux
 using Random
 using NNlib
 
-_broadcast_relu_ple(x) = NNlib.relu.(x)
+import ...Models: _broadcast_relu
 
 """
     PiecewiseLinearEncoding(bins)
@@ -147,7 +147,7 @@ function (m::PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
     h_final = val_linear0 === nothing ? h_proj : (val_linear0 .+ h_proj)
 
     if m.use_activation
-        h_final = _broadcast_relu_ple(h_final)
+        h_final = _broadcast_relu(h_final)
     end
 
     return h_final, (linear0=st_l0, encoding=st_enc, linear=st_lin)

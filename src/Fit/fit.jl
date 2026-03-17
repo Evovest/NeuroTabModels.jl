@@ -7,6 +7,7 @@ using ..Learners
 using ..Models
 using ..Losses
 using ..Metrics
+using ..Infer
 
 import Random: Xoshiro
 import MLJModelInterface: fit

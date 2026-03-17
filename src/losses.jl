@@ -2,7 +2,6 @@ module Losses
 
 export get_loss_fn, get_loss_type
 export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie
-export reduce_pred
 
 import Statistics: mean
 import NNlib: logsigmoid, logsoftmax
@@ -14,9 +13,6 @@ abstract type LogLoss <: LossType end
 abstract type MLogLoss <: LossType end
 abstract type GaussianMLE <: LossType end
 abstract type Tweedie <: LossType end
-
-reduce_pred(y::AbstractMatrix) = y
-reduce_pred(y::AbstractArray{T,3}) where {T} = dropdims(mean(y; dims=2); dims=2)
 
 _ensure_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
 _ensure_3d(x::AbstractArray{T,3}) where {T} = x

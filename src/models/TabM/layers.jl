@@ -2,7 +2,6 @@ using Lux: AbstractLuxLayer, WrappedFunction
 using LuxCore
 using LuxLib: batched_matmul
 using Random: AbstractRNG
-using NNlib: relu
 
 """
     _init_rsqrt_uniform(rng, dims, d) → Array{Float32}
@@ -54,8 +53,6 @@ function _init_scaling_with_chunks(rng::AbstractRNG, dims::Tuple{Int,Int},
     end
     return weight
 end
-
-_broadcast_relu(x) = relu.(x)
 
 """
     EnsembleView(k)

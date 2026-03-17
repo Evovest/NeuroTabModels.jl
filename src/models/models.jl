@@ -6,8 +6,11 @@ export Embeddings
 
 using ..Losses
 using Lux: Chain
+using NNlib
 
 abstract type Architecture end
+
+_broadcast_relu(x) = NNlib.relu.(x)
 
 """
     NeuroTabModel

@@ -10,6 +10,7 @@ using NNlib
 import ..Losses: get_loss_type, GaussianMLE
 import ..Models: Architecture
 import ..Embeddings: PeriodicEmbeddings, LinearEmbeddings, PiecewiseLinearEmbeddings, compute_bins
+import ..Models: _broadcast_relu
 
 include("layers.jl")
 
