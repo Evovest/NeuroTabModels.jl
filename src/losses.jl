@@ -14,15 +14,13 @@ abstract type MLogLoss <: LossType end
 abstract type GaussianMLE <: LossType end
 abstract type Tweedie <: LossType end
 
-_ensure_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
-_ensure_3d(x::AbstractArray{T,3}) where {T} = x
-
-_bcast(y::AbstractVector) = reshape(y, 1, 1, :)
-_bcast(y::AbstractMatrix) = reshape(y, size(y, 1), 1, size(y, 2))
+_reshape_3d(x::AbstractVector) = reshape(x, 1, 1, :)
+_reshape_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
+_reshape_3d(x::AbstractArray{T,3}) where {T} = x
 
 function _forward(model, ps, st, x)
     pred, st_ = model(x, ps, st)
-    return _ensure_3d(pred), st_
+    return _reshape_3d(pred), st_
 end
 
 _reduce(loss) = mean(loss)
@@ -30,15 +28,15 @@ _reduce(loss, w) = sum(mean(loss; dims=2) .* w) / sum(w)
 
 function _apply_loss(core, model, ps, st, data::Tuple{Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(core(pred, _bcast(data[2]))), st_, NamedTuple()
+    return _reduce(core(pred, _reshape_3d(data[2]))), st_, NamedTuple()
 end
 function _apply_loss(core, model, ps, st, data::Tuple{Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(core(pred, _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
+    return _reduce(core(pred, _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 function _apply_loss(core, model, ps, st, data::Tuple{Any,Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(core(pred .+ _bcast(data[4]), _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
+    return _reduce(core(pred .+ _reshape_3d(data[4]), _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 
 _mse_core(pred, y) = (pred .- y) .^ 2
@@ -72,16 +70,16 @@ end
 
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _bcast(data[2]))), st_, NamedTuple()
+    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _reshape_3d(data[2]))), st_, NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
+    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    pred = pred .+ _bcast(data[4])
-    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _bcast(data[2])), _bcast(data[3])), st_, NamedTuple()
+    pred = pred .+ _reshape_3d(data[4])
+    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 
 get_loss_fn(::Type{<:MSE}) = mse_loss
