@@ -59,6 +59,7 @@ function Lux.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
 end
 
 function (l::PiecewiseLinearEncoding)(x::AbstractMatrix, ps, st)
+    # For each feature j and bin b: h[b,j,:] = clamp(w[b,j]*x[j,:] + bias[b,j], 0, 1)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
     h = clamp.(muladd.(st.weight, x_r, st.bias), 0f0, 1f0)
     return h, st
@@ -97,7 +98,8 @@ function PiecewiseLinearEmbeddings(
     max_n_bins = maximum(length(b) - 1 for b in bins)
 
     encoding = PiecewiseLinearEncoding(bins)
-    linear0 = (version == :B) ? LinearEmbeddings(n_features, d_embedding) : nothing
+    # Residual path uses raw affine output (no activation)
+    linear0 = (version == :B) ? LinearEmbeddings(n_features, d_embedding; activation=identity) : nothing
     linear = NLinear(n_features, max_n_bins, d_embedding; bias=(version == :A))
 
     return PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)
