@@ -7,7 +7,7 @@ using ..Learners
 using ..Models
 using ..Losses
 using ..Metrics
-using ..Infer
+using ..Infer: reduce_pred
 
 import Random: Xoshiro
 import MLJModelInterface: fit
@@ -27,6 +27,35 @@ function _get_device(config)
     backend = config.device == :gpu ? "gpu" : "cpu"
     Reactant.set_default_backend(backend)
     return reactant_device()
+end
+
+function _build_chain(config, nfeats, outsize, df, feature_names)
+    embed_config = config.embedding_config
+
+    if isnothing(embed_config)
+        return config.arch(; nfeats, outsize)
+    end
+
+    # Build embedding chain
+    if embed_config.embedding_type == :piecewise
+        X_train = Matrix{Float32}(df[:, feature_names])
+    else
+        X_train = nothing
+    end
+    embed_chain = embed_config(; nfeats, X_train)
+
+    # Compute backbone input size and per-feature chunk sizes
+    d_in = nfeats * embed_config.d_embedding
+    d_features = fill(embed_config.d_embedding, nfeats)
+
+    # Build backbone
+    if config.arch isa TabMConfig
+        arch_chain = config.arch(; nfeats=d_in, outsize, d_features)
+    else
+        arch_chain = config.arch(; nfeats=d_in, outsize)
+    end
+
+    return Chain(embed_chain, arch_chain)
 end
 
 function init(
@@ -66,12 +95,7 @@ function init(
         :device => config.device
     )
 
-    if hasproperty(config.arch, :use_embeddings) && config.arch.use_embeddings && config.arch.embedding_type == :piecewise
-        X_train = Matrix{Float32}(df[:, feature_names])
-        chain = config.arch(; nfeats, outsize, X_train)
-    else
-        chain = config.arch(; nfeats, outsize)
-    end
+    chain = _build_chain(config, nfeats, outsize, df, feature_names)
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
@@ -109,14 +133,13 @@ Training function of NeuroTabModels' internal API.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
 - `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
 - `deval=nothing`: Optional. Evaluation data (`<:AbstractDataFrame`) for tracking metrics and early stopping.
-- `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`). 
+- `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`).
 - `print_every_n=9999`: Integer. Logs training progress to the console every `N` epochs.
 - `early_stopping_rounds=9999`: Integer. Stops training if the evaluation metric does not improve for this many rounds.
 - `verbosity=1`: Integer. Controls the logging level (`0` for silent, `>0` for info).
 - `device=:cpu`: Symbol. Hardware device to use for training (`:cpu` or `:gpu`).
 - `gpuID=0`: Integer. Specifies which GPU to use if multiple are available.
 """
-
 function fit(
     config::LearnerTypes,
     dtrain;
