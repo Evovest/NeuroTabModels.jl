@@ -36,24 +36,24 @@ end
 
 """
     PeriodicEmbeddings(n_features, d_embedding=24; n_frequencies=48,
-                       frequency_init_scale=0.01f0, activation=true, lite=false)
+                       frequency_init_scale=0.01f0, activation=relu, lite=false)
 
 Periodic sinusoidal encoding followed by a learned linear projection.
-Applies `Periodic` → `NLinear` (or `Dense` if `lite`) → optional ReLU.
+Applies `Periodic` → `NLinear` (or `Dense` if `lite`) → activation.
 
 # Arguments
 - `n_features::Int`: Number of input features.
 - `d_embedding::Int`: Output embedding dimension per feature (default `24`).
 - `n_frequencies::Int`: Sinusoidal frequency components per feature (default `48`).
 - `frequency_init_scale::Float32`: σ for frequency weight init (default `0.01f0`).
-- `activation::Bool`: Apply ReLU after the linear projection (default `true`).
+- `activation`: Activation function applied after projection (default `relu`). E.g. `relu`, `tanh`, `identity`.
 - `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear` (default `false`).
-  Only valid when `activation=true`.
+  Only valid when `activation` is not `identity`.
 """
-struct PeriodicEmbeddings{P,L} <: Lux.AbstractLuxContainerLayer{(:periodic, :linear)}
+struct PeriodicEmbeddings{P,L,F} <: Lux.AbstractLuxContainerLayer{(:periodic, :linear)}
     periodic::P
     linear::L
-    activation::Bool
+    activation::F
     lite::Bool
 end
 
@@ -62,11 +62,11 @@ function PeriodicEmbeddings(
     d_embedding::Int=24;
     n_frequencies::Int=48,
     frequency_init_scale::Float32=0.01f0,
-    activation::Bool=true,
+    activation=NNlib.relu,
     lite::Bool=false,
 )
-    if lite && !activation
-        error("lite=true is allowed only when activation=true")
+    if lite && activation === identity
+        error("lite=true requires a non-identity activation function")
     end
     periodic = Periodic(n_features, n_frequencies, frequency_init_scale)
     linear = if lite
@@ -89,9 +89,7 @@ function (m::PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
         m.linear(h, ps.linear, st.linear)
     end
 
-    if m.activation
-        h_lin = NNlib.relu.(h_lin)
-    end
-    
+    h_lin = m.activation.(h_lin)
+
     return h_lin, (periodic=st_p, linear=st_l)
 end

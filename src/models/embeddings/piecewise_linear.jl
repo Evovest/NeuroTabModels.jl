@@ -2,8 +2,6 @@ using Lux
 using Random
 using NNlib
 
-import ...Models: _broadcast_relu
-
 """
     PiecewiseLinearEncoding(bins)
 
@@ -35,8 +33,6 @@ function Lux.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
 
     weight = zeros(Float32, M, N)
     bias   = zeros(Float32, M, N)
-    lo     = zeros(Float32, M, N)
-    hi     = ones(Float32, M, N)
 
     for (i, bin_edges) in enumerate(l.bins)
         bin_width = diff(bin_edges)
@@ -44,24 +40,14 @@ function Lux.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
         b = -bin_edges[1:end-1] ./ bin_width
         nb = length(bin_edges) - 1
 
+        # Place the last bin's weight/bias at the end row;
+        # remaining bins fill rows 1:nb-1. Unused rows stay zero
+        # and are clamped to [0, 1] harmlessly.
         weight[end, i] = w[end]
         bias[end, i]   = b[end]
         if nb > 1
             weight[1:nb-1, i] = w[1:end-1]
             bias[1:nb-1, i]   = b[1:end-1]
-        end
-
-        # Pre-compute per-element clamp bounds matching original activation:
-        #   first row  -> min(h, 1)    => lo=-Inf, hi=1
-        #   middle     -> clamp(h,0,1) => lo=0,    hi=1  (default)
-        #   last row   -> max(h, 0)    => lo=0,    hi=+Inf
-        #   single bin -> unclamped    => lo=-Inf, hi=+Inf
-        if nb == 1
-            lo[end, i] = -Inf32
-            hi[end, i] =  Inf32
-        else
-            lo[1, i]   = -Inf32
-            hi[end, i] =  Inf32
         end
     end
 
@@ -69,19 +55,17 @@ function Lux.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
     return (
         weight = reshape(weight, M, N, 1),
         bias   = reshape(bias,   M, N, 1),
-        lo     = reshape(lo,     M, N, 1),
-        hi     = reshape(hi,     M, N, 1),
     )
 end
 
 function (l::PiecewiseLinearEncoding)(x::AbstractMatrix, ps, st)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
-    h = clamp.(muladd.(st.weight, x_r, st.bias), st.lo, st.hi)
+    h = clamp.(muladd.(st.weight, x_r, st.bias), 0f0, 1f0)
     return h, st
 end
 
 """
-    PiecewiseLinearEmbeddings(bins, d_embedding; activation=false, version=:B)
+    PiecewiseLinearEmbeddings(bins, d_embedding; activation=identity, version=:B)
 
 Learnable embeddings on top of `PiecewiseLinearEncoding`.
 Version `:A`: PLE -> NLinear (with bias).
@@ -91,21 +75,21 @@ Output shape `(d_embedding, n_features, batch)`.
 # Arguments
 - `bins::Vector{<:AbstractVector}`: Bin edges per feature from [`compute_bins`](@ref).
 - `d_embedding::Int`: Embedding dimension per feature.
-- `activation::Bool`: Apply ReLU after projection (default `false`).
+- `activation`: Activation function applied after projection (default `identity`). E.g. `relu`, `tanh`.
 - `version::Symbol`: `:A` or `:B` (default `:B`).
 """
-struct PiecewiseLinearEmbeddings{L0,I,L} <: Lux.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
+struct PiecewiseLinearEmbeddings{L0,I,L,F} <: Lux.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
     linear0::L0
     encoding::I
     linear::L
-    use_activation::Bool
+    activation::F
     version::Symbol
 end
 
 function PiecewiseLinearEmbeddings(
     bins::Vector{<:AbstractVector},
     d_embedding::Int;
-    activation::Bool=false,
+    activation=identity,
     version::Symbol=:B,
 )
     @assert version in (:A, :B)
@@ -145,10 +129,7 @@ function (m::PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
     h_proj, st_lin = m.linear(h_enc, ps.linear, st.linear)
 
     h_final = val_linear0 === nothing ? h_proj : (val_linear0 .+ h_proj)
-
-    if m.use_activation
-        h_final = _broadcast_relu(h_final)
-    end
+    h_final = m.activation.(h_final)
 
     return h_final, (linear0=st_l0, encoding=st_enc, linear=st_lin)
 end
