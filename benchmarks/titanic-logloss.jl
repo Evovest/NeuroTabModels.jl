@@ -32,31 +32,43 @@ deval = df[setdiff(1:nrow(df), train_indices), :]
 target_name = "Survived"
 feature_names = setdiff(names(df), ["Survived"])
 
-arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    proj_size=1,
-    init_scale=1.0,
-    depth=4,
-    ntrees=16,
-    stack_size=1,
-    hidden_size=1,
-    actA=:identity,
-    MLE_tree_split=false,
+# arch = NeuroTabModels.NeuroTreeConfig(;
+#     tree_type=:binary,
+#     proj_size=1,
+#     init_scale=1.0,
+#     depth=4,
+#     ntrees=16,
+#     stack_size=1,
+#     hidden_size=1,
+#     actA=:identity,
+#     MLE_tree_split=false,
+# )
+arch = NeuroTabModels.TabMConfig(;
+    arch_type=:tabm,
+    k=32,
+    d_block=64,
+    n_blocks=3,
+    dropout=0.1,
+    bins=nothing,
+    use_embeddings=false,
+    embedding_type=:periodic,
+    d_embedding=16,
+    scaling_init=:random_signs,
 )
 
 learner = NeuroTabRegressor(
     arch;
-    loss=:logloss, # FIXME: gaussian_mle don't train
+    loss=:logloss,
     nrounds=100,
     early_stopping_rounds=2,
-    lr=3e-2,
+    lr=1e-2,
     device=:cpu
 )
 
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
-    # deval, # FIXME: important slowdown when deval is used
+    deval,
     target_name,
     feature_names,
     print_every_n=10,
