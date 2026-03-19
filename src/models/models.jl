@@ -15,7 +15,11 @@ _broadcast_relu(x) = NNlib.relu.(x)
 """
     NeuroTabModel
 
-A trained neural network model for tabular data. It is the object returned by [`fit`](@ref) and wraps a [Lux.jl](https://lux.csail.mit.edu) `chain` built from one of the supported [`Architecture`](@ref) configurations:
+A trained neural network model for tabular data. It is the object returned by [`NeuroTabModels.fit`](@ref) and wraps a [Lux.jl](https://lux.csail.mit.edu) `chain` built from one of the supported `Architecture` configurations:
+
+    - NeuroTreeConfig
+    - TabMConfig
+
 ## Fields
 
 - `loss_type`: the loss function type used during training (e.g. `MSE`, `LogLoss`, `MLogLoss`, `GaussianMLE`)
