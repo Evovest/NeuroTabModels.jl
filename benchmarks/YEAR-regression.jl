@@ -52,6 +52,18 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     scaler=true,
     MLE_tree_split=false
 )
+# arch = NeuroTabModels.TabMConfig(;
+#     arch_type=:tabm,
+#     k=32,
+#     d_block=128,
+#     n_blocks=3,
+#     dropout=0.1,
+#     n_bins=16,
+#     use_embeddings=true,
+#     embedding_type=:linear, # periodic, piecewise, linear
+#     d_embedding=8,
+#     scaling_init=:normal,
+# )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
 #     stack_size=1,
@@ -66,7 +78,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-loss = :mse # :mse :gaussian_mle :tweedie
+loss = :gaussian_mle # :mse :gaussian_mle :tweedie
 
 learner = NeuroTabRegressor(
     arch;

@@ -3,17 +3,20 @@ module Infer
 using ..Data
 using ..Losses
 using ..Models
-using ..Learners
 
 using Lux
 using Lux: cpu_device, reactant_device
 using Reactant
 using Reactant: @compile
 using NNlib: sigmoid, softmax
+using Statistics: mean
 using DataFrames: AbstractDataFrame
 import MLUtils: DataLoader
 
-export infer
+export infer, reduce_pred
+
+reduce_pred(pred::AbstractMatrix) = pred
+reduce_pred(pred::AbstractArray{T,3}) where {T} = dropdims(mean(pred; dims=2); dims=2)
 
 function _get_device(device::Symbol)
     backend = device == :gpu ? "gpu" : "cpu"
@@ -21,34 +24,38 @@ function _get_device(device::Symbol)
     return reactant_device()
 end
 
-function _postprocess(::Type{<:Union{MSE,MAE}}, raw_preds)
-    return vcat([vec(p) for p in raw_preds]...)
+function _forward_reduce(chain, x, ps, st)
+    pred, _ = chain(x, ps, st)
+    return reduce_pred(pred)
 end
 
-function _postprocess(::Type{<:LogLoss}, raw_preds)
-    p = vcat([vec(p) for p in raw_preds]...)
-    return sigmoid.(p)
+# Assemble raw predictions into final structure (no transforms)
+_assemble(::Type{<:MLogLoss}, raw_preds) = reduce(hcat, raw_preds)
+_assemble(::Type{<:GaussianMLE}, raw_preds) = reduce(hcat, raw_preds)
+_assemble(::Type, raw_preds) = vcat([vec(p) for p in raw_preds]...)
+
+# Apply inverse link to convert from model scale to natural scale
+_inverse_link(::Type{<:LogLoss}, pred) = sigmoid.(pred)
+_inverse_link(::Type{<:Tweedie}, pred) = exp.(pred)
+_inverse_link(::Type{<:Union{MSE,MAE}}, pred) = pred
+
+function _inverse_link(::Type{<:MLogLoss}, pred)
+    return Matrix(softmax(pred; dims=1)')
 end
 
-function _postprocess(::Type{<:MLogLoss}, raw_preds)
-    p_full = reduce(hcat, raw_preds)
-    p_soft = softmax(p_full; dims=1)
-    return Matrix(p_soft')
+function _inverse_link(::Type{<:GaussianMLE}, pred)
+    p = Matrix(pred')
+    p[:, 2] .= exp.(p[:, 2])
+    return p
 end
 
-function _postprocess(::Type{<:GaussianMLE}, raw_preds)
-    p_full = reduce(hcat, raw_preds)
-    p_T = Matrix(p_full')
-    p_T[:, 2] .= exp.(p_T[:, 2])
-    return p_T
+function _postprocess(::Type{L}, raw_preds; raw::Bool=false) where {L}
+    assembled = _assemble(L, raw_preds)
+    raw && return assembled
+    return _inverse_link(L, assembled)
 end
 
-function _postprocess(::Type{<:Tweedie}, raw_preds)
-    p = vcat([vec(p) for p in raw_preds]...)
-    return exp.(p)
-end
-
-function infer(m::NeuroTabModel{L}, data; device=:cpu) where {L}
+function infer(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L}
     dev = _get_device(device)
     cdev = cpu_device()
     ps = dev(m.info[:ps])
@@ -58,32 +65,32 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu) where {L}
 
     b_first = first(data)
     x0 = b_first isa Tuple ? b_first[1] : b_first
-    model_compiled = @compile m.chain(dev(x0), ps, st)
+    compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
 
     for b in data
         x = b isa Tuple ? b[1] : b
         if size(x) == size(x0)
-            y_pred, _ = model_compiled(dev(x), ps, st)
+            pred = compiled(m.chain, dev(x), ps, st)
         else
-            y_pred, _ = Reactant.@jit Lux.apply(m.chain, dev(x), ps, st)
+            pred = Reactant.@jit _forward_reduce(m.chain, dev(x), ps, st)
         end
-        push!(raw_preds, cdev(y_pred))
+        push!(raw_preds, cdev(pred))
     end
 
-    return _postprocess(L, raw_preds)
+    return _postprocess(L, raw_preds; raw)
 end
 
-function infer(m::NeuroTabModel, data::AbstractDataFrame; device=:cpu)
+function infer(m::NeuroTabModel, data::AbstractDataFrame; device=:cpu, raw::Bool=false)
     dinfer = get_df_loader_infer(data; feature_names=m.info[:feature_names], batchsize=2048)
-    return infer(m, dinfer; device=device)
+    return infer(m, dinfer; device, raw)
 end
 
 function (m::NeuroTabModel)(data::AbstractDataFrame; device=:cpu)
-    return infer(m, data; device=device)
+    return infer(m, data; device)
 end
 
 function (m::NeuroTabModel)(x::AbstractMatrix; device=:cpu)
-    return infer(m, [(x,)]; device=device)
+    return infer(m, [(x,)]; device)
 end
 
 end

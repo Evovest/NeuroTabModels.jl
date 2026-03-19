@@ -10,4 +10,5 @@ using MLJBase
 using MLJTestInterface
 
 include("core.jl")
+include("embedding.jl")
 include("MLJ.jl")

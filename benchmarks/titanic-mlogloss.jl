@@ -58,7 +58,7 @@ m = NeuroTabModels.fit(
     deval,
     target_name,
     feature_names,
-    print_every_n=2,
+    print_every_n=10,
 )
 
 p_train = m(dtrain)
