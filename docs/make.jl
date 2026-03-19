@@ -6,8 +6,11 @@ using NeuroTabModels
 pages = [
     "Quick start" => "quick-start.md",
     "Design" => "design.md",
-    "Models" => "models.md",
-    "API" => "API.md",
+    "Models" => [
+        "Interface" => "models/models.md",
+        "NeuroTrees" => "models/neurotrees.md",
+        "TabM" => "models/tabM.md",
+    ],
     "Tutorials" => [
         "Regression - Boston" => "tutorials/regression-boston.md",
         "Logistic - Titanic" => "tutorials/logistic-titanic.md",

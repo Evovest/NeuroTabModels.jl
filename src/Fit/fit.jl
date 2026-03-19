@@ -83,7 +83,7 @@ function init(
 end
 
 """
-    function fit(
+    fit(
         config::LearnerTypes,
         dtrain;
         feature_names,
@@ -96,7 +96,9 @@ end
         early_stopping_rounds=9999,
         verbosity=1,
     )
+
 Training function of NeuroTabModels' internal API.
+
 # Arguments
 
 - `config::LearnerTypes`: The configuration object defining the model architecture, loss, and training hyperparameters.
@@ -116,7 +118,6 @@ Training function of NeuroTabModels' internal API.
 - `device=:cpu`: Symbol. Hardware device to use for training (`:cpu` or `:gpu`).
 - `gpuID=0`: Integer. Specifies which GPU to use if multiple are available.
 """
-
 function fit(
     config::LearnerTypes,
     dtrain;

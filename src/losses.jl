@@ -70,16 +70,16 @@ end
 
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _reshape_3d(data[2]))), st_, NamedTuple()
+    return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2]))), st_, NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
+    return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
     pred = pred .+ _reshape_3d(data[4])
-    return _reduce(_gaussian_mle_core(pred[1:1,:,:], pred[2:2,:,:], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
+    return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 
 get_loss_fn(::Type{<:MSE}) = mse_loss
@@ -89,12 +89,12 @@ get_loss_fn(::Type{<:MLogLoss}) = mlogloss
 get_loss_fn(::Type{<:GaussianMLE}) = gaussian_mle
 get_loss_fn(::Type{<:Tweedie}) = tweedie
 
-const _loss_type_dict = Dict(
+const loss_type_dict = Dict(
     :mse => MSE, :mae => MAE, :logloss => LogLoss,
     :mlogloss => MLogLoss, :gaussian_mle => GaussianMLE, :tweedie => Tweedie,
 )
 
-get_loss_type(loss::Symbol) = _loss_type_dict[loss]
+get_loss_type(loss::Symbol) = loss_type_dict[loss]
 get_loss_fn(s::Symbol) = get_loss_fn(get_loss_type(s))
 
 end
