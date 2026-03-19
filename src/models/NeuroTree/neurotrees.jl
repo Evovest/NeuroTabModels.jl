@@ -97,7 +97,7 @@ function _tree_kwargs(config::NeuroTreeConfig)
     )
 end
 
-function (config::NeuroTreeConfig)(; nfeats, outsize)
+function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
     kwargs = _tree_kwargs(config)
 
     if config.MLE_tree_split

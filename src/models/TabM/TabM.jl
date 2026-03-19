@@ -72,7 +72,7 @@ during training and at inference.
 - `dropout::Float64`: Dropout rate (default `0.1`).
 - `arch_type::Symbol`: `:tabm`, `:tabm_mini`, or `:tabm_packed` (default `:tabm`).
 - `scaling_init::Symbol`: Init for ensemble scaling — `:random_signs`, `:normal`, or `:ones`
-  (default `:random_signs`).
+  (default `:random_signs`). Automatically overridden to `:normal` when embeddings are used.
 - `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
 """
 struct TabMConfig <: Architecture
@@ -115,7 +115,7 @@ function TabMConfig(; kwargs...)
     )
 end
 
-function (config::TabMConfig)(; nfeats, outsize, d_features=nothing)
+function (config::TabMConfig)(; nfeats, outsize, d_features=nothing, scaling_init_override=nothing)
     @assert config.k > 0 "k must be > 0, got $(config.k)"
     @assert nfeats > 0 "nfeats must be > 0, got $nfeats"
     @assert outsize > 0 "outsize must be > 0, got $outsize"
@@ -128,14 +128,16 @@ function (config::TabMConfig)(; nfeats, outsize, d_features=nothing)
         d_features = ones(Int, nfeats)
     end
 
+    effective_scaling_init = isnothing(scaling_init_override) ? config.scaling_init : scaling_init_override
+
     bb = if config.arch_type == :tabm
         _batch_ensemble_backbone(; d_in, n_blocks=config.n_blocks,
             d_block, dropout=config.dropout, k,
-            scaling_init=config.scaling_init, d_features)
+            scaling_init=effective_scaling_init, d_features)
     elseif config.arch_type == :tabm_mini
         _mini_ensemble_backbone(; d_in, n_blocks=config.n_blocks,
             d_block, dropout=config.dropout, k,
-            scaling_init=config.scaling_init, d_features)
+            scaling_init=effective_scaling_init, d_features)
     elseif config.arch_type == :tabm_packed
         _packed_ensemble_backbone(; d_in, n_blocks=config.n_blocks,
             d_block, dropout=config.dropout, k)

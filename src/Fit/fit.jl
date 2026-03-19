@@ -29,35 +29,6 @@ function _get_device(config)
     return reactant_device()
 end
 
-function _build_chain(config, nfeats, outsize, df, feature_names)
-    embed_config = config.embedding_config
-
-    if isnothing(embed_config)
-        return config.arch(; nfeats, outsize)
-    end
-
-    # Build embedding chain
-    if embed_config.embedding_type == :piecewise
-        X_train = Matrix{Float32}(df[:, feature_names])
-    else
-        X_train = nothing
-    end
-    embed_chain = embed_config(; nfeats, X_train)
-
-    # Compute backbone input size and per-feature chunk sizes
-    d_in = nfeats * embed_config.d_embedding
-    d_features = fill(embed_config.d_embedding, nfeats)
-
-    # Build backbone
-    if config.arch isa TabMConfig
-        arch_chain = config.arch(; nfeats=d_in, outsize, d_features)
-    else
-        arch_chain = config.arch(; nfeats=d_in, outsize)
-    end
-
-    return Chain(embed_chain, arch_chain)
-end
-
 function init(
     config::LearnerTypes,
     df::AbstractDataFrame;
@@ -95,7 +66,22 @@ function init(
         :device => config.device
     )
 
-    chain = _build_chain(config, nfeats, outsize, df, feature_names)
+    # Build chain: optional embeddings + architecture backbone
+    embed_config = config.embedding_config
+    if isnothing(embed_config)
+        chain = config.arch(; nfeats, outsize)
+    else
+        if embed_config.embedding_type == :piecewise
+            X_train = Matrix{Float32}(df[:, feature_names])
+        else
+            X_train = nothing
+        end
+        embed_chain = embed_config(; nfeats, X_train)
+        d_in = nfeats * embed_config.d_embedding
+        d_features = fill(embed_config.d_embedding, nfeats)
+        chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
+    end
+
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
