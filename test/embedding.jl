@@ -70,7 +70,7 @@ end
 
         arch = NeuroTabModels.TabMConfig(; k=2, n_blocks=2, d_block=16, dropout=0.0)
         learner = NeuroTabClassifier(arch;
-            nrounds=1000, batchsize=32, early_stopping_rounds=50, lr=1e-2,
+            nrounds=500, batchsize=32, early_stopping_rounds=100, lr=1e-2,
             embedding_config=embed_kw)
 
         m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names)
