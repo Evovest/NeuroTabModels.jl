@@ -71,8 +71,10 @@ during training and at inference.
 - `d_block::Int`: Hidden dimension per block (default `512`).
 - `dropout::Float64`: Dropout rate (default `0.1`).
 - `arch_type::Symbol`: `:tabm`, `:tabm_mini`, or `:tabm_packed` (default `:tabm`).
-- `scaling_init::Symbol`: Init for ensemble scaling — `:random_signs`, `:normal`, or `:ones`
-  (default `:random_signs`). Automatically overridden to `:normal` when embeddings are used.
+- `scaling_init::Union{Nothing,Symbol}`: Init for ensemble scaling — `:random_signs`, `:normal`,
+  `:ones`, or `nothing` for auto-detection (default `nothing`).
+  When `nothing`, defaults to `:random_signs` without embeddings and `:normal` with embeddings.
+  Explicit values always take priority.
 - `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
 """
 struct TabMConfig <: Architecture
@@ -81,7 +83,7 @@ struct TabMConfig <: Architecture
     d_block::Int
     dropout::Float64
     arch_type::Symbol
-    scaling_init::Symbol
+    scaling_init::Union{Nothing,Symbol}
     MLE_tree_split::Bool
 end
 
@@ -92,7 +94,7 @@ function TabMConfig(; kwargs...)
         :d_block => 512,
         :dropout => 0.1,
         :arch_type => :tabm,
-        :scaling_init => :random_signs,
+        :scaling_init => nothing,
         :MLE_tree_split => false,
     )
 
@@ -108,9 +110,12 @@ function TabMConfig(; kwargs...)
         args[arg] = kwargs[arg]
     end
 
+    si = args[:scaling_init]
+    scaling_init = isnothing(si) ? nothing : Symbol(si)
+
     return TabMConfig(
         args[:k], args[:n_blocks], args[:d_block], args[:dropout],
-        Symbol(args[:arch_type]), Symbol(args[:scaling_init]),
+        Symbol(args[:arch_type]), scaling_init,
         args[:MLE_tree_split],
     )
 end
@@ -128,16 +133,25 @@ function (config::TabMConfig)(; nfeats, outsize, d_features=nothing, scaling_ini
         d_features = ones(Int, nfeats)
     end
 
-    effective_scaling_init = isnothing(scaling_init_override) ? config.scaling_init : scaling_init_override
+    #   1. User explicitly set it - use it
+    #   2. User left it as nothing, caller suggests override - use override
+    #   3. Neither - default to :random_signs
+    scaling_init = if !isnothing(config.scaling_init)
+        config.scaling_init
+    elseif !isnothing(scaling_init_override)
+        scaling_init_override
+    else
+        :random_signs
+    end
 
     bb = if config.arch_type == :tabm
         _batch_ensemble_backbone(; d_in, n_blocks=config.n_blocks,
             d_block, dropout=config.dropout, k,
-            scaling_init=effective_scaling_init, d_features)
+            scaling_init, d_features)
     elseif config.arch_type == :tabm_mini
         _mini_ensemble_backbone(; d_in, n_blocks=config.n_blocks,
             d_block, dropout=config.dropout, k,
-            scaling_init=effective_scaling_init, d_features)
+            scaling_init, d_features)
     elseif config.arch_type == :tabm_packed
         _packed_ensemble_backbone(; d_in, n_blocks=config.n_blocks,
             d_block, dropout=config.dropout, k)

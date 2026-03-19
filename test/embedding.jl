@@ -68,7 +68,7 @@ end
             embed_kw[:n_frequencies] = 8
         end
 
-        arch = NeuroTabModels.TabMConfig(; k=2, n_blocks=2, d_block=16, dropout=0.0)
+        arch = NeuroTabModels.TabMConfig(; k=2, n_blocks=2, d_block=16, dropout=0.0, scaling_init=:random_signs)
         learner = NeuroTabClassifier(arch;
             nrounds=500, batchsize=32, early_stopping_rounds=100, lr=1e-2,
             embedding_config=embed_kw)
