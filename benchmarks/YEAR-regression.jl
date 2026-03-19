@@ -52,6 +52,18 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     scaler=true,
     MLE_tree_split=false
 )
+# arch = NeuroTabModels.TabMConfig(;
+#     arch_type=:tabm,
+#     k=32,
+#     d_block=128,
+#     n_blocks=3,
+#     dropout=0.1,
+#     n_bins=16,
+#     use_embeddings=true,
+#     embedding_type=:linear, # periodic, piecewise, linear
+#     d_embedding=8,
+#     scaling_init=:normal,
+# )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
 #     stack_size=1,
@@ -73,7 +85,7 @@ learner = NeuroTabRegressor(
     loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=1e-3,
+    lr=3e-4,
     batchsize=1024,
     device
 )
@@ -87,12 +99,12 @@ m = NeuroTabModels.fit(
     print_every_n=5,
 )
 
-p_eval = m(deval; device);
+p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]
 mse_eval = mean((p_eval .- deval.y_norm) .^ 2)
 @info "MSE - deval" mse_eval
 
-p_test = m(dtest; device);
+p_test = m(dtest; device=:cpu);
 p_test = p_test[:, 1]
 mse_test = mean((p_test .- dtest.y_norm) .^ 2) * std(df_tot.y_raw)^2
 @info "MSE - dtest" mse_test
