@@ -13,18 +13,18 @@ import ..Models: Architecture, _broadcast_relu
 include("layers.jl")
 
 function _batch_ensemble_backbone(;
-        d_in::Int, n_blocks::Int, d_block::Int, dropout::Float64,
-        k::Int, scaling_init::Symbol, d_features::Vector{Int})
+    d_in::Int, n_blocks::Int, d_block::Int, dropout::Float64,
+    k::Int, scaling_init::Symbol, d_features::Vector{Int})
     layers = Any[]
     for i in 1:n_blocks
         d_in_i = (i == 1) ? d_in : d_block
         if i == 1
             push!(layers, LinearBatchEnsemble(d_in_i, d_block;
-                k, scaling_init = (scaling_init, :ones),
-                first_scaling_init_chunks = d_features))
+                k, scaling_init=(scaling_init, :ones),
+                first_scaling_init_chunks=d_features))
         else
             push!(layers, LinearBatchEnsemble(d_in_i, d_block;
-                k, scaling_init = :ones))
+                k, scaling_init=:ones))
         end
         push!(layers, WrappedFunction(_broadcast_relu))
         dropout > 0 && push!(layers, Dropout(dropout))
@@ -33,10 +33,10 @@ function _batch_ensemble_backbone(;
 end
 
 function _mini_ensemble_backbone(;
-        d_in::Int, n_blocks::Int, d_block::Int, dropout::Float64,
-        k::Int, scaling_init::Symbol, d_features::Vector{Int})
+    d_in::Int, n_blocks::Int, d_block::Int, dropout::Float64,
+    k::Int, scaling_init::Symbol, d_features::Vector{Int})
     layers = Any[ScaleEnsemble(k, d_in;
-        init = scaling_init, init_chunks = d_features, bias = false)]
+        init=scaling_init, init_chunks=d_features, bias=false)]
     for i in 1:n_blocks
         d_in_i = (i == 1) ? d_in : d_block
         push!(layers, Dense(d_in_i => d_block, relu))
@@ -46,7 +46,7 @@ function _mini_ensemble_backbone(;
 end
 
 function _packed_ensemble_backbone(;
-        d_in::Int, n_blocks::Int, d_block::Int, dropout::Float64, k::Int)
+    d_in::Int, n_blocks::Int, d_block::Int, dropout::Float64, k::Int)
     layers = Any[]
     for i in 1:n_blocks
         d_in_i = (i == 1) ? d_in : d_block

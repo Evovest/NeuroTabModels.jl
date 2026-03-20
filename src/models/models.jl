@@ -14,9 +14,17 @@ _broadcast_relu(x) = NNlib.relu.(x)
 
 """
     NeuroTabModel
+
+The object containing the model and associated metadata.
+
+## Fields
+
+- `loss_type`: the loss function type used during training (e.g. `MSE`, `LogLoss`, `MLogLoss`, `GaussianMLE`)
+- `chain`: the underlying `Lux.Chain` neural network
+- `info`: a `Dict{Symbol,Any}` storing metadata such as `:feature_names`, `:target_levels`, `:device`, `logger`, as well as fitted parameters (`ps`) and state (`st`).
 """
 struct NeuroTabModel{L<:LossType,C}
-    _loss_type::Type{L}
+    loss_type::Type{L}
     chain::C
     info::Dict{Symbol,Any}
 end
