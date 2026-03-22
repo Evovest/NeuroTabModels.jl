@@ -7,15 +7,16 @@ using ..Learners
 using ..Models
 using ..Losses
 using ..Metrics
-using ..Infer
+using ..Infer: reduce_pred
 
 import Random: Xoshiro
 import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
+import ADTypes: AutoEnzyme, AutoZygote, AutoMooncake
 
 using Lux
 using Reactant
-using Lux: cpu_device, reactant_device
+using Lux: cpu_device, gpu_device, reactant_device
 
 using DataFrames
 using CategoricalArrays
@@ -24,9 +25,26 @@ include("callback.jl")
 using .CallBacks
 
 function _get_device(config)
-    backend = config.device == :gpu ? "gpu" : "cpu"
-    Reactant.set_default_backend(backend)
-    return reactant_device()
+    if config.ad_backend == :enzyme
+        backend = config.device == :gpu ? "gpu" : "cpu"
+        Reactant.set_default_backend(backend)
+        return reactant_device()
+    else
+        return config.device == :gpu ? gpu_device() : cpu_device()
+    end
+end
+
+function _get_ad(config)
+    ad = config.ad_backend
+    if ad == :enzyme
+        return AutoEnzyme()
+    elseif ad == :zygote
+        return AutoZygote()
+    elseif ad == :mooncake
+        return AutoMooncake()
+    else
+        error("Unsupported AD backend: $ad. Must be :enzyme, :zygote, or :mooncake")
+    end
 end
 
 function init(
@@ -66,20 +84,31 @@ function init(
         :device => config.device
     )
 
-    if hasproperty(config.arch, :use_embeddings) && config.arch.use_embeddings && config.arch.embedding_type == :piecewise
-        X_train = Matrix{Float32}(df[:, feature_names])
-        chain = config.arch(; nfeats, outsize, X_train)
-    else
+    # Build chain: optional embeddings + architecture backbone
+    embed_config = config.embedding_config
+    if isnothing(embed_config)
         chain = config.arch(; nfeats, outsize)
+    else
+        if embed_config.embedding_type == :piecewise
+            X_train = Matrix{Float32}(df[:, feature_names])
+        else
+            X_train = nothing
+        end
+        embed_chain = embed_config(; nfeats, X_train)
+        d_in = nfeats * embed_config.d_embedding
+        d_features = fill(embed_config.d_embedding, nfeats)
+        chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
     end
+
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
     ps, st = Lux.setup(rng, m.chain) |> dev
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
+    ad = _get_ad(config)
 
-    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts)
+    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts, :ad => ad)
 end
 
 """
@@ -111,7 +140,7 @@ Training function of NeuroTabModels' internal API.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
 - `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
 - `deval=nothing`: Optional. Evaluation data (`<:AbstractDataFrame`) for tracking metrics and early stopping.
-- `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`). 
+- `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`).
 - `print_every_n=9999`: Integer. Logs training progress to the console every `N` epochs.
 - `early_stopping_rounds=9999`: Integer. Stops training if the evaluation metric does not improve for this many rounds.
 - `verbosity=1`: Integer. Controls the logging level (`0` for silent, `>0` for info).
@@ -173,9 +202,9 @@ function _sync_params_to_model!(m, cache)
 end
 
 function fit_iter!(m, cache)
-    ts, lux_loss = cache[:train_state], cache[:lux_loss]
+    ts, lux_loss, ad = cache[:train_state], cache[:lux_loss], cache[:ad]
     for d in cache[:data]
-        _, loss, _, ts = Training.single_train_step!(AutoEnzyme(), lux_loss, d, ts)
+        _, loss, _, ts = Training.single_train_step!(ad, lux_loss, d, ts)
     end
     cache[:train_state] = ts
     m.info[:nrounds] += 1

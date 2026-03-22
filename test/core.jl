@@ -198,3 +198,53 @@ end
     @test mean(peval .== levelcode.(deval.class)) > 0.95
 
 end
+
+@testset "AD Backend - Zygote" begin
+
+    Random.seed!(123)
+    X, y = rand(Float32, 1000, 10), randn(Float32, 1000)
+    df = DataFrame(X, :auto)
+    df[!, :y] = y
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name])
+
+    dtrain = df[1:800, :]
+    deval = df[801:end, :]
+
+    arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=2, d_block=32, dropout=0.0)
+    learner = NeuroTabRegressor(arch;
+        loss=:mse, nrounds=20, early_stopping_rounds=2, lr=1e-2,
+        ad_backend=:zygote)
+
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, deval)
+
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    @test !any(isnan, p)
+
+end
+
+@testset "AD Backend - Mooncake" begin
+
+    Random.seed!(123)
+    X, y = rand(Float32, 1000, 10), randn(Float32, 1000)
+    df = DataFrame(X, :auto)
+    df[!, :y] = y
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name])
+
+    dtrain = df[1:800, :]
+    deval = df[801:end, :]
+
+    arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=2, d_block=32, dropout=0.0)
+    learner = NeuroTabRegressor(arch;
+        loss=:mse, nrounds=20, early_stopping_rounds=2, lr=1e-2,
+        ad_backend=:mooncake)
+
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, deval)
+
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    @test !any(isnan, p)
+
+end
