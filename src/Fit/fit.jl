@@ -12,10 +12,11 @@ using ..Infer: reduce_pred
 import Random: Xoshiro
 import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
+import ADTypes: AutoEnzyme, AutoZygote, AutoMooncake
 
 using Lux
 using Reactant
-using Lux: cpu_device, reactant_device
+using Lux: cpu_device, gpu_device, reactant_device
 
 using DataFrames
 using CategoricalArrays
@@ -24,9 +25,26 @@ include("callback.jl")
 using .CallBacks
 
 function _get_device(config)
-    backend = config.device == :gpu ? "gpu" : "cpu"
-    Reactant.set_default_backend(backend)
-    return reactant_device()
+    if config.ad_backend == :enzyme
+        backend = config.device == :gpu ? "gpu" : "cpu"
+        Reactant.set_default_backend(backend)
+        return reactant_device()
+    else
+        return config.device == :gpu ? gpu_device() : cpu_device()
+    end
+end
+
+function _get_ad(config)
+    ad = config.ad_backend
+    if ad == :enzyme
+        return AutoEnzyme()
+    elseif ad == :zygote
+        return AutoZygote()
+    elseif ad == :mooncake
+        return AutoMooncake()
+    else
+        error("Unsupported AD backend: $ad. Must be :enzyme, :zygote, or :mooncake")
+    end
 end
 
 function init(
@@ -88,8 +106,9 @@ function init(
     ps, st = Lux.setup(rng, m.chain) |> dev
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
+    ad = _get_ad(config)
 
-    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts)
+    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts, :ad => ad)
 end
 
 """
@@ -183,9 +202,9 @@ function _sync_params_to_model!(m, cache)
 end
 
 function fit_iter!(m, cache)
-    ts, lux_loss = cache[:train_state], cache[:lux_loss]
+    ts, lux_loss, ad = cache[:train_state], cache[:lux_loss], cache[:ad]
     for d in cache[:data]
-        _, loss, _, ts = Training.single_train_step!(AutoEnzyme(), lux_loss, d, ts)
+        _, loss, _, ts = Training.single_train_step!(ad, lux_loss, d, ts)
     end
     cache[:train_state] = ts
     m.info[:nrounds] += 1

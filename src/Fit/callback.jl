@@ -8,7 +8,7 @@ using ...Infer: reduce_pred
 using ..Data: get_df_loader_train
 using ..Metrics
 
-using Lux: Training, reactant_device, testmode
+using Lux: Training, reactant_device, gpu_device, cpu_device, testmode
 using Reactant: @compile
 
 export CallBack, init_logger, update_logger!, agg_logger
@@ -33,37 +33,52 @@ function CallBack(
     weight_name=nothing,
     offset_name=nothing
 )
-    dev = reactant_device()
+    if config.ad_backend == :enzyme
+        dev = reactant_device()
+    else
+        dev = config.device == :gpu ? gpu_device() : cpu_device()
+    end
+
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
     deval = get_df_loader_train(deval; feature_names, target_name, weight_name, offset_name, batchsize, shuffle=false) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
     d0 = first(deval)
-    eval_compiled = _compile_eval_step(ts.model, feval, d0, ps, st)
+    eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st;
+        use_reactant=(config.ad_backend == :enzyme))
 
     return CallBack(deval, eval_compiled)
 end
 
-function _compile_eval_step(chain, feval, d0, ps, st)
-    if length(d0) == 2
-        function _step2(x, y, ps, st)
-            m = x -> reduce_pred(first(chain(x, ps, st)))
-            return feval(m, x, y; agg=sum), eltype(y)(last(size(y)))
-        end
-        return @compile _step2(d0[1], d0[2], ps, st)
-    elseif length(d0) == 3
-        function _step3(x, y, w, ps, st)
-            m = x -> reduce_pred(first(chain(x, ps, st)))
-            return feval(m, x, y, w; agg=sum), sum(w)
-        end
-        return @compile _step3(d0[1], d0[2], d0[3], ps, st)
+function _make_eval_fns(chain, feval)
+    function _step2(x, y, ps, st)
+        m = x -> reduce_pred(first(chain(x, ps, st)))
+        return feval(m, x, y; agg=sum), eltype(y)(last(size(y)))
+    end
+    function _step3(x, y, w, ps, st)
+        m = x -> reduce_pred(first(chain(x, ps, st)))
+        return feval(m, x, y, w; agg=sum), sum(w)
+    end
+    function _step4(x, y, w, offset, ps, st)
+        m = x -> reduce_pred(first(chain(x, ps, st)))
+        return feval(m, x, y, w, offset; agg=sum), sum(w)
+    end
+    return _step2, _step3, _step4
+end
+
+function _build_eval_step(chain, feval, d0, ps, st; use_reactant::Bool=true)
+    _step2, _step3, _step4 = _make_eval_fns(chain, feval)
+    n = length(d0)
+    step_fn = n == 2 ? _step2 : n == 3 ? _step3 : _step4
+
+    if use_reactant
+        args = n == 2 ? (d0[1], d0[2], ps, st) :
+               n == 3 ? (d0[1], d0[2], d0[3], ps, st) :
+                        (d0[1], d0[2], d0[3], d0[4], ps, st)
+        return @compile step_fn(args...)
     else
-        function _step4(x, y, w, offset, ps, st)
-            m = x -> reduce_pred(first(chain(x, ps, st)))
-            return feval(m, x, y, w, offset; agg=sum), sum(w)
-        end
-        return @compile _step4(d0[1], d0[2], d0[3], d0[4], ps, st)
+        return step_fn
     end
 end
 

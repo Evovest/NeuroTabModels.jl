@@ -21,6 +21,7 @@ mutable struct NeuroTabRegressor <: MMI.Deterministic
   seed::Int
   device::Symbol
   gpuID::Int
+  ad_backend::Symbol
 end
 
 """
@@ -147,6 +148,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :device => :cpu,
     :gpuID => 0,
     :embedding_config => nothing,
+    :ad_backend => :enzyme,
   )
 
   args_ignored = setdiff(keys(kwargs), keys(args))
@@ -197,7 +199,8 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     args[:batchsize],
     args[:seed],
     device,
-    args[:gpuID]
+    args[:gpuID],
+    Symbol(args[:ad_backend])
   )
 
   return config
@@ -223,6 +226,7 @@ mutable struct NeuroTabClassifier <: MMI.Probabilistic
   seed::Int
   device::Symbol
   gpuID::Int
+  ad_backend::Symbol
 end
 
 """
@@ -341,6 +345,7 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     :device => :cpu,
     :gpuID => 0,
     :embedding_config => nothing,
+    :ad_backend => :enzyme,
   )
 
   args_ignored = setdiff(keys(kwargs), keys(args))
@@ -378,7 +383,8 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     args[:batchsize],
     args[:seed],
     device,
-    args[:gpuID]
+    args[:gpuID],
+    Symbol(args[:ad_backend])
   )
 
   return config
