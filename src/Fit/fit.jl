@@ -79,6 +79,7 @@ function init(
         embed_chain = embed_config(; nfeats, X_train)
         d_in = nfeats * embed_config.d_embedding
         d_features = fill(embed_config.d_embedding, nfeats)
+        @info "embed init route"
         chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
     end
 

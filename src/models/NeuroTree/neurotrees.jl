@@ -37,6 +37,7 @@ struct NeuroTreeConfig <: Architecture
     actA::Symbol
     depth::Int
     ntrees::Int
+    k::Int
     proj_size::Int
     hidden_size::Int
     stack_size::Int
@@ -51,6 +52,7 @@ function NeuroTreeConfig(; kwargs...)
         :actA => :identity,
         :depth => 4,
         :ntrees => 32,
+        :k => 1,
         :proj_size => 1,
         :hidden_size => 1,
         :stack_size => 1,
@@ -77,6 +79,7 @@ function NeuroTreeConfig(; kwargs...)
         Symbol(args[:actA]),
         args[:depth],
         args[:ntrees],
+        args[:k],
         args[:proj_size],
         args[:hidden_size],
         args[:stack_size],
@@ -91,6 +94,7 @@ function _tree_kwargs(config::NeuroTreeConfig)
         config.tree_type,
         config.depth,
         trees=config.ntrees,
+        k=config.k,
         actA=act_dict[config.actA],
         config.scaler,
         config.init_scale,

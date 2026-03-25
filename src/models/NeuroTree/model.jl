@@ -8,18 +8,19 @@ struct NeuroTree{F} <: AbstractLuxLayer
     trees::Int
     nodes::Int
     leaves::Int
+    k::Int
     init_scale::Float32
 end
 
-function NeuroTree(; feats, outs, tree_type=:binary, actA=identity, scaler=true, depth, trees, init_scale=0.1)
+function NeuroTree(; feats, outs, tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
     nodes = 2^depth - 1
     leaves = 2^depth
-    return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, Float32(init_scale))
+    return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
 end
-function NeuroTree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, init_scale=0.1)
+function NeuroTree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
     nodes = 2^depth - 1
     leaves = 2^depth
-    return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, Float32(init_scale))
+    return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
 end
 
 # Define the Lux interface
@@ -49,6 +50,7 @@ function (l::NeuroTree)(x, ps, st)
     lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TB] => [L,TB]
     lw = reshape(lw, :, size(x, 2)) # [L,TB] => [LT,B]
     y = ps.p * lw ./ l.trees # [P,LT] * [LT,B] => [P,B]
+    y = reshape(y, 1, size(y, 1), size(y, 2))
     return y, st
 end
 
