@@ -4,7 +4,7 @@ using DataFrames
 using Statistics: mean, median
 
 using ..Learners: LearnerTypes
-using ..Infer: reduce_pred
+using ...Infer: reduce_pred
 using ..Data: get_df_loader_train
 using ..Metrics
 

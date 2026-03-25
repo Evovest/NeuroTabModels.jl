@@ -7,7 +7,7 @@ using ..Learners
 using ..Models
 using ..Losses
 using ..Metrics
-using ..Infer
+using ..Infer: reduce_pred
 
 import Random: Xoshiro
 import MLJModelInterface: fit
@@ -66,12 +66,22 @@ function init(
         :device => config.device
     )
 
-    if hasproperty(config.arch, :use_embeddings) && config.arch.use_embeddings && config.arch.embedding_type == :piecewise
-        X_train = Matrix{Float32}(df[:, feature_names])
-        chain = config.arch(; nfeats, outsize, X_train)
-    else
+    # Build chain: optional embeddings + architecture backbone
+    embed_config = config.embedding_config
+    if isnothing(embed_config)
         chain = config.arch(; nfeats, outsize)
+    else
+        if embed_config.embedding_type == :piecewise
+            X_train = Matrix{Float32}(df[:, feature_names])
+        else
+            X_train = nothing
+        end
+        embed_chain = embed_config(; nfeats, X_train)
+        d_in = nfeats * embed_config.d_embedding
+        d_features = fill(embed_config.d_embedding, nfeats)
+        chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
     end
+
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
@@ -111,7 +121,7 @@ Training function of NeuroTabModels' internal API.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
 - `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
 - `deval=nothing`: Optional. Evaluation data (`<:AbstractDataFrame`) for tracking metrics and early stopping.
-- `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`). 
+- `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`).
 - `print_every_n=9999`: Integer. Logs training progress to the console every `N` epochs.
 - `early_stopping_rounds=9999`: Integer. Stops training if the evaluation metric does not improve for this many rounds.
 - `verbosity=1`: Integer. Controls the logging level (`0` for silent, `>0` for info).
