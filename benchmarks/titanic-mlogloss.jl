@@ -5,7 +5,6 @@ using Statistics: mean
 using StatsBase: median
 using CategoricalArrays
 using Random
-using CUDA
 using CategoricalArrays
 
 Random.seed!(123)
@@ -45,11 +44,25 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     hidden_size=1,
 )
 
+# arch = NeuroTabModels.TabMConfig(;
+#     arch_type=:tabm_mini,
+#     k=16,
+#     d_block=32,
+#     n_blocks=1,
+#     dropout=0.1,
+#     use_embeddings=true,
+#     embedding_type=:piecewise,
+#     n_bins=32,
+#     d_embedding=32,
+#     scaling_init=:normal,
+# )
+
 learner = NeuroTabClassifier(
     arch;
     nrounds=100,
     early_stopping_rounds=2,
     lr=1e-2,
+    device=:cpu,
 )
 
 m = NeuroTabModels.fit(

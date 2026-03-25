@@ -5,12 +5,14 @@ import MLJModelInterface: fit, update, predict, schema
 import Random
 
 using ..Models
+using ..Models: EmbeddingConfig
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
 
 mutable struct NeuroTabRegressor <: MMI.Deterministic
   loss::Symbol
   metric::Symbol
   arch::Architecture
+  embedding_config::Union{Nothing,EmbeddingConfig}
   nrounds::Int
   early_stopping_rounds::Int
   lr::Float32
@@ -36,12 +38,14 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
   - `:mlogloss`
   - `:gaussian_mle`
 - `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.   
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
 - `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
-- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu` 
+- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu`
+- `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
+  E.g. `embedding_config=Dict(:embedding_type => :periodic, :d_embedding => 24)`.
 
 # Internal API
 
@@ -141,7 +145,8 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :batchsize => 2048,
     :seed => 123,
     :device => :cpu,
-    :gpuID => 0
+    :gpuID => 0,
+    :embedding_config => nothing,
   )
 
   args_ignored = setdiff(keys(kwargs), keys(args))
@@ -174,10 +179,17 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
 
   device = Symbol(args[:device])
 
+  # Build EmbeddingConfig from Dict if needed
+  embed = args[:embedding_config]
+  if embed isa AbstractDict
+    embed = EmbeddingConfig(; embed...)
+  end
+
   config = NeuroTabRegressor(
     loss,
     metric,
     arch,
+    embed,
     args[:nrounds],
     args[:early_stopping_rounds],
     Float32(args[:lr]),
@@ -202,6 +214,7 @@ mutable struct NeuroTabClassifier <: MMI.Probabilistic
   loss::Symbol
   metric::Symbol
   arch::Architecture
+  embedding_config::Union{Nothing,EmbeddingConfig}
   nrounds::Int
   early_stopping_rounds::Int
   lr::Float32
@@ -221,12 +234,13 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 # Hyper-parameters
 
 - `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.   
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
 - `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
-- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu` 
+- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu`
+- `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
 
 # Internal API
 
@@ -293,7 +307,7 @@ The fields of `report(mach)` are:
 ## Internal API
 
 ```julia
-using NeuroTabModels, DataFrames, CategoricalArrays, Random 
+using NeuroTabModels, DataFrames, CategoricalArrays, Random
 config = NeuroTabClassifier(depth=5, nrounds=10)
 nobs, nfeats = 1_000, 5
 dtrain = DataFrame(randn(nobs, nfeats), :auto)
@@ -325,7 +339,8 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     :batchsize => 2048,
     :seed => 123,
     :device => :cpu,
-    :gpuID => 0
+    :gpuID => 0,
+    :embedding_config => nothing,
   )
 
   args_ignored = setdiff(keys(kwargs), keys(args))
@@ -345,10 +360,17 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
 
   device = Symbol(args[:device])
 
+  # Build EmbeddingConfig from Dict if needed
+  embed = args[:embedding_config]
+  if embed isa AbstractDict
+    embed = EmbeddingConfig(; embed...)
+  end
+
   config = NeuroTabClassifier(
     :mlogloss,
     :mlogloss,
     arch,
+    embed,
     args[:nrounds],
     args[:early_stopping_rounds],
     Float32(args[:lr]),
