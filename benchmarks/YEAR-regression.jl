@@ -2,6 +2,7 @@ using Random
 using CSV
 using DataFrames
 using Statistics: mean, std
+using StatsBase: tiedrank
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
 @service S3
@@ -30,11 +31,10 @@ feature_names = setdiff(names(df_tot), ["y_raw", "y_norm", "w"])
 df_tot.w .= 1.0
 target_name = "y_norm"
 
-# function percent_rank(x::AbstractVector{T}) where {T}
-#     return tiedrank(x) / (length(x) + 1)
-# end
-
-# transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
+function percent_rank(x::AbstractVector{T}) where {T}
+    return tiedrank(x) / (length(x) + 1)
+end
+transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
 
 dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
@@ -52,18 +52,14 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     scaler=true,
     MLE_tree_split=false
 )
-# arch = NeuroTabModels.TabMConfig(;
-#     arch_type=:tabm,
-#     k=32,
-#     d_block=128,
-#     n_blocks=3,
-#     dropout=0.1,
-#     n_bins=16,
-#     use_embeddings=true,
-#     embedding_type=:linear, # periodic, piecewise, linear
-#     d_embedding=8,
-#     scaling_init=:normal,
-# )
+arch = NeuroTabModels.TabMConfig(;
+    arch_type=:tabm,
+    k=16,
+    d_block=64,
+    n_blocks=3,
+    dropout=0.1,
+    # scaling_init=:normal,
+)
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
 #     stack_size=1,
@@ -78,10 +74,23 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-loss = :gaussian_mle # :mse :gaussian_mle :tweedie
+loss = :mse # :mse :gaussian_mle :tweedie
+
+embedding_config = Dict(
+    :embedding_type => :piecewise,
+    :d_embedding => 16,
+    :activation => nothing,
+    :n_bins => 16,
+    :n_frequencies => 32,
+)
+embedding_config = Dict(
+    :embedding_type => :batchnorm,
+    :d_embedding => 1,
+)
 
 learner = NeuroTabRegressor(
     arch;
+    embedding_config,
     loss,
     nrounds=200,
     early_stopping_rounds=2,
@@ -97,7 +106,7 @@ m = NeuroTabModels.fit(
     target_name,
     feature_names,
     print_every_n=5,
-)
+);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]

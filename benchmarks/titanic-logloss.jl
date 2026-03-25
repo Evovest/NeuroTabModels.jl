@@ -45,24 +45,29 @@ feature_names = setdiff(names(df), ["Survived"])
 # )
 arch = NeuroTabModels.TabMConfig(;
     arch_type=:tabm,
-    k=32,
-    d_block=64,
+    k=8,
+    d_block=32,
     n_blocks=3,
     dropout=0.1,
-    bins=nothing,
-    use_embeddings=false,
-    embedding_type=:periodic,
-    d_embedding=16,
-    scaling_init=:random_signs,
+    scaling_init=:normal,
+)
+
+embedding_config = Dict(
+    :embedding_type => :linear,
+    :d_embedding => 32,
+    :activation => nothing,
+    :n_bins => 16,
+    :n_frequencies => 32,
 )
 
 learner = NeuroTabRegressor(
     arch;
+    embedding_config,
     loss=:logloss,
     nrounds=100,
     early_stopping_rounds=2,
     lr=1e-2,
-    device=:cpu
+    device=:gpu
 )
 
 @time m = NeuroTabModels.fit(

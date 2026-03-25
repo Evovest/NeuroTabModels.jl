@@ -24,7 +24,7 @@ struct EmbeddingConfig{F}
     embedding_type::Symbol
     d_embedding::Int
     activation::F
-    n_bins::Union{Int, Vector{Int}}
+    n_bins::Union{Int,Vector{Int}}
     n_frequencies::Int
     frequency_init_scale::Float32
 end
@@ -33,7 +33,7 @@ function EmbeddingConfig(;
     embedding_type::Symbol=:periodic,
     d_embedding::Int=24,
     activation=nothing,
-    n_bins::Union{Int, Vector{Int}}=48,
+    n_bins::Union{Int,Vector{Int}}=48,
     n_frequencies::Int=48,
     frequency_init_scale::Float32=0.01f0,
 )
@@ -61,6 +61,8 @@ function (config::EmbeddingConfig)(; nfeats::Int, X_train=nothing)
         bins = compute_bins(X_train; n_bins=config.n_bins)
         @assert length(bins) == nfeats "Expected $nfeats bin vectors, got $(length(bins))"
         PiecewiseLinearEmbeddings(bins, config.d_embedding; activation=config.activation)
+    elseif config.embedding_type == :batchnorm
+        BatchNorm(nfeats)
     else
         error("Unsupported embedding type: $(config.embedding_type)")
     end
