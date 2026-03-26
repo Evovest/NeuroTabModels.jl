@@ -12,8 +12,8 @@ Produces a `(d_embedding, n_features, batch)` tensor.
 # Arguments
 - `n_features::Int`: Number of input features.
 """
-struct BatchNormEmbeddings{C} <: Lux.AbstractLuxWrapperLayer{:bn}
-    bn::C
+struct BatchNormEmbeddings{L} <: Lux.AbstractLuxWrapperLayer{:layer}
+    layer::L
 end
 
 function BatchNormEmbeddings(n_features::Int)
@@ -21,9 +21,6 @@ function BatchNormEmbeddings(n_features::Int)
 end
 
 function (l::BatchNormEmbeddings)(x::AbstractMatrix, ps, st)
-    # x_bn, st = l.bn(x, ps, st)
-    # x_r = reshape(x_bn, 1, size(x, 1), size(x, 2))
-    # x_r = reshape(x, size(x, 1), size(x, 2))
-    x_r = reshape(x, 1, size(x, 1), size(x, 2))
-    return x_r, st
+    x_bn, st = l.layer(x, ps, st)
+    return x_bn, st
 end

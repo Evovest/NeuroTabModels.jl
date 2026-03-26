@@ -62,7 +62,8 @@ function (config::EmbeddingConfig)(; nfeats::Int, X_train=nothing)
         @assert length(bins) == nfeats "Expected $nfeats bin vectors, got $(length(bins))"
         PiecewiseLinearEmbeddings(bins, config.d_embedding; activation=config.activation)
     elseif config.embedding_type == :batchnorm
-        BatchNorm(nfeats)
+        # BatchNorm(nfeats)
+        BatchNormEmbeddings(nfeats)
     else
         error("Unsupported embedding type: $(config.embedding_type)")
     end
