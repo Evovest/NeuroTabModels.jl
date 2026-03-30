@@ -13,12 +13,14 @@ struct NeuroTree{F} <: AbstractLuxLayer
 end
 
 function NeuroTree(; feats, outs, tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
-    nodes = 2^depth - 1
+    @assert tree_type ∈ [:binary, :oblivious]
+    nodes = tree_type == :binary ? 2^depth - 1 : depth
     leaves = 2^depth
     return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
 end
 function NeuroTree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
-    nodes = 2^depth - 1
+    @assert tree_type ∈ [:binary, :oblivious]
+    nodes = tree_type == :binary ? 2^depth - 1 : depth
     leaves = 2^depth
     return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
 end
@@ -27,9 +29,9 @@ end
 function LuxCore.initialparameters(rng::AbstractRNG, l::NeuroTree)
     return (
         w=Float32.((rand(rng, l.nodes * l.trees * l.k, l.feats) .- 0.5) ./ 4), # [NTK,F]
-        b=zeros(Float32, l.nodes * l.trees * l.k), # # [NTK]
+        b=zeros(Float32, l.nodes * l.trees * l.k), # [NTK]
         s=Float32.(fill(log(expm1(1)), l.nodes * l.trees * l.k)), # [NTK]
-        p=Float32.(randn(rng, l.outs, l.leaves, l.trees, l.k) .* l.init_scale), # [P,L,T,K]
+        p=Float32.(randn(rng, l.outs, l.leaves, l.trees) .* l.init_scale), # [P,L,T,K]
     )
 end
 

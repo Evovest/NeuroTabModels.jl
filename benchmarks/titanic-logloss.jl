@@ -35,7 +35,6 @@ feature_names = setdiff(names(df), ["Survived"])
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
     k=16,
-    proj_size=1,
     init_scale=1.0,
     depth=4,
     ntrees=16,
@@ -92,3 +91,16 @@ p_train = m(dtrain)
 p_eval = m(deval)
 @info mean((p_train .> 0.5) .== (dtrain[!, target_name] .> 0.5))
 @info mean((p_eval .> 0.5) .== (deval[!, target_name] .> 0.5))
+
+# using Lux
+# using NeuroTabModels.Models.NeuroTrees: NeuroTree
+# rng = Random.default_rng()
+# x1 = randn(2, 5)
+# m1 = NeuroTree(2 => 1, depth=3, trees=4, k=1, tree_type=:binary)
+# m1 = NeuroTree(2 => 1, depth=3, trees=4, k=1, tree_type=:oblivious)
+# ps, st = Lux.setup(rng, m1)
+# y, st = m1(x1, ps, st)
+
+# size(y)
+# size(st.ml)
+# size(st.ms)
