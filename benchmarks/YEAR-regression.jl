@@ -41,15 +41,14 @@ deval = df_tot[eval_idx, :];
 dtest = df_tot[(end-51630+1):end, :];
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    proj_size=4,
+    tree_type=:oblivious,
     actA=:identity,
     depth=4,
     ntrees=32,
-    k=1,
+    k=8,
     stack_size=1,
     hidden_size=1,
-    init_scale=0.0,
+    init_scale=0.1,
     scaler=true,
     MLE_tree_split=false
 )
@@ -100,7 +99,7 @@ learner = NeuroTabRegressor(
     device
 )
 
-m = NeuroTabModels.fit(
+@time m = NeuroTabModels.fit(
     learner,
     dtrain;
     deval,

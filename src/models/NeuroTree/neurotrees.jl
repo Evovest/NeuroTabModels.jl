@@ -5,6 +5,7 @@ export NeuroTreeConfig
 using Random
 using Lux
 using LuxCore
+using Statistics: mean
 using NNlib: softplus, sigmoid_fast, hardsigmoid, tanh_fast, hardtanh, tanhshrink
 
 import ..Losses: get_loss_type, GaussianMLE
@@ -38,7 +39,6 @@ struct NeuroTreeConfig <: Architecture
     depth::Int
     ntrees::Int
     k::Int
-    proj_size::Int
     hidden_size::Int
     stack_size::Int
     scaler::Bool
@@ -53,7 +53,6 @@ function NeuroTreeConfig(; kwargs...)
         :depth => 4,
         :ntrees => 32,
         :k => 1,
-        :proj_size => 1,
         :hidden_size => 1,
         :stack_size => 1,
         :scaler => true,
@@ -80,7 +79,6 @@ function NeuroTreeConfig(; kwargs...)
         args[:depth],
         args[:ntrees],
         args[:k],
-        args[:proj_size],
         args[:hidden_size],
         args[:stack_size],
         args[:scaler],

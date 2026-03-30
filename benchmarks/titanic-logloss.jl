@@ -32,32 +32,40 @@ deval = df[setdiff(1:nrow(df), train_indices), :]
 target_name = "Survived"
 feature_names = setdiff(names(df), ["Survived"])
 
-# arch = NeuroTabModels.NeuroTreeConfig(;
-#     tree_type=:binary,
-#     proj_size=1,
-#     init_scale=1.0,
-#     depth=4,
-#     ntrees=16,
-#     stack_size=1,
-#     hidden_size=1,
-#     actA=:identity,
-#     MLE_tree_split=false,
-# )
-arch = NeuroTabModels.TabMConfig(;
-    arch_type=:tabm,
-    k=8,
-    d_block=32,
-    n_blocks=3,
-    dropout=0.1,
-    scaling_init=:normal,
+arch = NeuroTabModels.NeuroTreeConfig(;
+    tree_type=:binary,
+    k=16,
+    proj_size=1,
+    init_scale=1.0,
+    depth=4,
+    ntrees=16,
+    stack_size=1,
+    hidden_size=1,
+    actA=:identity,
+    MLE_tree_split=false,
 )
+# arch = NeuroTabModels.TabMConfig(;
+#     arch_type=:tabm,
+#     k=8,
+#     d_block=32,
+#     n_blocks=3,
+#     dropout=0.1,
+#     scaling_init=:normal,
+# )
 
+# embedding_config = Dict(
+#     :embedding_type => :linear,
+#     :d_embedding => 32,
+#     :activation => nothing,
+#     :n_bins => 16,
+#     :n_frequencies => 32,
+# )
 embedding_config = Dict(
-    :embedding_type => :linear,
-    :d_embedding => 32,
-    :activation => nothing,
-    :n_bins => 16,
-    :n_frequencies => 32,
+    :embedding_type => :batchnorm,
+    :d_embedding => 1,
+    # :activation => nothing,
+    # :n_bins => 16,
+    # :n_frequencies => 32,
 )
 
 learner = NeuroTabRegressor(

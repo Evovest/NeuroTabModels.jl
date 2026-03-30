@@ -26,10 +26,10 @@ end
 # Define the Lux interface
 function LuxCore.initialparameters(rng::AbstractRNG, l::NeuroTree)
     return (
-        w=Float32.((rand(rng, l.nodes * l.trees, l.feats) .- 0.5) ./ 4), # w
-        b=zeros(Float32, l.nodes * l.trees), # b
-        s=Float32.(fill(log(exp(1) - 1), l.nodes * l.trees)), # s
-        p=Float32.(randn(rng, l.outs, l.leaves * l.trees) .* l.init_scale), # p
+        w=Float32.((rand(rng, l.nodes * l.trees * l.k, l.feats) .- 0.5) ./ 4), # [NTK,F]
+        b=zeros(Float32, l.nodes * l.trees * l.k), # # [NTK]
+        s=Float32.(fill(log(expm1(1)), l.nodes * l.trees * l.k)), # [NTK]
+        p=Float32.(randn(rng, l.outs, l.leaves, l.trees, l.k) .* l.init_scale), # [P,L,T,K]
     )
 end
 
@@ -42,18 +42,17 @@ end
 
 function (l::NeuroTree)(x, ps, st)
     if l.scaler
-        nw = softplus(ps.s) .* (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NT,B]
+        nw = softplus(ps.s) .* (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
     else
-        nw = (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NT,B]
+        nw = (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
     end
-    nw = reshape(nw, size(st.ml, 2), :) # [NT,B] => [N,TB]
-    lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TB] => [L,TB]
-    lw = reshape(lw, :, size(x, 2)) # [L,TB] => [LT,B]
-    y = ps.p * lw ./ l.trees # [P,LT] * [LT,B] => [P,B]
-    y = reshape(y, 1, size(y, 1), size(y, 2))
+    nw = reshape(nw, size(st.ml, 2), :) # [NTK,B] => [N,TKB]
+    lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TKB] => [L,TKB]
+    lw = reshape(lw, 1, l.leaves, l.trees, l.k, size(x, 2)) # [L,TKB] => [1,L,T,K,B]
+    y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,K,T] * [1,L,T,K,B] => [P,T,K,B]
+    y = dropdims(mean(y1; dims=2); dims=2) # [P,T,K,B] => [P,K,B]
     return y, st
 end
-
 
 """
     get_logits_mask(::Val{:binary}, depth::Integer)
