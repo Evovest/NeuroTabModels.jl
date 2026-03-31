@@ -34,7 +34,7 @@ feature_names = setdiff(names(df), ["Survived"])
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
-    k=16,
+    k=8,
     init_scale=1.0,
     depth=4,
     ntrees=16,
@@ -53,19 +53,13 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 # embedding_config = Dict(
-#     :embedding_type => :linear,
-#     :d_embedding => 32,
+#     :embedding_type => :piecewise,
+#     :d_embedding => 8,
 #     :activation => nothing,
-#     :n_bins => 16,
-#     :n_frequencies => 32,
+#     :bins => 16,
+#     :frequencies => 16,
 # )
-embedding_config = Dict(
-    :embedding_type => :batchnorm,
-    :d_embedding => 1,
-    # :activation => nothing,
-    # :n_bins => 16,
-    # :n_frequencies => 32,
-)
+embedding_config = Dict(:embedding_type => :batchnorm)
 
 learner = NeuroTabRegressor(
     arch;
