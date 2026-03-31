@@ -30,13 +30,15 @@ struct EmbeddingConfig{F}
 end
 
 function EmbeddingConfig(;
-    embedding_type::Symbol=:periodic,
+    embedding_type=:periodic,
     d_embedding::Int=16,
     activation=nothing,
     bins::Union{Int,Vector{Int}}=32,
     frequencies::Int=32,
     frequencies_init_scale::Float32=0.01f0,
 )
+
+    embedding_type = Symbol(embedding_type)
     # Default activation depends on embedding type
     if isnothing(activation)
         activation = embedding_type == :piecewise ? identity : relu

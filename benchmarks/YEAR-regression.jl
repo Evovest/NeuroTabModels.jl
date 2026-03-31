@@ -45,7 +45,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     actA=:identity,
     depth=4,
     ntrees=32,
-    k=8,
+    k=1,
     stack_size=1,
     hidden_size=1,
     init_scale=0.1,
@@ -85,14 +85,13 @@ loss = :mse # :mse :gaussian_mle :tweedie
 # )
 embedding_config = Dict(:embedding_type => :batchnorm)
 
-
 learner = NeuroTabRegressor(
     arch;
     embedding_config,
     loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=1e-3,
+    lr=3e-4,
     batchsize=1024,
     device
 )
