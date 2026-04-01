@@ -43,14 +43,13 @@ dtest = df_tot[(end-51630+1):end, :];
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
     actA=:identity,
-    depth=4,
+    k=8,
     ntrees=32,
-    k=1,
+    depth=4,
     stack_size=1,
-    hidden_size=1,
+    hidden_size=16,
     init_scale=0.1,
     scaler=true,
-    MLE_tree_split=false
 )
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,
@@ -76,14 +75,14 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 device = :gpu
 loss = :mse # :mse :gaussian_mle :tweedie
 
-# embedding_config = Dict(
-#     :embedding_type => :linear,
-#     :d_embedding => 8,
-#     :activation => nothing,
-#     :bins => 16,
-#     :frequencies => 16,
-# )
-embedding_config = Dict(:embedding_type => :batchnorm)
+embedding_config = Dict(
+    :embedding_type => :piecewise,
+    :d_embedding => 8,
+    :activation => nothing,
+    :bins => 16,
+    :frequencies => 16,
+)
+# embedding_config = Dict(:embedding_type => :batchnorm)
 
 learner = NeuroTabRegressor(
     arch;
@@ -91,8 +90,8 @@ learner = NeuroTabRegressor(
     loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=3e-4,
-    batchsize=1024,
+    lr=1e-3,
+    batchsize=512,
     device
 )
 

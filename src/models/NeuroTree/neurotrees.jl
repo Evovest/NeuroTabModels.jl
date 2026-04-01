@@ -17,18 +17,18 @@ struct StackedNeuroTree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
     chain::L
 end
 
-function StackedNeuroTree(; feats::Int, outs::Int, hidden_size::Int, stack_size::Int, tree_kwargs...)
+function StackedNeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
     if stack_size == 1
-        return StackedNeuroTree(NeuroTree(; feats, outs, tree_kwargs...))
+        return StackedNeuroTree(NeuroTree(ins => outs, k, tree_kwargs...))
     end
 
-    layers = Any[NeuroTree(; feats, outs=hidden_size, tree_kwargs...)]
-    for _ in 1:(stack_size-2)
+    layers = Any[NeuroTree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
+    for _ in 2:(stack_size-1)
         push!(layers, SkipConnection(
-            NeuroTree(; feats=hidden_size, outs=hidden_size, tree_kwargs...), +
+            Chain(NeuroTree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
         ))
     end
-    push!(layers, NeuroTree(; feats=hidden_size, outs, tree_kwargs...))
+    push!(layers, NeuroTree(hidden_size => outs; k, tree_kwargs...))
 
     return StackedNeuroTree(Chain(layers...))
 end
@@ -92,7 +92,7 @@ function _tree_kwargs(config::NeuroTreeConfig)
         config.tree_type,
         config.depth,
         trees=config.ntrees,
-        k=config.k,
+        # k=config.k,
         actA=act_dict[config.actA],
         config.scaler,
         config.init_scale,
@@ -108,13 +108,13 @@ function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                StackedNeuroTree(; feats=nfeats, outs=head_outsize, config.hidden_size, config.stack_size, kwargs...),
-                StackedNeuroTree(; feats=nfeats, outs=head_outsize, config.hidden_size, config.stack_size, kwargs...),
+                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
             ),
         )
     else
         chain = Chain(
-            StackedNeuroTree(; feats=nfeats, outs=outsize, config.hidden_size, config.stack_size, kwargs...),
+            StackedNeuroTree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
         )
     end
 
