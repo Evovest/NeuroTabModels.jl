@@ -19,7 +19,7 @@ end
 
 function StackedNeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
     if stack_size == 1
-        return StackedNeuroTree(NeuroTree(ins => outs, k, tree_kwargs...))
+        return StackedNeuroTree(NeuroTree(ins => outs; k, tree_kwargs...))
     end
 
     layers = Any[NeuroTree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
