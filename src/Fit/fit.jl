@@ -72,11 +72,11 @@ function init(
         chain = config.arch(; nfeats, outsize)
     else
         if embed_config.embedding_type == :piecewise
-            X_train = Matrix{Float32}(df[:, feature_names])
+            x_train = Matrix{Float32}(df[:, feature_names])
         else
-            X_train = nothing
+            x_train = nothing
         end
-        embed_chain = embed_config(; nfeats, X_train)
+        embed_chain = embed_config(; nfeats, x_train)
         d_in = nfeats * embed_config.d_embedding
         d_features = fill(embed_config.d_embedding, nfeats)
         chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))

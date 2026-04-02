@@ -2,6 +2,7 @@ using Random
 using CSV
 using DataFrames
 using Statistics: mean, std
+using StatsBase: tiedrank
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
 @service S3
@@ -30,11 +31,10 @@ feature_names = setdiff(names(df_tot), ["y_raw", "y_norm", "w"])
 df_tot.w .= 1.0
 target_name = "y_norm"
 
-# function percent_rank(x::AbstractVector{T}) where {T}
-#     return tiedrank(x) / (length(x) + 1)
-# end
-
-# transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
+function percent_rank(x::AbstractVector{T}) where {T}
+    return tiedrank(x) / (length(x) + 1)
+end
+transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
 
 dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
@@ -42,27 +42,22 @@ dtest = df_tot[(end-51630+1):end, :];
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
-    proj_size=4,
     actA=:identity,
-    depth=4,
+    k=8,
     ntrees=32,
+    depth=4,
     stack_size=1,
-    hidden_size=1,
-    init_scale=0.0,
+    hidden_size=16,
+    init_scale=0.1,
     scaler=true,
-    MLE_tree_split=false
 )
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,
-#     k=32,
-#     d_block=128,
+#     k=16,
+#     d_block=64,
 #     n_blocks=3,
 #     dropout=0.1,
-#     n_bins=16,
-#     use_embeddings=true,
-#     embedding_type=:linear, # periodic, piecewise, linear
-#     d_embedding=8,
-#     scaling_init=:normal,
+#     # scaling_init=:normal,
 # )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
@@ -78,26 +73,36 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-loss = :gaussian_mle # :mse :gaussian_mle :tweedie
+loss = :mse # :mse :gaussian_mle :tweedie
+
+embedding_config = Dict(
+    :embedding_type => :piecewise,
+    :d_embedding => 8,
+    :activation => nothing,
+    :bins => 16,
+    :frequencies => 16,
+)
+# embedding_config = Dict(:embedding_type => :batchnorm)
 
 learner = NeuroTabRegressor(
     arch;
+    embedding_config,
     loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=3e-4,
-    batchsize=1024,
+    lr=1e-3,
+    batchsize=512,
     device
 )
 
-m = NeuroTabModels.fit(
+@time m = NeuroTabModels.fit(
     learner,
     dtrain;
     deval,
     target_name,
     feature_names,
     print_every_n=5,
-)
+);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]

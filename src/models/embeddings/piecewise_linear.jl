@@ -6,33 +6,33 @@ using NNlib
     PiecewiseLinearEncoding(bins)
 
 Non-trainable piecewise-linear encoding using precomputed bin edges.
-Output shape `(max_n_bins, n_features, batch)`.
+Output shape `(max_n_bins, nfeats, batch)`.
 
 # Arguments
 - `bins::Vector{<:AbstractVector}`: Bin edges per feature from [`compute_bins`](@ref).
 """
 struct PiecewiseLinearEncoding <: Lux.AbstractLuxLayer
     bins::Vector{Vector{Float32}}
-    n_features::Int
+    nfeats::Int
     max_n_bins::Int
 end
 
 function PiecewiseLinearEncoding(bins::Vector{<:AbstractVector})
     @assert length(bins) > 0
-    n_features = length(bins)
+    nfeats = length(bins)
     n_bins_list = [length(b) - 1 for b in bins]
     max_n_bins = maximum(n_bins_list)
     bins_f32 = [Float32.(b) for b in bins]
-    return PiecewiseLinearEncoding(bins_f32, n_features, max_n_bins)
+    return PiecewiseLinearEncoding(bins_f32, nfeats, max_n_bins)
 end
 
 Lux.initialparameters(::AbstractRNG, ::PiecewiseLinearEncoding) = (;)
 
 function Lux.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
-    M, N = l.max_n_bins, l.n_features
+    M, N = l.max_n_bins, l.nfeats
 
     weight = zeros(Float32, M, N)
-    bias   = zeros(Float32, M, N)
+    bias = zeros(Float32, M, N)
 
     for (i, bin_edges) in enumerate(l.bins)
         bin_width = diff(bin_edges)
@@ -44,17 +44,17 @@ function Lux.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
         # remaining bins fill rows 1:nb-1. Unused rows stay zero
         # and are clamped to [0, 1] harmlessly.
         weight[end, i] = w[end]
-        bias[end, i]   = b[end]
+        bias[end, i] = b[end]
         if nb > 1
             weight[1:nb-1, i] = w[1:end-1]
-            bias[1:nb-1, i]   = b[1:end-1]
+            bias[1:nb-1, i] = b[1:end-1]
         end
     end
 
     # Pre-reshape to 3D to avoid per-call reshape in forward pass
     return (
-        weight = reshape(weight, M, N, 1),
-        bias   = reshape(bias,   M, N, 1),
+        weight=reshape(weight, M, N, 1),
+        bias=reshape(bias, M, N, 1),
     )
 end
 
@@ -71,7 +71,7 @@ end
 Learnable embeddings on top of `PiecewiseLinearEncoding`.
 Version `:A`: PLE -> NLinear (with bias).
 Version `:B`: PLE -> NLinear (zero-init, no bias) + LinearEmbeddings residual.
-Output shape `(d_embedding, n_features, batch)`.
+Output shape `(d_embedding, nfeats, batch)`.
 
 # Arguments
 - `bins::Vector{<:AbstractVector}`: Bin edges per feature from [`compute_bins`](@ref).
@@ -94,13 +94,13 @@ function PiecewiseLinearEmbeddings(
     version::Symbol=:B,
 )
     @assert version in (:A, :B)
-    n_features = length(bins)
+    nfeats = length(bins)
     max_n_bins = maximum(length(b) - 1 for b in bins)
 
     encoding = PiecewiseLinearEncoding(bins)
     # Residual path uses raw affine output (no activation)
-    linear0 = (version == :B) ? LinearEmbeddings(n_features, d_embedding; activation=identity) : nothing
-    linear = NLinear(n_features, max_n_bins, d_embedding; bias=(version == :A))
+    linear0 = (version == :B) ? LinearEmbeddings(nfeats, d_embedding; activation=identity) : nothing
+    linear = NLinear(nfeats, max_n_bins, d_embedding; bias=(version == :A))
 
     return PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)
 end

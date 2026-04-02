@@ -38,7 +38,7 @@ end
 
 Lux.initialstates(::AbstractRNG, ::NLinear) = (;)
 
-function (l::NLinear)(x::AbstractArray{T, 3}, ps, st) where T
+function (l::NLinear)(x::AbstractArray{T,3}, ps, st) where T
     x_perm = PermutedDimsArray(x, (1, 3, 2))
     out = batched_mul(ps.weight, x_perm)
 

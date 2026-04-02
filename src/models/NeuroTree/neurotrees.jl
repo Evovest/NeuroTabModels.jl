@@ -5,6 +5,7 @@ export NeuroTreeConfig
 using Random
 using Lux
 using LuxCore
+using Statistics: mean
 using NNlib: softplus, sigmoid_fast, hardsigmoid, tanh_fast, hardtanh, tanhshrink
 
 import ..Losses: get_loss_type, GaussianMLE
@@ -16,18 +17,18 @@ struct StackedNeuroTree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
     chain::L
 end
 
-function StackedNeuroTree(; feats::Int, outs::Int, hidden_size::Int, stack_size::Int, tree_kwargs...)
+function StackedNeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
     if stack_size == 1
-        return StackedNeuroTree(NeuroTree(; feats, outs, tree_kwargs...))
+        return StackedNeuroTree(NeuroTree(ins => outs; k, tree_kwargs...))
     end
 
-    layers = Any[NeuroTree(; feats, outs=hidden_size, tree_kwargs...)]
-    for _ in 1:(stack_size-2)
+    layers = Any[NeuroTree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
+    for _ in 2:(stack_size-1)
         push!(layers, SkipConnection(
-            NeuroTree(; feats=hidden_size, outs=hidden_size, tree_kwargs...), +
+            Chain(NeuroTree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
         ))
     end
-    push!(layers, NeuroTree(; feats=hidden_size, outs, tree_kwargs...))
+    push!(layers, NeuroTree(hidden_size => outs; k, tree_kwargs...))
 
     return StackedNeuroTree(Chain(layers...))
 end
@@ -37,7 +38,7 @@ struct NeuroTreeConfig <: Architecture
     actA::Symbol
     depth::Int
     ntrees::Int
-    proj_size::Int
+    k::Int
     hidden_size::Int
     stack_size::Int
     scaler::Bool
@@ -51,7 +52,7 @@ function NeuroTreeConfig(; kwargs...)
         :actA => :identity,
         :depth => 4,
         :ntrees => 32,
-        :proj_size => 1,
+        :k => 1,
         :hidden_size => 1,
         :stack_size => 1,
         :scaler => true,
@@ -77,7 +78,7 @@ function NeuroTreeConfig(; kwargs...)
         Symbol(args[:actA]),
         args[:depth],
         args[:ntrees],
-        args[:proj_size],
+        args[:k],
         args[:hidden_size],
         args[:stack_size],
         args[:scaler],
@@ -91,6 +92,7 @@ function _tree_kwargs(config::NeuroTreeConfig)
         config.tree_type,
         config.depth,
         trees=config.ntrees,
+        # k=config.k,
         actA=act_dict[config.actA],
         config.scaler,
         config.init_scale,
@@ -104,17 +106,15 @@ function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
         iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
         head_outsize = outsize ÷ 2
         chain = Chain(
-            BatchNorm(nfeats, track_stats=false),
             Parallel(
                 vcat,
-                StackedNeuroTree(; feats=nfeats, outs=head_outsize, config.hidden_size, config.stack_size, kwargs...),
-                StackedNeuroTree(; feats=nfeats, outs=head_outsize, config.hidden_size, config.stack_size, kwargs...),
+                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
             ),
         )
     else
         chain = Chain(
-            BatchNorm(nfeats),
-            StackedNeuroTree(; feats=nfeats, outs=outsize, config.hidden_size, config.stack_size, kwargs...),
+            StackedNeuroTree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
         )
     end
 

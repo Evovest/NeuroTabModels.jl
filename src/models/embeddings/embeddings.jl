@@ -18,6 +18,7 @@ include("nlinear.jl")
 include("linear.jl")
 include("periodic.jl")
 include("piecewise_linear.jl")
+include("batchnorm.jl")
 include("config.jl")
 
 end
