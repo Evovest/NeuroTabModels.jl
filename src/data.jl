@@ -11,7 +11,7 @@ using CategoricalArrays
 """
     ContainerTrain
 """
-struct ContainerTrain{A<:AbstractMatrix,B,C,D}
+struct ContainerTrain{A,B,C,D}
     x::A
     y::B
     w::C
@@ -19,6 +19,7 @@ struct ContainerTrain{A<:AbstractMatrix,B,C,D}
 end
 
 length(data::ContainerTrain) = size(data.x, 2)
+length(data::ContainerTrain{<:Vector}) = length(data.x)
 
 function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B,C<:Nothing,D<:Nothing}
     x = data.x[:, idx]
@@ -44,6 +45,14 @@ function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B
     w = data.w[idx]
     offset = data.offset[:, idx]
     return (x, y, w, offset)
+end
+
+# for GroupedDataFrame
+function getindex(data::ContainerTrain{A,B,C,D}, idx::Int) where {A<:Vector,B,C<:Vector,D<:Nothing}
+    x = data.x[idx]
+    y = data.y[idx]
+    w = data.w[idx]
+    return (x, y, w)
 end
 
 function get_df_loader_train(
@@ -79,6 +88,46 @@ function get_df_loader_train(
     return dtrain
 end
 
+function get_df_loader_train(
+    dfg::GroupedDataFrame;
+    feature_names,
+    target_name,
+    weight_name=nothing,
+    offset_name=nothing,
+    batchsize=0,
+    shuffle=true)
+
+    @info "groupedDF loader"
+
+    n = length(dfg)
+    nfeats = length(feature_names)
+    bs = maximum(dfg.ends .- dfg.starts) + 1
+
+    x = [zeros(Float32, nfeats, bs) for _ in 1:n]
+    y = [zeros(Float32, bs) for _ in 1:n]
+    w = [zeros(Float32, bs) for _ in 1:n]
+
+    for i in 1:n
+        df = dfg[i]
+        x[i][:, 1:nrow(df)] .= Matrix(df[!, feature_names])'
+        y[i][1:nrow(df)] .= df[!, target_name]
+        w[i][1:nrow(df)] .= 1.0
+    end
+    offset = nothing
+
+    container = ContainerTrain(
+        x,
+        y,
+        w,
+        offset,
+    )
+
+    container = ContainerTrain(x, y, w, offset)
+    dtrain = DataLoader(container; shuffle, batchsize=0, partial=false, parallel=false)
+    return dtrain
+end
+
+
 """
     ContainerInfer
 """
@@ -108,7 +157,8 @@ function get_df_loader_infer(
     df::AbstractDataFrame;
     feature_names,
     offset_name=nothing,
-    batchsize)
+    batchsize
+)
 
     feature_names = Symbol.(feature_names)
     x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
