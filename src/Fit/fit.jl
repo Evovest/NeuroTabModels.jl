@@ -10,9 +10,9 @@ using ..Metrics
 using ..Infer: reduce_pred
 
 import Random: Xoshiro
+import Statistics: mean, std
 import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
-
 using Lux
 using Reactant
 using Lux: cpu_device, reactant_device
@@ -43,9 +43,10 @@ function init(
     L = get_loss_type(config.loss)
     lux_loss = get_loss_fn(L)
 
+    outsize = 1
+    scalers = nothing
     target_levels = nothing
     target_isordered = false
-    outsize = 1
 
     if L <: MLogLoss
         eltype(df[!, target_name]) <: CategoricalValue || error("Target `$target_name` must be `<: CategoricalValue`")
@@ -54,15 +55,18 @@ function init(
         outsize = length(target_levels)
     elseif L <: GaussianMLE
         outsize = 2
+    elseif L <: MSE
+        scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
     end
 
-    data = get_df_loader_train(df; feature_names, target_name, weight_name, offset_name, batchsize) |> dev
+    data = get_df_loader_train(df; feature_names, target_name, weight_name, offset_name, scalers, batchsize) |> dev
 
     info = Dict(
         :nrounds => 0,
         :feature_names => feature_names,
         :target_levels => target_levels,
         :target_isordered => target_isordered,
+        # :scalers => scalers,
         :device => config.device
     )
 

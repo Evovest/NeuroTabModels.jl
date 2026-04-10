@@ -53,6 +53,7 @@ function get_df_loader_train(
     weight_name=nothing,
     offset_name=nothing,
     batchsize,
+    scalers=nothing,
     shuffle=true)
 
     feature_names = Symbol.(feature_names)
@@ -62,6 +63,9 @@ function get_df_loader_train(
         y = UInt32.(CategoricalArrays.levelcode.(df[!, target_name]))
     else
         y = Float32.(df[!, target_name])
+        # if !isnothing(scalers)
+        #     y .= y .* scalers[:sigma] .+ scalers[:mu]
+        # end
     end
     y = reshape(y, 1, :)
 
