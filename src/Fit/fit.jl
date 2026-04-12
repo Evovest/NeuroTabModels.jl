@@ -35,8 +35,14 @@ function init(
     feature_names,
     target_name,
     weight_name=nothing,
-    offset_name=nothing
+    offset_name=nothing,
+    group_key=nothing
 )
+
+    feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
+    weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
+    offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
+
     dev = _get_device(config)
     batchsize = config.batchsize
     nfeats = length(feature_names)
@@ -56,7 +62,8 @@ function init(
         outsize = 2
     end
 
-    data = get_df_loader_train(df; feature_names, target_name, weight_name, offset_name, batchsize) |> dev
+    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
+    data = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, batchsize) |> dev
 
     info = Dict(
         :nrounds => 0,
@@ -135,15 +142,13 @@ function fit(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
+    group_key=nothing,
     deval=nothing,
     print_every_n=9999,
     verbosity=1
 )
-    feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
-    weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
-    offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
 
-    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name)
+    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
 
     logger = nothing
     if !isnothing(deval)

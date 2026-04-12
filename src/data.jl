@@ -97,11 +97,10 @@ function get_df_loader_train(
     batchsize=0,
     shuffle=true)
 
-    @info "groupedDF loader"
-
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
+    @info "groupedDF loader" bs
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     y = [zeros(Float32, bs) for _ in 1:n]
