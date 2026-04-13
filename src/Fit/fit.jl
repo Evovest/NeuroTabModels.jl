@@ -42,6 +42,7 @@ function init(
     feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
     weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
     offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
+    group_key = isnothing(group_key) ? nothing : Symbol(group_key)
 
     dev = _get_device(config)
     batchsize = config.batchsize
@@ -68,9 +69,12 @@ function init(
     info = Dict(
         :nrounds => 0,
         :feature_names => feature_names,
+        :target_name => target_name,
+        :weight_name => weight_name,
+        :offset_name => offset_name,
+        :group_key => group_key,
         :target_levels => target_levels,
         :target_isordered => target_isordered,
-        :device => config.device
     )
 
     # Build chain: optional embeddings + architecture backbone

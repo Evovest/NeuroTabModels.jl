@@ -114,13 +114,6 @@ function get_df_loader_train(
     end
     offset = nothing
 
-    container = ContainerTrain(
-        x,
-        y,
-        w,
-        offset,
-    )
-
     container = ContainerTrain(x, y, w, offset)
     dtrain = DataLoader(container; shuffle, batchsize=0, partial=false, parallel=false)
     return dtrain
@@ -130,47 +123,67 @@ end
 """
     ContainerInfer
 """
-struct ContainerInfer{A<:AbstractMatrix,D}
+struct ContainerInfer{A<:AbstractMatrix}
     x::A
-    offset::D
 end
-
 length(data::ContainerInfer) = size(data.x, 2)
 
-function getindex(data::ContainerInfer{A,D}, idx::AbstractVector) where {A,D<:Nothing}
+function getindex(data::ContainerInfer, idx::AbstractVector)
     x = data.x[:, idx]
     return x
-end
-function getindex(data::ContainerInfer{A,D}, idx::AbstractVector) where {A,D<:AbstractVector}
-    x = data.x[:, idx]
-    offset = data.offset[idx]
-    return (x, offset)
-end
-function getindex(data::ContainerInfer{A,D}, idx::AbstractVector) where {A,D<:AbstractMatrix}
-    x = data.x[:, idx]
-    offset = data.offset[:, idx]
-    return (x, offset)
 end
 
 function get_df_loader_infer(
     df::AbstractDataFrame;
     feature_names,
-    offset_name=nothing,
     batchsize
 )
-
     feature_names = Symbol.(feature_names)
     x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
 
-    offset = if isnothing(offset_name)
-        nothing
-    else
-        isa(offset_name, String) ? Float32.(df[!, offset_name]) : Matrix{Float32}(Matrix{Float32}(df[!, offset_name])')
-    end
-
-    container = ContainerInfer(x, offset)
+    container = ContainerInfer(x)
     batchsize = min(batchsize, length(container))
     dinfer = DataLoader(container; shuffle=false, batchsize, partial=true, parallel=false)
+    return dinfer
+end
+
+"""
+    ContainerInferGrp
+"""
+struct ContainerInferGrp{A<:AbstractVector,B<:AbstractVector}
+    x::A
+    mask::B
+end
+length(data::ContainerInferGrp) = length(data.x)
+
+# for GroupedDataFrame
+function getindex(data::ContainerInferGrp, idx::Int)
+    x = data.x[idx]
+    mask = data.mask[idx]
+    return (x, mask)
+end
+
+function get_df_loader_infer(
+    dfg::GroupedDataFrame;
+    feature_names,
+    batchsize=0
+)
+    n = length(dfg)
+    nfeats = length(feature_names)
+    bs = maximum(dfg.ends .- dfg.starts) + 1
+    @info "groupedDF loader" bs
+
+    x = [zeros(Float32, nfeats, bs) for _ in 1:n]
+    mask = [zeros(Bool, bs) for _ in 1:n]
+
+    for i in 1:n
+        df = dfg[i]
+        x[i][:, 1:nrow(df)] .= Matrix(df[!, feature_names])'
+        mask[i][1:nrow(df)] .= true
+    end
+
+    container = ContainerInferGrp(x, mask)
+    dinfer = DataLoader(container; shuffle=false, batchsize=0, partial=false, parallel=false)
     return dinfer
 end
 

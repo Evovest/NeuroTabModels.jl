@@ -23,7 +23,6 @@ dtrain.w = rand(nrow(dtrain))
 weight_name = "w"
 dtrain.date = rand(Date("2026-01-01"):Date("2026-01-05"), nrow(dtrain))
 
-
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
     actA=:identity,
@@ -47,7 +46,7 @@ learner = NeuroTabRegressor(
 m = NeuroTabModels.fit(
     learner,
     dtrain;
-    # deval=dtrain, # FIXME: very slow when deval is used / crashed on GPU
+    deval=dtrain, 
     target_name,
     feature_names,
     weight_name,
@@ -59,7 +58,7 @@ p_train_2 = m(dtrain; device=:gpu);
 m = NeuroTabModels.fit(
     learner,
     dtrain;
-    deval=dtrain, # FIXME: very slow when deval is used / crashed on GPU
+    deval=dtrain,
     target_name,
     feature_names,
     weight_name,

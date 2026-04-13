@@ -10,7 +10,7 @@ using Reactant
 using Reactant: @compile
 using NNlib: sigmoid, softmax
 using Statistics: mean
-using DataFrames: AbstractDataFrame
+using DataFrames: AbstractDataFrame, GroupedDataFrame, groupby
 import MLUtils: DataLoader
 
 export infer, reduce_pred
@@ -63,12 +63,10 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L
 
     raw_preds = Vector{AbstractArray}()
 
-    b_first = first(data)
-    x0 = b_first isa Tuple ? b_first[1] : b_first
+    x0 = first(data)
     compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
 
-    for b in data
-        x = b isa Tuple ? b[1] : b
+    for x in data
         if size(x) == size(x0)
             pred = compiled(m.chain, dev(x), ps, st)
         else
@@ -76,21 +74,45 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L
         end
         push!(raw_preds, cdev(pred))
     end
-
     return _postprocess(L, raw_preds; raw)
 end
 
-function infer(m::NeuroTabModel, data::AbstractDataFrame; device=:cpu, raw::Bool=false)
-    dinfer = get_df_loader_infer(data; feature_names=m.info[:feature_names], batchsize=2048)
-    return infer(m, dinfer; device, raw)
+function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L}
+    dev = _get_device(device)
+    cdev = cpu_device()
+    ps = dev(m.info[:ps])
+    st = dev(m.info[:st])
+
+    (x0, mask0) = first(data)
+    compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
+
+    raw_preds = Vector{AbstractArray}()
+    for (x, mask) in data
+        pred = compiled(m.chain, dev(x), ps, st)
+        push!(raw_preds, cdev(pred))
+    end
+    return _postprocess(L, raw_preds; raw)
+end
+
+function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, raw::Bool=false)
+    group_key = m.info[:group_key]
+    if isnothing(group_key)
+        dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
+        p = infer(m, dinfer; device, raw)
+    else
+        dfg = groupby(df, group_key; sort=true)
+        dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
+        p = infer_grp(m, dinfer; device, raw)
+    end
+    return p
 end
 
 function (m::NeuroTabModel)(data::AbstractDataFrame; device=:cpu)
     return infer(m, data; device)
 end
 
-function (m::NeuroTabModel)(x::AbstractMatrix; device=:cpu)
-    return infer(m, [(x,)]; device)
-end
+# function (m::NeuroTabModel)(x::AbstractMatrix; device=:cpu)
+#     return infer(m, [(x,)]; device)
+# end
 
 end
