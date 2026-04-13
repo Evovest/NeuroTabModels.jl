@@ -1,4 +1,4 @@
-struct NeuroTree{F} <: AbstractLuxLayer
+struct MOETree{F} <: AbstractLuxLayer
     tree_type::Symbol
     actA::F
     scaler::Bool
@@ -12,47 +12,51 @@ struct NeuroTree{F} <: AbstractLuxLayer
     init_scale::Float32
 end
 
-function NeuroTree(; feats, outs, tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
+function MOETree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
     @assert tree_type ∈ [:binary, :oblivious]
     nodes = tree_type == :binary ? 2^depth - 1 : depth
     leaves = 2^depth
-    return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
-end
-function NeuroTree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
-    @assert tree_type ∈ [:binary, :oblivious]
-    nodes = tree_type == :binary ? 2^depth - 1 : depth
-    leaves = 2^depth
-    return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
+    return MOETree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
 end
 
 # Define the Lux interface
-function LuxCore.initialparameters(rng::AbstractRNG, l::NeuroTree)
+function LuxCore.initialparameters(rng::AbstractRNG, l::MOETree)
     return (
-        w=Float32.((rand(rng, l.nodes * l.trees * l.k, l.feats) .- 0.5) ./ 4), # [NTK,F]
-        b=zeros(Float32, l.nodes * l.trees * l.k), # [NTK]
-        s=Float32.(fill(log(expm1(1)), l.nodes * l.trees * l.k)), # [NTK]
-        p=Float32.(randn(rng, l.outs, l.leaves, l.trees) .* l.init_scale), # [P,L,T,K]
+        # router
+        lw=Float32.((rand(rng, l.nodes * l.trees, l.feats) .- 0.5) ./ 4), # [NTK,F]
+        lb=zeros(Float32, l.nodes * l.trees), # [NTK]
+        ls=Float32.(fill(log(expm1(1)), l.nodes * l.trees)), # [NTK]
+        # expert-model
+        w=Float32.((rand(rng, l.nodes * l.trees * l.leaves, l.feats) .- 0.5) ./ 4), # [NTK,F]
+        b=zeros(Float32, l.nodes * l.trees * l.leaves), # [NTK]
+        s=Float32.(fill(log(expm1(1)), l.nodes * l.trees * l.leaves)), # [NTK]
+        p=Float32.(randn(rng, l.outs, l.leaves, l.trees, l.leaves) .* l.init_scale), # [P,L,T,K]
     )
 end
-
-function LuxCore.initialstates(rng::AbstractRNG, l::NeuroTree)
+function LuxCore.initialstates(rng::AbstractRNG, l::MOETree)
     return (
         ml=Float32.(get_logits_mask(Val(l.tree_type), l.depth)),
         ms=Float32.(get_softplus_mask(Val(l.tree_type), l.depth)),
     )
 end
 
-function (l::NeuroTree)(x, ps, st)
-    if l.scaler
-        nw = softplus(ps.s) .* relu.(l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
-    else
-        nw = relu.(l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
-    end
-    nw = reshape(nw, size(st.ml, 2), :) # [NTK,B] => [N,TKB]
-    lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TKB] => [L,TKB]
-    lw = reshape(lw, 1, l.leaves, l.trees, l.k, size(x, 2)) # [L,TKB] => [1,L,T,K,B]
-    y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,K] * [1,L,T,K,B] => [P,T,K,B]
-    y = dropdims(mean(y1; dims=2); dims=2) # [P,T,K,B] => [P,K,B]
+function (l::MOETree)(x, ps, st)
+
+    enw1 = softplus(ps.ls) .* relu.(ps.lw * x .+ ps.lb) # [F,B] => [NT,B]
+    enw = reshape(enw1, size(st.ml, 2), :) # [NTK,B] => [N,TB]
+    lwe1 = exp.(st.ml * enw .- st.ms * softplus.(enw)) # [N,TB] => [L,TB]
+    lwe2 = reshape(lwe1, 1, l.leaves, l.trees, size(x, 2)) # [L,TB] => [1,L,T,B]
+    lwe = dropdims(sum(lwe2; dims=3); dims=3) # [1,L,T,B] => [1,L,B]
+
+    nw1 = softplus(ps.s) .* relu.(ps.w * x .+ ps.b) # [F,B] => [NTL,B]
+    nw = reshape(nw1, size(st.ml, 2), :) # [NTK,B] => [N,TLB]
+    lw1 = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TLB] => [L,TLB]
+    lw = reshape(lw1, 1, l.leaves, l.trees, l.leaves, size(x, 2)) # [L,TLB] => [1,L,T,L,B]
+    y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,L] * [1,L,T,L,B] => [P,T,L,B]
+    y2 = dropdims(mean(y1; dims=2); dims=2) # [P,T,L,B] => [P,L,B]
+
+    y = mean(lwe .* y2; dims=2) # [P,T,L,B] => [P,L,B]
+
     return y, st
 end
 

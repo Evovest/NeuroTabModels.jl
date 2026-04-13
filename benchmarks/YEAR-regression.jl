@@ -23,18 +23,15 @@ path = "share/data/year/year-eval-idx.txt"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
 eval_idx = DataFrame(CSV.File(raw, header=false))[:, 1] .+ 1
 
-transform!(df_tot, "Column1" => identity => "y_raw")
-select!(df_tot, Not("Column1"))
-transform!(df_tot, "y_raw" => (x -> (x .- mean(x)) ./ std(x)) => "y_norm")
-# transform!(df_tot, "y_raw" => (x -> (x .- minimum(x)) ./ std(x)) => "y_norm")
-feature_names = setdiff(names(df_tot), ["y_raw", "y_norm", "w"])
+target_name = "y"
+rename!(df_tot, "Column1" => target_name)
+feature_names = setdiff(names(df_tot), ["y", "w"])
 df_tot.w .= 1.0
-target_name = "y_norm"
 
-function percent_rank(x::AbstractVector{T}) where {T}
-    return tiedrank(x) / (length(x) + 1)
-end
-transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
+# function percent_rank(x::AbstractVector{T}) where {T}
+#     return tiedrank(x) / (length(x) + 1)
+# end
+# transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
 
 dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
@@ -43,7 +40,7 @@ dtest = df_tot[(end-51630+1):end, :];
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
     actA=:identity,
-    k=8,
+    k=1,
     ntrees=32,
     depth=4,
     stack_size=1,
@@ -51,6 +48,15 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     init_scale=0.1,
     scaler=true,
 )
+
+# arch = NeuroTabModels.MOETreeConfig(;
+#     tree_type=:binary,
+#     depth=5,
+#     ntrees=8,
+#     stack_size=1,
+#     init_scale=0.1,
+# )
+
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,
 #     k=16,
@@ -75,14 +81,14 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 device = :gpu
 loss = :mse # :mse :gaussian_mle :tweedie
 
-embedding_config = Dict(
-    :embedding_type => :piecewise,
-    :d_embedding => 8,
-    :activation => nothing,
-    :bins => 16,
-    :frequencies => 16,
-)
-# embedding_config = Dict(:embedding_type => :batchnorm)
+# embedding_config = Dict(
+#     :embedding_type => :piecewise,
+#     :d_embedding => 8,
+#     :activation => nothing,
+#     :bins => 16,
+#     :frequencies => 16,
+# )
+embedding_config = Dict(:embedding_type => :batchnorm)
 
 learner = NeuroTabRegressor(
     arch;
@@ -106,10 +112,10 @@ learner = NeuroTabRegressor(
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]
-mse_eval = mean((p_eval .- deval.y_norm) .^ 2)
+mse_eval = mean((p_eval .- deval.y) .^ 2)
 @info "MSE - deval" mse_eval
 
 p_test = m(dtest; device=:cpu);
 p_test = p_test[:, 1]
-mse_test = mean((p_test .- dtest.y_norm) .^ 2) * std(df_tot.y_raw)^2
+mse_test = mean((p_test .- dtest.y) .^ 2)
 @info "MSE - dtest" mse_test

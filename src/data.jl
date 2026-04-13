@@ -62,6 +62,7 @@ function get_df_loader_train(
     weight_name=nothing,
     offset_name=nothing,
     batchsize,
+    scalers=nothing,
     shuffle=true)
 
     feature_names = Symbol.(feature_names)
@@ -72,8 +73,11 @@ function get_df_loader_train(
     else
         y = Float32.(df[!, target_name])
     end
-    y = reshape(y, 1, :)
+    if !isnothing(scalers)
+        y .= (y .- scalers[:mu]) ./ scalers[:sigma]
+    end
 
+    y = reshape(y, 1, :)
     w = isnothing(weight_name) ? nothing : Float32.(df[!, weight_name])
 
     offset = if isnothing(offset_name)
@@ -95,6 +99,7 @@ function get_df_loader_train(
     weight_name=nothing,
     offset_name=nothing,
     batchsize=0,
+    scalers=nothing,
     shuffle=true)
 
     n = length(dfg)
@@ -109,7 +114,11 @@ function get_df_loader_train(
     for i in 1:n
         df = dfg[i]
         x[i][:, 1:nrow(df)] .= Matrix(df[!, feature_names])'
-        y[i][1:nrow(df)] .= df[!, target_name]
+        if isnothing(scalers)
+            y[i][1:nrow(df)] .= df[!, target_name]
+        else
+            y[i][1:nrow(df)] .= (df[!, target_name] .- scalers[:mu]) ./ scalers[:sigma]
+        end
         w[i][1:nrow(df)] .= 1.0
     end
     offset = nothing

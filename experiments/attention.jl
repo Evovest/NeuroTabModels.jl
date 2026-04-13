@@ -43,10 +43,11 @@ learner = NeuroTabRegressor(
     device=:gpu
 )
 
+sort!(dtrain, :date)
 m = NeuroTabModels.fit(
     learner,
     dtrain;
-    deval=dtrain, 
+    deval=dtrain,
     target_name,
     feature_names,
     weight_name,
@@ -73,9 +74,3 @@ cor(p_train_1, p_train_grp)
 dfg = groupby(dtrain, :date)
 data = NeuroTabModels.Data.get_df_loader_train(dfg; feature_names, target_name, weight_name)
 length(data)
-
-n = length(dfg)
-nfeats = length(feature_names)
-bs = maximum(dfg.ends .- dfg.starts) + 1
-x = [zeros(Float32, nfeats, bs) for _ in 1:n]
-@time x = [x[i][:, 1:nrow(df)] .= Matrix(df[!, feature_names])' for (i, df) in enumerate(dfg)]
