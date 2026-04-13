@@ -44,14 +44,14 @@ end
 
 function (l::NeuroTree)(x, ps, st)
     if l.scaler
-        nw = softplus(ps.s) .* (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
+        nw = softplus(ps.s) .* relu.(l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
     else
-        nw = (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
+        nw = relu.(l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
     end
     nw = reshape(nw, size(st.ml, 2), :) # [NTK,B] => [N,TKB]
     lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TKB] => [L,TKB]
     lw = reshape(lw, 1, l.leaves, l.trees, l.k, size(x, 2)) # [L,TKB] => [1,L,T,K,B]
-    y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,K,T] * [1,L,T,K,B] => [P,T,K,B]
+    y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,K] * [1,L,T,K,B] => [P,T,K,B]
     y = dropdims(mean(y1; dims=2); dims=2) # [P,T,K,B] => [P,K,B]
     return y, st
 end

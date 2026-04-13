@@ -9,7 +9,7 @@ using ..Data: get_df_loader_train
 using ..Metrics
 
 using Lux: Training, reactant_device, testmode
-using Reactant: @compile
+using Reactant: @compile, set_default_backend
 
 export CallBack, init_logger, update_logger!, agg_logger
 
@@ -27,16 +27,19 @@ end
 function CallBack(
     config::LearnerTypes,
     deval::AbstractDataFrame,
-    ts::Training.TrainState;
+    cache;
     feature_names,
     target_name,
     weight_name=nothing,
-    offset_name=nothing
+    offset_name=nothing,
 )
     dev = reactant_device()
+    @info "callback dev" dev
+    ts = cache[:train_state]
+    scalers = cache[:scalers]
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
-    deval = get_df_loader_train(deval; feature_names, target_name, weight_name, offset_name, batchsize, shuffle=false) |> dev
+    deval = get_df_loader_train(deval; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
     d0 = first(deval)

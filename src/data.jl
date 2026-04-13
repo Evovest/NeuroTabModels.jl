@@ -63,12 +63,12 @@ function get_df_loader_train(
         y = UInt32.(CategoricalArrays.levelcode.(df[!, target_name]))
     else
         y = Float32.(df[!, target_name])
-        # if !isnothing(scalers)
-        #     y .= y .* scalers[:sigma] .+ scalers[:mu]
-        # end
     end
-    y = reshape(y, 1, :)
+    if !isnothing(scalers)
+        y .= (y .- scalers[:mu]) ./ scalers[:sigma]
+    end
 
+    y = reshape(y, 1, :)
     w = isnothing(weight_name) ? nothing : Float32.(df[!, weight_name])
 
     offset = if isnothing(offset_name)

@@ -1,6 +1,6 @@
-module LooseTrees
+module MOETrees
 
-export LooseTreeConfig
+export MOETreeConfig
 
 using Random
 using Lux
@@ -13,27 +13,27 @@ import ..Models: Architecture
 
 include("model.jl")
 
-struct StackedLooseTree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
+struct StackedMOETree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
     chain::L
 end
 
-function StackedLooseTree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
+function StackedMOETree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
     if stack_size == 1
-        return StackedLooseTree(LooseTree(ins => outs; k, tree_kwargs...))
+        return StackedMOETree(MOETree(ins => outs; k, tree_kwargs...))
     end
 
-    layers = Any[LooseTree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
+    layers = Any[MOETree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
     for _ in 2:(stack_size-1)
         push!(layers, SkipConnection(
-            Chain(LooseTree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
+            Chain(MOETree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
         ))
     end
-    push!(layers, LooseTree(hidden_size => outs; k, tree_kwargs...))
+    push!(layers, MOETree(hidden_size => outs; k, tree_kwargs...))
 
-    return StackedLooseTree(Chain(layers...))
+    return StackedMOETree(Chain(layers...))
 end
 
-struct LooseTreeConfig <: Architecture
+struct MOETreeConfig <: Architecture
     tree_type::Symbol
     actA::Symbol
     depth::Int
@@ -46,7 +46,7 @@ struct LooseTreeConfig <: Architecture
     MLE_tree_split::Bool
 end
 
-function LooseTreeConfig(; kwargs...)
+function MOETreeConfig(; kwargs...)
     args = Dict{Symbol,Any}(
         :tree_type => :binary,
         :actA => :identity,
@@ -73,7 +73,7 @@ function LooseTreeConfig(; kwargs...)
         args[arg] = kwargs[arg]
     end
 
-    return LooseTreeConfig(
+    return MOETreeConfig(
         Symbol(args[:tree_type]),
         Symbol(args[:actA]),
         args[:depth],
@@ -87,7 +87,7 @@ function LooseTreeConfig(; kwargs...)
     )
 end
 
-function _tree_kwargs(config::LooseTreeConfig)
+function _tree_kwargs(config::MOETreeConfig)
     return (;
         config.tree_type,
         config.depth,
@@ -99,7 +99,7 @@ function _tree_kwargs(config::LooseTreeConfig)
     )
 end
 
-function (config::LooseTreeConfig)(; nfeats, outsize, kwargs...)
+function (config::MOETreeConfig)(; nfeats, outsize, kwargs...)
     kwargs = _tree_kwargs(config)
 
     if config.MLE_tree_split
@@ -108,13 +108,13 @@ function (config::LooseTreeConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                StackedLooseTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
-                StackedLooseTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedMOETree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedMOETree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
             ),
         )
     else
         chain = Chain(
-            StackedLooseTree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+            StackedMOETree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
         )
     end
 

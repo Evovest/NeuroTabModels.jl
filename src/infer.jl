@@ -49,10 +49,17 @@ function _inverse_link(::Type{<:GaussianMLE}, pred)
     return p
 end
 
-function _postprocess(::Type{L}, raw_preds; raw::Bool=false) where {L}
-    assembled = _assemble(L, raw_preds)
-    raw && return assembled
-    return _inverse_link(L, assembled)
+function _postprocess(::Type{L}, preds; raw::Bool=false, scalers=nothing) where {L}
+    p_raw = _assemble(L, preds)
+    if raw
+        return p_raw
+    else
+        p = _inverse_link(L, p_raw)
+        if !isnothing(scalers)
+            p .= p .* scalers[:sigma] .+ scalers[:mu]
+        end
+        return p
+    end
 end
 
 function infer(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L}
@@ -61,7 +68,7 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
 
-    raw_preds = Vector{AbstractArray}()
+    preds = Vector{AbstractArray}()
 
     b_first = first(data)
     x0 = b_first isa Tuple ? b_first[1] : b_first
@@ -74,10 +81,9 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L
         else
             pred = Reactant.@jit _forward_reduce(m.chain, dev(x), ps, st)
         end
-        push!(raw_preds, cdev(pred))
+        push!(preds, cdev(pred))
     end
-
-    return _postprocess(L, raw_preds; raw)
+    return _postprocess(L, preds; raw, scalers=m.info[:scalers])
 end
 
 function infer(m::NeuroTabModel, data::AbstractDataFrame; device=:cpu, raw::Bool=false)
