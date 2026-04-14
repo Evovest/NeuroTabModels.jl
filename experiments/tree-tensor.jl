@@ -87,7 +87,7 @@ fig
 
 
 fig = Figure(; size=(900, 450))
-mask = NeuroTrees.get_logits_mask(Val(:binary),4)
+mask = NeuroTrees.get_logits_mask(Val(:binary), 4)
 ax = Axis(fig[1, 1];
     title="logits mask",
     xlabel="Leaves",

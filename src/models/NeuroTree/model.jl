@@ -44,9 +44,9 @@ end
 
 function (l::NeuroTree)(x, ps, st)
     if l.scaler
-        nw = softplus(ps.s) .* relu.(l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
+        nw = softplus(ps.s) .* (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
     else
-        nw = relu.(l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
+        nw = (l.actA(ps.w) * x .+ ps.b) # [F,B] => [NTK,B]
     end
     nw = reshape(nw, size(st.ml, 2), :) # [NTK,B] => [N,TKB]
     lw = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TKB] => [L,TKB]

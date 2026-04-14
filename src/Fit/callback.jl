@@ -26,20 +26,22 @@ end
 
 function CallBack(
     config::LearnerTypes,
-    deval::AbstractDataFrame,
+    df::AbstractDataFrame,
     cache;
     feature_names,
     target_name,
     weight_name=nothing,
     offset_name=nothing,
+    group_key=nothing
 )
     dev = reactant_device()
-    @info "callback dev" dev
     ts = cache[:train_state]
     scalers = cache[:scalers]
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
-    deval = get_df_loader_train(deval; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
+
+    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
+    deval = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
     d0 = first(deval)

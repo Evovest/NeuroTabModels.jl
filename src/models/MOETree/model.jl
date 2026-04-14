@@ -42,20 +42,20 @@ end
 
 function (l::MOETree)(x, ps, st)
 
-    enw1 = softplus(ps.ls) .* relu.(ps.lw * x .+ ps.lb) # [F,B] => [NT,B]
+    enw1 = softplus(ps.ls) .* (ps.lw * x .+ ps.lb) # [F,B] => [NT,B]
     enw = reshape(enw1, size(st.ml, 2), :) # [NTK,B] => [N,TB]
     lwe1 = exp.(st.ml * enw .- st.ms * softplus.(enw)) # [N,TB] => [L,TB]
     lwe2 = reshape(lwe1, 1, l.leaves, l.trees, size(x, 2)) # [L,TB] => [1,L,T,B]
-    lwe = dropdims(sum(lwe2; dims=3); dims=3) # [1,L,T,B] => [1,L,B]
+    lwe = dropdims(mean(lwe2; dims=3); dims=3) # [1,L,T,B] => [1,L,B]
 
-    nw1 = softplus(ps.s) .* relu.(ps.w * x .+ ps.b) # [F,B] => [NTL,B]
+    nw1 = softplus(ps.s) .* (ps.w * x .+ ps.b) # [F,B] => [NTL,B]
     nw = reshape(nw1, size(st.ml, 2), :) # [NTK,B] => [N,TLB]
     lw1 = exp.(st.ml * nw .- st.ms * softplus.(nw)) # [N,TLB] => [L,TLB]
     lw = reshape(lw1, 1, l.leaves, l.trees, l.leaves, size(x, 2)) # [L,TLB] => [1,L,T,L,B]
-    y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,L] * [1,L,T,L,B] => [P,T,L,B]
+    y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,L] .* [1,L,T,L,B] => [P,T,L,B]
     y2 = dropdims(mean(y1; dims=2); dims=2) # [P,T,L,B] => [P,L,B]
 
-    y = mean(lwe .* y2; dims=2) # [P,T,L,B] => [P,L,B]
+    y = sum(lwe .* y2; dims=2) # [1,L,B] .* [P,L,B] => [P,1,B]
 
     return y, st
 end

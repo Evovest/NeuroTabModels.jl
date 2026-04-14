@@ -35,8 +35,15 @@ function init(
     feature_names,
     target_name,
     weight_name=nothing,
-    offset_name=nothing
+    offset_name=nothing,
+    group_key=nothing
 )
+
+    feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
+    weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
+    offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
+    group_key = isnothing(group_key) ? nothing : Symbol(group_key)
+
     dev = _get_device(config)
     batchsize = config.batchsize
     nfeats = length(feature_names)
@@ -60,7 +67,8 @@ function init(
         scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
     end
 
-    data = get_df_loader_train(df; feature_names, target_name, weight_name, offset_name, scalers, batchsize) |> dev
+    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
+    data = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize) |> dev
 
     # Build chain: optional embeddings + architecture backbone
     embed_config = config.embedding_config
@@ -81,10 +89,13 @@ function init(
     info = Dict(
         :nrounds => 0,
         :feature_names => feature_names,
+        :target_name => target_name,
+        :weight_name => weight_name,
+        :offset_name => offset_name,
+        :group_key => group_key,
         :target_levels => target_levels,
         :target_isordered => target_isordered,
-        :scalers => scalers,
-        :device => config.device
+        :scalers => scalers
     )
     m = NeuroTabModel(L, chain, info)
 
@@ -139,15 +150,13 @@ function fit(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
+    group_key=nothing,
     deval=nothing,
     print_every_n=9999,
     verbosity=1
 )
-    feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
-    weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
-    offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
 
-    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name)
+    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
 
     logger = nothing
     if !isnothing(deval)

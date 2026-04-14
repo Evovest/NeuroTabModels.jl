@@ -32,26 +32,16 @@ deval = df[setdiff(1:nrow(df), train_indices), :]
 target_name = "Survived"
 feature_names = setdiff(names(df), ["Survived"])
 
-# arch = NeuroTabModels.NeuroTreeConfig(;
-#     tree_type=:binary,
-#     k=8,
-#     depth=4,
-#     ntrees=16,
-#     stack_size=2,
-#     hidden_size=8,
-#     actA=:identity,
-#     init_scale=1.0,
-#     scaler=true,
-# )
-
-arch = NeuroTabModels.FlexTreeConfig(;
+arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
-    k=1,
+    k=8,
     depth=4,
     ntrees=16,
     stack_size=2,
     hidden_size=8,
+    actA=:identity,
     init_scale=1.0,
+    scaler=true,
 )
 
 # arch = NeuroTabModels.MOETreeConfig(;
