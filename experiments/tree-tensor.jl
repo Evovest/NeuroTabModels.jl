@@ -1,10 +1,9 @@
-
 using BenchmarkTools
 using Random
 using NeuroTabModels
 using NeuroTabModels.Models.NeuroTrees
-using CUDA
-# using CairoMakie
+# using CUDA
+using CairoMakie
 
 # density(m.chain.layers[2].trees[1].b)
 # density(m.chain.layers[2].trees[1].s)
@@ -15,16 +14,16 @@ using CUDA
 # mean(abs.(vec(m.chain.layers[2].trees[1].w)) .< 1e-1)
 
 ###############################
-# original mask
+# softplus mask
 ###############################
-mask = NeuroTrees.get_mask(Val(:binary), 4)
-mask = NeuroTrees.get_mask(Val(:oblivious), 4)
+mask = NeuroTrees.get_softplus_mask(Val(:binary), 4)
+mask = NeuroTrees.get_softplus_mask(Val(:oblivious), 4)
 
 fig = Figure(; size=(450, 450))
 ax = Axis(fig[1, 1];
-    title="original mask",
-    xlabel="Nodes",
-    ylabel="Leaves",
+    title="softplus mask",
+    xlabel="Leaves",
+    ylabel="Nodes",
     aspect=DataAspect(),
     xticks=collect(1:size(mask, 1)),
     yticks=collect(1:size(mask, 2)),
@@ -35,14 +34,23 @@ hm = heatmap!(ax, 1:size(mask, 1)+1, 1:size(mask, 2)+1, mask, colormap=[:white, 
 translate!(hm, 0, 0, -100)
 fig
 
-###############################
-# softplus mask
-###############################
+fig = Figure(; size=(900, 450))
 mask = NeuroTrees.get_softplus_mask(Val(:binary), 4)
-mask = NeuroTrees.get_softplus_mask(Val(:oblivious), 4)
-
-fig = Figure(; size=(450, 450))
 ax = Axis(fig[1, 1];
+    title="softplus mask",
+    xlabel="Leaves",
+    ylabel="Nodes",
+    aspect=DataAspect(),
+    xticks=collect(1:size(mask, 1)),
+    yticks=collect(1:size(mask, 2)),
+    xgridcolor=:lightgrey,
+    ygridcolor=:lightgrey
+)
+hm = heatmap!(ax, 1:size(mask, 1)+1, 1:size(mask, 2)+1, mask, colormap=[:white, "#1f4e79"])
+translate!(hm, 0, 0, -100)
+
+mask = NeuroTrees.get_softplus_mask(Val(:oblivious), 4)
+ax = Axis(fig[1, 2];
     title="softplus mask",
     xlabel="Leaves",
     ylabel="Nodes",
@@ -76,6 +84,38 @@ ax = Axis(fig[1, 1];
 hm = heatmap!(ax, 1:size(mask, 1)+1, 1:size(mask, 2)+1, mask, colormap=[:white, "#1f4e79"])
 translate!(hm, 0, 0, -100)
 fig
+
+
+fig = Figure(; size=(900, 450))
+mask = NeuroTrees.get_logits_mask(Val(:binary), 4)
+ax = Axis(fig[1, 1];
+    title="logits mask",
+    xlabel="Leaves",
+    ylabel="Nodes",
+    aspect=DataAspect(),
+    xticks=collect(1:size(mask, 1)),
+    yticks=collect(1:size(mask, 2)),
+    xgridcolor=:lightgrey,
+    ygridcolor=:lightgrey
+)
+hm = heatmap!(ax, 1:size(mask, 1)+1, 1:size(mask, 2)+1, mask, colormap=[:white, "#1f4e79"])
+translate!(hm, 0, 0, -100)
+
+mask = NeuroTrees.get_logits_mask(Val(:oblivious), 4)
+ax = Axis(fig[1, 2];
+    title="logits mask",
+    xlabel="Leaves",
+    ylabel="Nodes",
+    aspect=DataAspect(),
+    xticks=collect(1:size(mask, 1)),
+    yticks=collect(1:size(mask, 2)),
+    xgridcolor=:lightgrey,
+    ygridcolor=:lightgrey
+)
+hm = heatmap!(ax, 1:size(mask, 1)+1, 1:size(mask, 2)+1, mask, colormap=[:white, "#1f4e79"])
+translate!(hm, 0, 0, -100)
+fig
+
 
 function leaf_weights(logits, lmask, smask)
     logits * lmask .+ softplus.(logits) * smask

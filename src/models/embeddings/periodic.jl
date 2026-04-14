@@ -3,26 +3,26 @@ using Random
 using NNlib
 
 """
-    Periodic(n_features, n_frequencies, sigma)
+    Periodic(nfeats, n_frequencies, sigma)
 
 Maps each feature to `2 * n_frequencies` sinusoidal components: `[cos(2π w x), sin(2π w x)]`.
-Output shape `(2 * n_frequencies, n_features, batch)`.
+Output shape `(2 * n_frequencies, nfeats, batch)`.
 
 # Arguments
-- `n_features::Int`: Number of input features.
+- `nfeats::Int`: Number of input features.
 - `n_frequencies::Int`: Number of frequency components per feature.
 - `sigma::Float32`: Std-dev for the frequency weight initialization (clamped to ±3σ).
 """
 struct Periodic <: Lux.AbstractLuxLayer
-    n_features::Int
+    nfeats::Int
     n_frequencies::Int
     sigma::Float32
 end
 
 function Lux.initialparameters(rng::AbstractRNG, l::Periodic)
     bound = l.sigma * 3f0
-    w = clamp.(l.sigma .* randn(rng, Float32, l.n_frequencies, l.n_features), -bound, bound)
-    w = reshape(2f0 * Float32(π) .* w, l.n_frequencies, l.n_features, 1)
+    w = clamp.(l.sigma .* randn(rng, Float32, l.n_frequencies, l.nfeats), -bound, bound)
+    w = reshape(2f0 * Float32(π) .* w, l.n_frequencies, l.nfeats, 1)
     return (weight=w,)
 end
 
@@ -35,17 +35,17 @@ function (l::Periodic)(x::AbstractMatrix, ps, st)
 end
 
 """
-    PeriodicEmbeddings(n_features, d_embedding=24; n_frequencies=48,
-                       frequency_init_scale=0.01f0, activation=relu, lite=false)
+    PeriodicEmbeddings(nfeats, d_embedding=24; n_frequencies=48,
+                       frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
 Periodic sinusoidal encoding followed by a learned linear projection.
 Applies `Periodic` → `NLinear` (or `Dense` if `lite`) → activation.
 
 # Arguments
-- `n_features::Int`: Number of input features.
+- `nfeats::Int`: Number of input features.
 - `d_embedding::Int`: Output embedding dimension per feature (default `24`).
 - `n_frequencies::Int`: Sinusoidal frequency components per feature (default `48`).
-- `frequency_init_scale::Float32`: σ for frequency weight init (default `0.01f0`).
+- `frequencies_init_scale::Float32`: σ for frequency weight init (default `0.01f0`).
 - `activation`: Activation function applied after projection (default `relu`). E.g. `relu`, `tanh`, `identity`.
 - `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear` (default `false`).
   Only valid when `activation` is not `identity`.
@@ -58,21 +58,21 @@ struct PeriodicEmbeddings{P,L,F} <: Lux.AbstractLuxContainerLayer{(:periodic, :l
 end
 
 function PeriodicEmbeddings(
-    n_features::Int,
+    nfeats::Int,
     d_embedding::Int=24;
-    n_frequencies::Int=48,
-    frequency_init_scale::Float32=0.01f0,
+    frequencies::Int=48,
+    frequencies_init_scale::Float32=0.01f0,
     activation=NNlib.relu,
     lite::Bool=false,
 )
     if lite && activation === identity
         error("lite=true requires a non-identity activation function")
     end
-    periodic = Periodic(n_features, n_frequencies, frequency_init_scale)
+    periodic = Periodic(nfeats, frequencies, frequencies_init_scale)
     linear = if lite
-        Dense(2 * n_frequencies => d_embedding)
+        Dense(2 * frequencies => d_embedding)
     else
-        NLinear(n_features, 2 * n_frequencies, d_embedding)
+        NLinear(nfeats, 2 * frequencies, d_embedding)
     end
     return PeriodicEmbeddings(periodic, linear, activation, lite)
 end

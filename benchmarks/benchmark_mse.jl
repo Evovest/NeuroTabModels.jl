@@ -18,7 +18,6 @@ target_name = "y"
 
 # arch = NeuroTabModels.NeuroTreeConfig(;
 #     tree_type=:binary,
-#     proj_size=1,
 #     actA=:identity,
 #     init_scale=1.0,
 #     depth=4,

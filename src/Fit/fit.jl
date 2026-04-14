@@ -10,9 +10,9 @@ using ..Metrics
 using ..Infer: reduce_pred
 
 import Random: Xoshiro
+import Statistics: mean, std
 import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
-
 using Lux
 using Reactant
 using Lux: cpu_device, reactant_device
@@ -35,17 +35,25 @@ function init(
     feature_names,
     target_name,
     weight_name=nothing,
-    offset_name=nothing
+    offset_name=nothing,
+    group_key=nothing
 )
+
+    feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
+    weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
+    offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
+    group_key = isnothing(group_key) ? nothing : Symbol(group_key)
+
     dev = _get_device(config)
     batchsize = config.batchsize
     nfeats = length(feature_names)
     L = get_loss_type(config.loss)
     lux_loss = get_loss_fn(L)
 
+    outsize = 1
+    scalers = nothing
     target_levels = nothing
     target_isordered = false
-    outsize = 1
 
     if L <: MLogLoss
         eltype(df[!, target_name]) <: CategoricalValue || error("Target `$target_name` must be `<: CategoricalValue`")
@@ -54,17 +62,13 @@ function init(
         outsize = length(target_levels)
     elseif L <: GaussianMLE
         outsize = 2
+        scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
+    elseif L <: Union{MSE,MAE}
+        scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
     end
 
-    data = get_df_loader_train(df; feature_names, target_name, weight_name, offset_name, batchsize) |> dev
-
-    info = Dict(
-        :nrounds => 0,
-        :feature_names => feature_names,
-        :target_levels => target_levels,
-        :target_isordered => target_isordered,
-        :device => config.device
-    )
+    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
+    data = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize) |> dev
 
     # Build chain: optional embeddings + architecture backbone
     embed_config = config.embedding_config
@@ -72,16 +76,27 @@ function init(
         chain = config.arch(; nfeats, outsize)
     else
         if embed_config.embedding_type == :piecewise
-            X_train = Matrix{Float32}(df[:, feature_names])
+            x_train = Matrix{Float32}(df[:, feature_names])
         else
-            X_train = nothing
+            x_train = nothing
         end
-        embed_chain = embed_config(; nfeats, X_train)
+        embed_chain = embed_config(; nfeats, x_train)
         d_in = nfeats * embed_config.d_embedding
         d_features = fill(embed_config.d_embedding, nfeats)
         chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
     end
 
+    info = Dict(
+        :nrounds => 0,
+        :feature_names => feature_names,
+        :target_name => target_name,
+        :weight_name => weight_name,
+        :offset_name => offset_name,
+        :group_key => group_key,
+        :target_levels => target_levels,
+        :target_isordered => target_isordered,
+        :scalers => scalers
+    )
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
@@ -89,7 +104,7 @@ function init(
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 
-    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts)
+    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts, :scalers => scalers)
 end
 
 """
@@ -135,19 +150,17 @@ function fit(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
+    group_key=nothing,
     deval=nothing,
     print_every_n=9999,
     verbosity=1
 )
-    feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
-    weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
-    offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
 
-    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name)
+    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
 
     logger = nothing
     if !isnothing(deval)
-        cb = CallBack(config, deval, cache[:train_state]; feature_names, target_name, weight_name, offset_name)
+        cb = CallBack(config, deval, cache; feature_names, target_name, weight_name, offset_name)
         logger = init_logger(config)
         cb(logger, 0, cache[:train_state])
         (verbosity > 0) && @info "Init training" metric = logger[:metrics][end]

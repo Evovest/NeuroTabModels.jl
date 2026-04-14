@@ -2,6 +2,7 @@ using Random
 using CSV
 using DataFrames
 using Statistics: mean, std
+using StatsBase: tiedrank
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
 @service S3
@@ -22,18 +23,14 @@ path = "share/data/year/year-eval-idx.txt"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
 eval_idx = DataFrame(CSV.File(raw, header=false))[:, 1] .+ 1
 
-transform!(df_tot, "Column1" => identity => "y_raw")
-select!(df_tot, Not("Column1"))
-transform!(df_tot, "y_raw" => (x -> (x .- mean(x)) ./ std(x)) => "y_norm")
-# transform!(df_tot, "y_raw" => (x -> (x .- minimum(x)) ./ std(x)) => "y_norm")
-feature_names = setdiff(names(df_tot), ["y_raw", "y_norm", "w"])
+target_name = "y"
+rename!(df_tot, "Column1" => target_name)
+feature_names = setdiff(names(df_tot), ["y", "w"])
 df_tot.w .= 1.0
-target_name = "y_norm"
 
 # function percent_rank(x::AbstractVector{T}) where {T}
 #     return tiedrank(x) / (length(x) + 1)
 # end
-
 # transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
 
 dtrain = df_tot[train_idx, :];
@@ -42,27 +39,31 @@ dtest = df_tot[(end-51630+1):end, :];
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
-    proj_size=4,
     actA=:identity,
-    depth=4,
+    k=1,
     ntrees=32,
+    depth=4,
     stack_size=1,
-    hidden_size=1,
-    init_scale=0.0,
+    hidden_size=16,
+    init_scale=0.1,
     scaler=true,
-    MLE_tree_split=false
 )
+
+# arch = NeuroTabModels.MOETreeConfig(;
+#     tree_type=:binary,
+#     depth=5,
+#     ntrees=8,
+#     stack_size=1,
+#     init_scale=0.1,
+# )
+
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,
-#     k=32,
-#     d_block=128,
+#     k=16,
+#     d_block=64,
 #     n_blocks=3,
 #     dropout=0.1,
-#     n_bins=16,
-#     use_embeddings=true,
-#     embedding_type=:linear, # periodic, piecewise, linear
-#     d_embedding=8,
-#     scaling_init=:normal,
+#     # scaling_init=:normal,
 # )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
@@ -78,33 +79,43 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-loss = :gaussian_mle # :mse :gaussian_mle :tweedie
+loss = :mse # :mse :gaussian_mle :tweedie
+
+# embedding_config = Dict(
+#     :embedding_type => :piecewise,
+#     :d_embedding => 8,
+#     :activation => nothing,
+#     :bins => 16,
+#     :frequencies => 16,
+# )
+embedding_config = Dict(:embedding_type => :batchnorm)
 
 learner = NeuroTabRegressor(
     arch;
+    embedding_config,
     loss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=3e-4,
-    batchsize=1024,
+    lr=1e-3,
+    batchsize=512,
     device
 )
 
-m = NeuroTabModels.fit(
+@time m = NeuroTabModels.fit(
     learner,
     dtrain;
     deval,
     target_name,
     feature_names,
     print_every_n=5,
-)
+);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]
-mse_eval = mean((p_eval .- deval.y_norm) .^ 2)
+mse_eval = mean((p_eval .- deval.y) .^ 2)
 @info "MSE - deval" mse_eval
 
 p_test = m(dtest; device=:cpu);
 p_test = p_test[:, 1]
-mse_test = mean((p_test .- dtest.y_norm) .^ 2) * std(df_tot.y_raw)^2
+mse_test = mean((p_test .- dtest.y) .^ 2)
 @info "MSE - dtest" mse_test

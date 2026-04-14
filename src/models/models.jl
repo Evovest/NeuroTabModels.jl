@@ -1,8 +1,8 @@
 module Models
 
 export NeuroTabModel, Architecture
-export NeuroTreeConfig, MLPConfig, ResNetConfig, TabMConfig
 export Embeddings
+export NeuroTreeConfig, MLPConfig, ResNetConfig, TabMConfig, MOETreeConfig
 
 using ..Losses
 using Lux: Chain
@@ -34,6 +34,9 @@ using .Embeddings
 
 include("NeuroTree/neurotrees.jl")
 using .NeuroTrees
+
+include("MOETree/moetrees.jl")
+using .MOETrees
 
 include("TabM/TabM.jl")
 using .TabM
