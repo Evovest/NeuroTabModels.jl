@@ -10,7 +10,7 @@ using Reactant
 using Reactant: @compile
 using NNlib: sigmoid, softmax
 using Statistics: mean
-using DataFrames: AbstractDataFrame
+using DataFrames: AbstractDataFrame, GroupedDataFrame, groupby
 import MLUtils: DataLoader
 
 export infer, reduce_pred
@@ -35,62 +35,90 @@ _assemble(::Type{<:GaussianMLE}, raw_preds) = reduce(hcat, raw_preds)
 _assemble(::Type, raw_preds) = vcat([vec(p) for p in raw_preds]...)
 
 # Apply inverse link to convert from model scale to natural scale
-_inverse_link(::Type{<:LogLoss}, pred) = sigmoid.(pred)
-_inverse_link(::Type{<:Tweedie}, pred) = exp.(pred)
-_inverse_link(::Type{<:Union{MSE,MAE}}, pred) = pred
+_inverse_link(::Type{<:LogLoss}, pred, scalers) = sigmoid.(pred)
+_inverse_link(::Type{<:Tweedie}, pred, scalers) = exp.(pred)
+_inverse_link(::Type{<:Union{MSE,MAE}}, pred, scalers) = pred .* scalers[:sigma] .+ scalers[:mu]
 
-function _inverse_link(::Type{<:MLogLoss}, pred)
+function _inverse_link(::Type{<:MLogLoss}, pred, scalers)
     return Matrix(softmax(pred; dims=1)')
 end
 
-function _inverse_link(::Type{<:GaussianMLE}, pred)
+function _inverse_link(::Type{<:GaussianMLE}, pred, scalers)
     p = Matrix(pred')
-    p[:, 2] .= exp.(p[:, 2])
+    @views p[:, 1] .= p[:, 1] .* scalers[:sigma] .+ scalers[:mu]
+    @views p[:, 2] .= exp.(p[:, 2]) .* scalers[:sigma]
     return p
 end
 
-function _postprocess(::Type{L}, raw_preds; raw::Bool=false) where {L}
-    assembled = _assemble(L, raw_preds)
-    raw && return assembled
-    return _inverse_link(L, assembled)
-end
-
-function infer(m::NeuroTabModel{L}, data; device=:cpu, raw::Bool=false) where {L}
+function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
     dev = _get_device(device)
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
+    scalers = m.info[:scalers]
 
-    raw_preds = Vector{AbstractArray}()
-
-    b_first = first(data)
-    x0 = b_first isa Tuple ? b_first[1] : b_first
+    x0 = first(data)
     compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
 
-    for b in data
-        x = b isa Tuple ? b[1] : b
+    preds = Vector{AbstractArray}()
+    for x in data
         if size(x) == size(x0)
             pred = compiled(m.chain, dev(x), ps, st)
         else
             pred = Reactant.@jit _forward_reduce(m.chain, dev(x), ps, st)
         end
-        push!(raw_preds, cdev(pred))
+        push!(preds, cdev(pred))
     end
 
-    return _postprocess(L, raw_preds; raw)
+    p_raw = _assemble(L, preds)
+    proj || return p_raw
+    return _inverse_link(L, p_raw, scalers)
 end
 
-function infer(m::NeuroTabModel, data::AbstractDataFrame; device=:cpu, raw::Bool=false)
-    dinfer = get_df_loader_infer(data; feature_names=m.info[:feature_names], batchsize=2048)
-    return infer(m, dinfer; device, raw)
+function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
+    dev = _get_device(device)
+    cdev = cpu_device()
+    ps = dev(m.info[:ps])
+    st = dev(m.info[:st])
+    scalers = m.info[:scalers]
+
+    (x0, mask0) = first(data)
+    # @info typeof("mask0") mask0
+    # data = data |> dev
+    # (x0, mask0) = first(data)
+    # @info typeof("mask0-dev") mask0
+    compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
+
+    preds = Vector{AbstractArray}()
+    for (x, mask) in data
+        pred = compiled(m.chain, dev(x), ps, st)
+        push!(preds, cdev(pred)[mask])
+    end
+
+    p_raw = _assemble(L, preds)
+    proj || return p_raw
+    return _inverse_link(L, p_raw, scalers)
 end
 
-function (m::NeuroTabModel)(data::AbstractDataFrame; device=:cpu)
-    return infer(m, data; device)
+function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, proj::Bool=true)
+    group_key = m.info[:group_key]
+    if isnothing(group_key)
+        dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
+        p = infer(m, dinfer; device, proj)
+    else
+        dfg = groupby(df, group_key; sort=true)
+        dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
+        p = infer_grp(m, dinfer; device, proj)
+    end
+    return p
 end
 
-function (m::NeuroTabModel)(x::AbstractMatrix; device=:cpu)
-    return infer(m, [(x,)]; device)
+function (m::NeuroTabModel)(df::AbstractDataFrame; device=:cpu, proj::Bool=true)
+    return infer(m, df; device, proj)
 end
+
+# function (m::NeuroTabModel)(x::AbstractMatrix; device=:cpu)
+#     return infer(m, [(x,)]; device)
+# end
 
 end
