@@ -49,10 +49,7 @@ function EmbeddingConfig(;
         d_embedding = 1
     end
 
-    return EmbeddingConfig(
-        embedding_type, d_embedding, activation,
-        bins, frequencies, frequencies_init_scale,
-    )
+    return EmbeddingConfig(embedding_type, d_embedding, activation, bins, frequencies, frequencies_init_scale)
 end
 
 function (config::EmbeddingConfig)(; nfeats::Int, x_train=nothing)

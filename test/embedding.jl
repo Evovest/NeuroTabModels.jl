@@ -21,17 +21,19 @@
         ("NeuroTree", NeuroTabModels.NeuroTreeConfig(; depth=3)),
     ]
 
-    @testset "$arch_name - $et" for (arch_name, arch) in architectures,
-                                     et in [:periodic, :linear, :piecewise]
+    @testset "$arch_name - $embedding_type" for (arch_name, arch) in architectures,
+        embedding_type in [:periodic, :linear, :piecewise]
 
-        embed_kw = Dict(:embedding_type => et, :d_embedding => 8)
-        if et == :piecewise
-            embed_kw[:n_bins] = 16
+        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
+        if embedding_type == :piecewise
+            embedding_config[:bins] = 16
+        elseif embedding_type == :periodic
+            embedding_config[:frequencies] = 8
         end
 
         learner = NeuroTabRegressor(arch;
             loss=:mse, nrounds=20, lr=1e-2,
-            embedding_config=embed_kw)
+            embedding_config)
 
         m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names)
 
@@ -57,21 +59,19 @@ end
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
 
-    @testset "$et" for et in [:periodic, :linear, :piecewise]
-    
-    
-        embed_kw = Dict(:embedding_type => et, :d_embedding => 8)
-        if et == :piecewise
-            embed_kw[:n_bins] = 16
-        end
-        if et == :periodic
-            embed_kw[:n_frequencies] = 8
+    @testset "$embedding_type" for embedding_type in [:periodic, :linear, :piecewise]
+
+        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
+        if embedding_type == :piecewise
+            embedding_config[:bins] = 16
+        elseif embedding_type == :periodic
+            embedding_config[:frequencies] = 8
         end
 
         arch = NeuroTabModels.TabMConfig(; k=2, n_blocks=2, d_block=16, dropout=0.0, scaling_init=:random_signs)
         learner = NeuroTabClassifier(arch;
             nrounds=500, batchsize=32, early_stopping_rounds=100, lr=1e-2,
-            embedding_config=embed_kw)
+            embedding_config)
 
         m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names)
 
