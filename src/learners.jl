@@ -19,6 +19,7 @@ mutable struct NeuroTabRegressor <: MMI.Deterministic
   wd::Float32
   batchsize::Int
   seed::Int
+  scale_target::Bool
   device::Symbol
   gpuID::Int
 end
@@ -147,6 +148,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :device => :cpu,
     :gpuID => 0,
     :embedding_config => nothing,
+    :scale_target => true
   )
 
   args_ignored = setdiff(keys(kwargs), keys(args))
@@ -196,6 +198,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     Float32(args[:wd]),
     args[:batchsize],
     args[:seed],
+    args[:scale_target],
     device,
     args[:gpuID]
   )

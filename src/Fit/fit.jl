@@ -51,7 +51,6 @@ function init(
     lux_loss = get_loss_fn(L)
 
     outsize = 1
-    scalers = nothing
     target_levels = nothing
     target_isordered = false
 
@@ -62,8 +61,10 @@ function init(
         outsize = length(target_levels)
     elseif L <: GaussianMLE
         outsize = 2
-        scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
-    elseif L <: Union{MSE,MAE}
+    end
+
+    scalers = nothing
+    if hasproperty(config, :scale_target) && config.scale_target && L <: Union{MSE,MAE,GaussianMLE}
         scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
     end
 

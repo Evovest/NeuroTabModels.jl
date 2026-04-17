@@ -35,16 +35,20 @@ _assemble(::Type{<:GaussianMLE}, raw_preds) = reduce(hcat, raw_preds)
 _assemble(::Type, raw_preds) = vcat([vec(p) for p in raw_preds]...)
 
 # Apply inverse link to convert from model scale to natural scale
-_inverse_link(::Type{<:LogLoss}, pred, scalers) = sigmoid.(pred)
-_inverse_link(::Type{<:Tweedie}, pred, scalers) = exp.(pred)
-_inverse_link(::Type{<:Union{MSE,MAE}}, pred, scalers) = pred .* scalers[:sigma] .+ scalers[:mu]
-
-function _inverse_link(::Type{<:MLogLoss}, pred, scalers)
-    return Matrix(softmax(pred; dims=1)')
+_inverse_link(::Type{<:LogLoss}, pred) = sigmoid.(pred)
+_inverse_link(::Type{<:Tweedie}, pred) = exp.(pred)
+_inverse_link(::Type{<:Union{MSE,MAE}}, pred) = pred
+_inverse_link(::Type{<:MLogLoss}, pred) = Matrix(softmax(pred; dims=1)')
+function _inverse_link(::Type{<:GaussianMLE}, pred)
+    p = Matrix(pred')
+    @views p[:, 1] .= p[:, 1]
+    @views p[:, 2] .= exp.(p[:, 2])
+    return p
 end
 
-function _inverse_link(::Type{<:GaussianMLE}, pred, scalers)
-    p = Matrix(pred')
+_scaler(::Type{<:LossType}, p, scalers) = p
+_scaler(::Type{<:Union{MSE,MAE}}, p, scalers::NamedTuple) = p .* scalers[:sigma] .+ scalers[:mu]
+function _scaler(::Type{<:GaussianMLE}, p, scalers::NamedTuple)
     @views p[:, 1] .= p[:, 1] .* scalers[:sigma] .+ scalers[:mu]
     @views p[:, 2] .= exp.(p[:, 2]) .* scalers[:sigma]
     return p
@@ -72,7 +76,8 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L
 
     p_raw = _assemble(L, preds)
     proj || return p_raw
-    return _inverse_link(L, p_raw, scalers)
+    p = _inverse_link(L, p_raw)
+    return _scaler(L, p, scalers)
 end
 
 function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
