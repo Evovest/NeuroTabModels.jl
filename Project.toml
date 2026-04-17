@@ -20,7 +20,7 @@ Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 [compat]
-CUDA = "5"
+CUDA = "5, 6"
 CategoricalArrays = "1"
 ChainRulesCore = "1"
 DataFrames = "1.3"
