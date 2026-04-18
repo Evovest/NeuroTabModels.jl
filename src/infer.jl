@@ -5,7 +5,7 @@ using ..Losses
 using ..Models
 
 using Lux
-using Lux: cpu_device, reactant_device
+using Lux: cpu_device, gpu_device, reactant_device
 using Reactant
 using Reactant: @compile
 using NNlib: sigmoid, softmax
@@ -18,9 +18,15 @@ export infer, reduce_pred
 reduce_pred(pred::AbstractMatrix) = pred
 reduce_pred(pred::AbstractArray{T,3}) where {T} = dropdims(mean(pred; dims=2); dims=2)
 
+
+"""
+    _get_device(device::Symbol)
+
+!!! warning
+    Returns the default reactant device. 
+    Future behavior should support :cpu/gpu device in addition to the assumed :reactant device.
+"""
 function _get_device(device::Symbol)
-    backend = device == :gpu ? "gpu" : "cpu"
-    Reactant.set_default_backend(backend)
     return reactant_device()
 end
 
@@ -55,7 +61,7 @@ function _scaler(::Type{<:GaussianMLE}, p, scalers::NamedTuple)
 end
 
 function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
-    dev = _get_device(device)
+    dev = _get_device(Symbol(device))
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
@@ -81,7 +87,7 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L
 end
 
 function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
-    dev = _get_device(device)
+    dev = _get_device(Symbol(device))
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
