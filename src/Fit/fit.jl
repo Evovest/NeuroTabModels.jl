@@ -15,7 +15,7 @@ import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
 using Lux
 using Reactant
-using Lux: cpu_device, reactant_device
+using Lux: cpu_device, gpu_device, reactant_device
 
 using DataFrames
 using CategoricalArrays
@@ -23,9 +23,14 @@ using CategoricalArrays
 include("callback.jl")
 using .CallBacks
 
-function _get_device(config)
-    backend = config.device == :gpu ? "gpu" : "cpu"
-    Reactant.set_default_backend(backend)
+"""
+    _get_device(device::Symbol)
+
+!!! warning
+    Returns the default reactant device. 
+    Future behavior should support :cpu/gpu device in addition to the assumed :reactant device.
+"""
+function _get_device(device::Symbol)
     return reactant_device()
 end
 
@@ -44,7 +49,7 @@ function init(
     offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
     group_key = isnothing(group_key) ? nothing : Symbol(group_key)
 
-    dev = _get_device(config)
+    dev = _get_device(config.device)
     batchsize = config.batchsize
     nfeats = length(feature_names)
     L = get_loss_type(config.loss)
