@@ -103,7 +103,7 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) wher
     preds = Vector{AbstractArray}()
     for (x, mask) in data
         pred = compiled(m.chain, dev(x), ps, st)
-        push!(preds, cdev(pred)[mask])
+        push!(preds, cdev(pred)[:, mask])
     end
 
     p_raw = _assemble(L, preds)
