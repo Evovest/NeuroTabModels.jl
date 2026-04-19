@@ -28,6 +28,8 @@ rename!(df_tot, "Column1" => target_name)
 feature_names = setdiff(names(df_tot), ["y", "w"])
 df_tot.w .= 1.0
 
+df_tot.grp = rand(1:round(Int, nrow(df_tot) / 800), nrow(df_tot))
+
 # function percent_rank(x::AbstractVector{T}) where {T}
 #     return tiedrank(x) / (length(x) + 1)
 # end
@@ -36,6 +38,11 @@ df_tot.w .= 1.0
 dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
 dtest = df_tot[(end-51630+1):end, :];
+
+
+sort!(dtrain, :grp)
+sort!(deval, :grp)
+sort!(dtest, :grp)
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
@@ -101,12 +108,15 @@ learner = NeuroTabRegressor(
     device
 )
 
+group_key = "grp" #"grp" # nothing
+
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
     deval,
     target_name,
     feature_names,
+    group_key,
     print_every_n=5,
 );
 

@@ -1,6 +1,6 @@
-module NeuroTrees
+module MOETrees
 
-export NeuroTreeConfig
+export MOETreeConfig
 
 using Random
 using Lux
@@ -13,27 +13,27 @@ import ..Models: Architecture
 
 include("model.jl")
 
-struct StackedNeuroTree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
+struct StackedMOETree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
     chain::L
 end
 
-function StackedNeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
+function StackedMOETree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
     if stack_size == 1
-        return StackedNeuroTree(NeuroTree(ins => outs; k, tree_kwargs...))
+        return StackedMOETree(MOETree(ins => outs; k, tree_kwargs...))
     end
 
-    layers = Any[NeuroTree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
+    layers = Any[MOETree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
     for _ in 2:(stack_size-1)
         push!(layers, SkipConnection(
-            Chain(NeuroTree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
+            Chain(MOETree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
         ))
     end
-    push!(layers, NeuroTree(hidden_size => outs; k, tree_kwargs...))
+    push!(layers, MOETree(hidden_size => outs; k, tree_kwargs...))
 
-    return StackedNeuroTree(Chain(layers...))
+    return StackedMOETree(Chain(layers...))
 end
 
-struct NeuroTreeConfig <: Architecture
+struct MOETreeConfig <: Architecture
     tree_type::Symbol
     actA::Symbol
     depth::Int
@@ -46,7 +46,7 @@ struct NeuroTreeConfig <: Architecture
     MLE_tree_split::Bool
 end
 
-function NeuroTreeConfig(; kwargs...)
+function MOETreeConfig(; kwargs...)
     args = Dict{Symbol,Any}(
         :tree_type => :binary,
         :actA => :identity,
@@ -73,7 +73,7 @@ function NeuroTreeConfig(; kwargs...)
         args[arg] = kwargs[arg]
     end
 
-    return NeuroTreeConfig(
+    return MOETreeConfig(
         Symbol(args[:tree_type]),
         Symbol(args[:actA]),
         args[:depth],
@@ -87,7 +87,7 @@ function NeuroTreeConfig(; kwargs...)
     )
 end
 
-function _tree_kwargs(config::NeuroTreeConfig)
+function _tree_kwargs(config::MOETreeConfig)
     return (;
         config.tree_type,
         config.depth,
@@ -99,7 +99,7 @@ function _tree_kwargs(config::NeuroTreeConfig)
     )
 end
 
-function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
+function (config::MOETreeConfig)(; nfeats, outsize, kwargs...)
     kwargs = _tree_kwargs(config)
 
     if config.MLE_tree_split
@@ -108,13 +108,13 @@ function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
-                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedMOETree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedMOETree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
             ),
         )
     else
         chain = Chain(
-            StackedNeuroTree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+            StackedMOETree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
         )
     end
 

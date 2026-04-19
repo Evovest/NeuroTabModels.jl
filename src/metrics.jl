@@ -1,168 +1,161 @@
 module Metrics
 
-export metric_dict, is_maximise
+export metric_dict, is_maximise, get_metric
 
 import Statistics: mean, std
-import Flux: logσ, logsoftmax, softmax, relu, hardsigmoid, onehotbatch
+import NNlib: logsigmoid, logsoftmax, softmax, relu, hardsigmoid
+using Lux
 
 """
-    mse(x, y; agg=mean)
-    mse(x, y, w; agg=mean)
-    mse(x, y, w, offset; agg=mean)
+    mse(m, x, y; agg=mean)
+    mse(m, x, y, w; agg=mean)
+    mse(m, x, y, w, offset; agg=mean)
 """
 function mse(m, x, y; agg=mean)
-    metric = agg((m(x) .- y) .^ 2)
-    return metric
+    return agg((vec(m(x)) .- vec(y)) .^ 2)
 end
 function mse(m, x, y, w; agg=mean)
-    metric = agg((m(x) .- y) .^ 2 .* w)
-    return metric
+    return agg((vec(m(x)) .- vec(y)) .^ 2 .* vec(w))
 end
 function mse(m, x, y, w, offset; agg=mean)
-    metric = agg((m(x) .+ offset .- y) .^ 2 .* w)
-    return metric
+    return agg((vec(m(x)) .+ vec(offset) .- vec(y)) .^ 2 .* vec(w))
 end
 
 """
-    mae(x, y; agg=mean)
-    mae(x, y, w; agg=mean)
-    mae(x, y, w, offset; agg=mean)
+    mae(m, x, y; agg=mean)
+    mae(m, x, y, w; agg=mean)
+    mae(m, x, y, w, offset; agg=mean)
 """
 function mae(m, x, y; agg=mean)
-    metric = agg(abs.(m(x) .- y))
-    return metric
+    return agg(abs.(vec(m(x)) .- vec(y)))
 end
 function mae(m, x, y, w; agg=mean)
-    metric = agg(abs.(m(x) .- y) .* w)
-    return metric
+    return agg(abs.(vec(m(x)) .- vec(y)) .* vec(w))
 end
 function mae(m, x, y, w, offset; agg=mean)
-    metric = agg(abs.(m(x) .+ offset .- y) .* w)
-    return metric
+    return agg(abs.(vec(m(x)) .+ vec(offset) .- vec(y)) .* vec(w))
 end
 
-
 """
-    logloss(x, y; agg=mean)
-    logloss(x, y, w; agg=mean)
-    logloss(x, y, w, offset; agg=mean)
+    logloss(m, x, y; agg=mean)
+    logloss(m, x, y, w; agg=mean)
+    logloss(m, x, y, w, offset; agg=mean)
 """
 function logloss(m, x, y; agg=mean)
-    p = m(x)
-    metric = agg((1 .- y) .* p .- logσ.(p))
-    return metric
+    p = vec(m(x))
+    y = vec(y)
+    return agg((1 .- y) .* p .- logsigmoid.(p))
 end
 function logloss(m, x, y, w; agg=mean)
-    p = m(x)
-    metric = agg(((1 .- y) .* p .- logσ.(p)) .* w)
-    return metric
+    p = vec(m(x))
+    y = vec(y)
+    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* vec(w))
 end
 function logloss(m, x, y, w, offset; agg=mean)
-    p = m(x) .+ offset
-    metric = agg(((1 .- y) .* p .- logσ.(p)) .* w)
-    return metric
+    p = vec(m(x)) .+ vec(offset)
+    y = vec(y)
+    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* vec(w))
 end
 
-
 """
-    tweedie(x, y; agg=mean)
-    tweedie(x, y, w; agg=mean)
-    tweedie(x, y, w, offset; agg=mean)
+    tweedie(m, x, y; agg=mean)
+    tweedie(m, x, y, w; agg=mean)
+    tweedie(m, x, y, w, offset; agg=mean)
 """
 function tweedie(m, x, y; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(m(x))
-    agg(2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) - y .* p .^ (1 - rho) / (1 - rho) +
-              p .^ (2 - rho) / (2 - rho))
-    )
+    p = exp.(vec(m(x)))
+    y = vec(y)
+    return agg(2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
+                     p .^ (2 - rho) / (2 - rho)))
 end
-function tweedie(m, x, y, w)
-    agg = mean
+function tweedie(m, x, y, w; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(m(x))
-    agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) - y .* p .^ (1 - rho) / (1 - rho) +
-                   p .^ (2 - rho) / (2 - rho))
-    )
+    p = exp.(vec(m(x)))
+    y = vec(y)
+    w = vec(w)
+    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
+                          p .^ (2 - rho) / (2 - rho)))
 end
 function tweedie(m, x, y, w, offset; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(m(x) .+ offset)
-    agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) - y .* p .^ (1 - rho) / (1 - rho) +
-                   p .^ (2 - rho) / (2 - rho))
-    )
+    p = exp.(vec(m(x)) .+ vec(offset))
+    y = vec(y)
+    w = vec(w)
+    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
+                          p .^ (2 - rho) / (2 - rho)))
 end
 
 """
-    mlogloss(x, y; agg=mean)
-    mlogloss(x, y, w; agg=mean)
-    mlogloss(x, y, w, offset; agg=mean)
+    mlogloss(m, x, y; agg=mean)
+    mlogloss(m, x, y, w; agg=mean)
+    mlogloss(m, x, y, w, offset; agg=mean)
 """
 function mlogloss(m, x, y; agg=mean)
-    p = logsoftmax(m(x); dims=1)
+    p = m(x)
     k = size(p, 1)
-    raw = dropdims(-sum(onehotbatch(y, 1:k) .* p; dims=1); dims=1)
-    metric = agg(raw)
-    return metric
+    y_oh = (UInt32(1):UInt32(k)) .== reshape(y, 1, :)
+    lsm = logsoftmax(p; dims=1)
+    return agg(vec(-sum(y_oh .* lsm; dims=1)))
 end
 function mlogloss(m, x, y, w; agg=mean)
-    p = logsoftmax(m(x); dims=1)
+    p = m(x)
     k = size(p, 1)
-    raw = dropdims(-sum(onehotbatch(y, 1:k) .* p; dims=1); dims=1)
-    metric = agg(raw .* w)
-    return metric
+    y_oh = (UInt32(1):UInt32(k)) .== reshape(y, 1, :)
+    lsm = logsoftmax(p; dims=1)
+    return agg(vec(-sum(y_oh .* lsm; dims=1)) .* vec(w))
 end
 function mlogloss(m, x, y, w, offset; agg=mean)
-    p = logsoftmax(m(x) .+ offset; dims=1)
+    p = m(x) .+ offset
     k = size(p, 1)
-    raw = dropdims(-sum(onehotbatch(y, 1:k) .* p; dims=1); dims=1)
-    metric = agg(raw .* w)
-    return metric
+    y_oh = (UInt32(1):UInt32(k)) .== reshape(y, 1, :)
+    lsm = logsoftmax(p; dims=1)
+    return agg(vec(-sum(y_oh .* lsm; dims=1)) .* vec(w))
 end
 
-
 """
-    gaussian_mle(μ::T, σ::T, y::T, w::T) where {T<:AbstractFloat}
+    gaussian_mle(m, x, y; agg=mean)
+    gaussian_mle(m, x, y, w; agg=mean)
+    gaussian_mle(m, x, y, w, offset; agg=mean)
 """
-gaussian_mle(μ::T, σ::T, y::T) where {T<:AbstractFloat} =
-    -σ - (y - μ)^2 / (2 * max(T(2.0f-7), exp(2 * σ)))
+_gaussian_mle_elt(μ, σ, y) =
+    -σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))
 
-gaussian_mle(μ::T, σ::T, y::T, w::T) where {T<:AbstractFloat} =
-    (-σ - (y - μ)^2 / (2 * max(T(2.0f-7), exp(2 * σ)))) * w
+_gaussian_mle_elt(μ, σ, y, w) =
+    (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))) * w
 
-""""
-    gaussian_mle(x, y; agg=mean)
-    gaussian_mle(x, y, w; agg=mean)
-    gaussian_mle(x, y, w, offset; agg=mean)
-"""
 function gaussian_mle(m, x, y; agg=mean)
     p = m(x)
-    metric = agg(gaussian_mle.(view(p, 1, :), view(p, 2, :), y))
+    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y)))
     return metric
 end
 function gaussian_mle(m, x, y, w; agg=mean)
     p = m(x)
-    metric = agg(gaussian_mle.(view(p, 1, :), view(p, 2, :), y, w))
+    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
     return metric
 end
 function gaussian_mle(m, x, y, w, offset; agg=mean)
     p = m(x) .+ offset
-    metric = agg(gaussian_mle.(view(p, 1, :), view(p, 2, :), y, w))
+    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
     return metric
 end
 
-function get_metric(m, f::Function, data)
+function get_metric(ts, data, eval_compiled)
     metric = 0.0f0
     ws = 0.0f0
+    st = Lux.testmode(ts.states)
     for d in data
-        metric += f(m, d...; agg=sum)
-        if length(d) >= 3
-            ws += sum(d[3])
+        if length(d) == 2
+            m_val, w_val = eval_compiled(d[1], d[2], ts.parameters, st)
+        elseif length(d) == 3
+            m_val, w_val = eval_compiled(d[1], d[2], d[3], ts.parameters, st)
         else
-            ws += last(size(d[2]))
+            m_val, w_val = eval_compiled(d[1], d[2], d[3], d[4], ts.parameters, st)
         end
+        metric += Float32(m_val)
+        ws += Float32(w_val)
     end
-    metric = metric / ws
-    return metric
+    return Float64(metric / ws)
 end
 
 const metric_dict = Dict(

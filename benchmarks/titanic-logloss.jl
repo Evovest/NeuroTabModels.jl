@@ -34,43 +34,52 @@ feature_names = setdiff(names(df), ["Survived"])
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
-    proj_size=1,
-    init_scale=1.0,
+    k=8,
     depth=4,
     ntrees=16,
-    stack_size=1,
-    hidden_size=1,
+    stack_size=2,
+    hidden_size=8,
     actA=:identity,
+    init_scale=1.0,
+    scaler=true,
 )
-# arch = NeuroTabModels.MLPConfig(;
-#     act=:relu,
+
+# arch = NeuroTabModels.MOETreeConfig(;
+#     tree_type=:binary,
+#     k=1,
+#     depth=3,
+#     ntrees=8,
 #     stack_size=1,
-#     hidden_size=64,
+#     hidden_size=8,
+#     init_scale=1.0,
 # )
+# arch = NeuroTabModels.TabMConfig(;
+#     arch_type=:tabm,
+#     k=8,
+#     d_block=32,
+#     n_blocks=3,
+#     dropout=0.1,
+#     scaling_init=:normal,
+# )
+
+# embedding_config = Dict(
+#     :embedding_type => :piecewise,
+#     :d_embedding => 8,
+#     :activation => nothing,
+#     :bins => 16,
+#     :frequencies => 16,
+# )
+embedding_config = Dict(:embedding_type => :batchnorm)
 
 learner = NeuroTabRegressor(
     arch;
+    embedding_config,
     loss=:logloss,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=3e-2,
-    device=:cpu
+    lr=1e-2,
+    device=:gpu
 )
-
-# learner = NeuroTabRegressor(;
-#     arch_name="NeuroTreeConfig",
-#     arch_config=Dict(
-#         :actA => :identity,
-#         :init_scale => 1.0,
-#         :depth => 4,
-#         :ntrees => 32,
-#         :stack_size => 1,
-#         :hidden_size => 1),
-#     loss=:logloss,
-#     nrounds=400,
-#     early_stopping_rounds=2,
-#     lr=1e-2,
-# )
 
 @time m = NeuroTabModels.fit(
     learner,
@@ -83,6 +92,5 @@ learner = NeuroTabRegressor(
 
 p_train = m(dtrain)
 p_eval = m(deval)
-
 @info mean((p_train .> 0.5) .== (dtrain[!, target_name] .> 0.5))
 @info mean((p_eval .> 0.5) .== (deval[!, target_name] .> 0.5))

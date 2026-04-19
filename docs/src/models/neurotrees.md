@@ -1,0 +1,5 @@
+# NeuroTrees
+
+```@docs
+NeuroTreeConfig
+```
