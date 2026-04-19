@@ -108,7 +108,8 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) wher
 
     p_raw = _assemble(L, preds)
     proj || return p_raw
-    return _inverse_link(L, p_raw, scalers)
+    p = _inverse_link(L, p_raw)
+    return _scaler(L, p, scalers)
 end
 
 function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, proj::Bool=true)
