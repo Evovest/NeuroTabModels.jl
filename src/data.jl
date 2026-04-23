@@ -105,7 +105,6 @@ function get_df_loader_train(
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
-    @info "groupedDF loader" bs
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     y = [zeros(Float32, bs) for _ in 1:n]
@@ -180,7 +179,6 @@ function get_df_loader_infer(
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
-    @info "groupedDF loader" bs
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     mask = [zeros(Bool, bs) for _ in 1:n]

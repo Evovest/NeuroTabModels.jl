@@ -166,7 +166,7 @@ function fit(
 
     logger = nothing
     if !isnothing(deval)
-        cb = CallBack(config, deval, cache; feature_names, target_name, weight_name, offset_name)
+        cb = CallBack(config, deval, cache; feature_names, target_name, weight_name, offset_name, group_key)
         logger = init_logger(config)
         cb(logger, 0, cache[:train_state])
         (verbosity > 0) && @info "Init training" metric = logger[:metrics][end]
