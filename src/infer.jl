@@ -103,12 +103,13 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) wher
     preds = Vector{AbstractArray}()
     for (x, mask) in data
         pred = compiled(m.chain, dev(x), ps, st)
-        push!(preds, cdev(pred)[mask])
+        push!(preds, cdev(pred)[:, mask])
     end
 
     p_raw = _assemble(L, preds)
     proj || return p_raw
-    return _inverse_link(L, p_raw, scalers)
+    p = _inverse_link(L, p_raw)
+    return _scaler(L, p, scalers)
 end
 
 function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, proj::Bool=true)
