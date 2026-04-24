@@ -209,3 +209,99 @@ end
     @test mean(peval .== levelcode.(deval.class)) > 0.95
 
 end
+
+@testset "Backend/device - reactant requires enzyme" begin
+    @test_throws ErrorException NeuroTabRegressor(; backend=:zygote, device=:reactant)
+    @test_throws ErrorException NeuroTabClassifier(; backend=:zygote, device=:reactant)
+end
+
+@testset "Backend/device - Regression ($backend, $device)" for (backend, device) in [
+    (:enzyme, :cpu),
+    (:zygote, :cpu),
+    (:enzyme, :reactant),
+]
+
+    Random.seed!(123)
+    X = randn(Float32, 1000, 10)
+    y = X[:, 1] .+ 0.5f0 .* X[:, 2] .+ 0.1f0 .* randn(Float32, 1000)
+    df = DataFrame(X, :auto)
+    df[!, :y] = y
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name])
+
+    train_ratio = 0.8
+    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+
+    dtrain = df[train_indices, :]
+    deval = df[setdiff(1:nrow(df), train_indices), :]
+
+    learner = NeuroTabRegressor(;
+        arch_name="NeuroTreeConfig",
+        arch_config=Dict(:depth => 3),
+        loss=:mse,
+        nrounds=20,
+        early_stopping_rounds=2,
+        lr=1e-1,
+        backend,
+        device,
+    )
+
+    m = NeuroTabModels.fit(
+        learner,
+        dtrain;
+        target_name,
+        feature_names,
+        deval,
+    )
+
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    @test !any(isnan, p)
+    mse_model = mean((p .- deval.y) .^ 2)
+    mse_baseline = mean((mean(dtrain.y) .- deval.y) .^ 2)
+    @test mse_model < mse_baseline
+end
+
+@testset "Backend/device - Classification ($backend, $device)" for (backend, device) in [
+    (:enzyme, :cpu),
+    (:zygote, :cpu),
+]
+
+    Random.seed!(123)
+    X, y = @load_crabs
+    df = DataFrame(X)
+    df[!, :class] = y
+    target_name = "class"
+    feature_names = setdiff(names(df), [target_name])
+
+    train_ratio = 0.8
+    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+
+    dtrain = df[train_indices, :]
+    deval = df[setdiff(1:nrow(df), train_indices), :]
+
+    learner = NeuroTabClassifier(;
+        arch_name="NeuroTreeConfig",
+        arch_config=Dict(:depth => 4),
+        embedding_config=Dict(:embedding_type => :batchnorm),
+        nrounds=200,
+        early_stopping_rounds=5,
+        lr=3e-2,
+        backend,
+        device,
+    )
+
+    m = NeuroTabModels.fit(
+        learner,
+        dtrain;
+        deval,
+        target_name,
+        feature_names,
+    )
+
+    ptrain = [argmax(x) for x in eachrow(m(dtrain))]
+    peval = [argmax(x) for x in eachrow(m(deval))]
+    @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
+    @test mean(peval .== levelcode.(deval.class)) > 0.95
+
+end

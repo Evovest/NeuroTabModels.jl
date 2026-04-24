@@ -7,32 +7,26 @@ using ..Learners
 using ..Models
 using ..Losses
 using ..Metrics
-using ..Infer: reduce_pred
+using ..Infer: reduce_pred, _get_device
 
 import Random: Xoshiro
 import Statistics: mean, std
 import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
 using Lux
-using Reactant
-using Lux: cpu_device, gpu_device, reactant_device
+using Lux: cpu_device
 
 using DataFrames
 using CategoricalArrays
 
+get_ad_backend(backend::Symbol) = get_ad_backend(Val(backend))
+get_ad_backend(::Val{b}) where {b} = error(
+    "Unsupported or unloaded `backend=:$b`. Supported: [:enzyme, :zygote]. " *
+    "`:enzyme` requires `using Enzyme`, `:zygote` requires `using Zygote`."
+)
+
 include("callback.jl")
 using .CallBacks
-
-"""
-    _get_device(device::Symbol)
-
-!!! warning
-    Returns the default reactant device. 
-    Future behavior should support :cpu/gpu device in addition to the assumed :reactant device.
-"""
-function _get_device(device::Symbol)
-    return reactant_device()
-end
 
 function init(
     config::LearnerTypes,
@@ -49,7 +43,7 @@ function init(
     offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
     group_key = isnothing(group_key) ? nothing : Symbol(group_key)
 
-    dev = _get_device(config.device)
+    dev = _get_device(config.device; gpuID=config.gpuID)
     batchsize = config.batchsize
     nfeats = length(feature_names)
     L = get_loss_type(config.loss)
@@ -101,7 +95,10 @@ function init(
         :group_key => group_key,
         :target_levels => target_levels,
         :target_isordered => target_isordered,
-        :scalers => scalers
+        :scalers => scalers,
+        :backend => config.backend,
+        :device => config.device,
+        :gpuID => config.gpuID
     )
     m = NeuroTabModel(L, chain, info)
 
@@ -110,7 +107,7 @@ function init(
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 
-    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts, :scalers => scalers)
+    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts, :scalers => scalers, :ad_backend => get_ad_backend(config.backend))
 end
 
 """
@@ -201,10 +198,14 @@ function _sync_params_to_model!(m, cache)
     m.info[:st] = cdev(Lux.testmode(ts.states))
 end
 
+_single_train_step!(device::Symbol, ad_backend, lux_loss, d, ts) = _single_train_step!(Val(device), ad_backend, lux_loss, d, ts)
+_single_train_step!(::Val{D}, ad_backend, lux_loss, d, ts) where {D} = Training.single_train_step!(ad_backend, lux_loss, d, ts)
+
 function fit_iter!(m, cache)
     ts, lux_loss = cache[:train_state], cache[:lux_loss]
+    ad_backend = cache[:ad_backend]
     for d in cache[:data]
-        _, loss, _, ts = Training.single_train_step!(AutoEnzyme(), lux_loss, d, ts)
+        _, loss, _, ts = _single_train_step!(m.info[:device], ad_backend, lux_loss, d, ts)
     end
     cache[:train_state] = ts
     m.info[:nrounds] += 1

@@ -20,6 +20,7 @@ mutable struct NeuroTabRegressor <: MMI.Deterministic
   batchsize::Int
   seed::Int
   scale_target::Bool
+  backend::Symbol
   device::Symbol
   gpuID::Int
 end
@@ -43,10 +44,13 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
-- `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
-- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu`
+- `backend=:enzyme`:        AD backend used by Lux. One of `:enzyme` or `:zygote`.
+- `device=:reactant`:       Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
+- `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
   E.g. `embedding_config=Dict(:embedding_type => :periodic, :d_embedding => 24)`.
+
+`backend=:enzyme` works on `:cpu`, `:gpu`, and `:reactant`; `backend=:zygote` works on `:cpu` and `:gpu`.
 
 # Internal API
 
@@ -145,7 +149,8 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :wd => 0.0f0,
     :batchsize => 2048,
     :seed => 123,
-    :device => :cpu,
+    :backend => :enzyme,
+    :device => :reactant,
     :gpuID => 0,
     :embedding_config => nothing,
     :scale_target => true
@@ -179,7 +184,11 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     error("Invalid metric. Must be one of: $_metric_list")
   end
 
+  backend = Symbol(args[:backend])
   device = Symbol(args[:device])
+  if device == :reactant && backend != :enzyme
+    error("`device=:reactant` requires `backend=:enzyme`. Got `backend=:$backend`.")
+  end
 
   # Build EmbeddingConfig from Dict if needed
   embed = args[:embedding_config]
@@ -199,6 +208,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     args[:batchsize],
     args[:seed],
     args[:scale_target],
+    backend,
     device,
     args[:gpuID]
   )
@@ -224,6 +234,7 @@ mutable struct NeuroTabClassifier <: MMI.Probabilistic
   wd::Float32
   batchsize::Int
   seed::Int
+  backend::Symbol
   device::Symbol
   gpuID::Int
 end
@@ -241,9 +252,12 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
-- `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
-- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu`
+- `backend=:enzyme`:        AD backend used by Lux. One of `:enzyme` or `:zygote`.
+- `device=:reactant`:       Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
+- `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
+
+`backend=:enzyme` works on `:cpu`, `:gpu`, and `:reactant`; `backend=:zygote` works on `:cpu` and `:gpu`.
 
 # Internal API
 
@@ -341,7 +355,8 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     :wd => 0.0f0,
     :batchsize => 2048,
     :seed => 123,
-    :device => :cpu,
+    :backend => :enzyme,
+    :device => :reactant,
     :gpuID => 0,
     :embedding_config => nothing,
   )
@@ -361,7 +376,11 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     args[arg] = kwargs[arg]
   end
 
+  backend = Symbol(args[:backend])
   device = Symbol(args[:device])
+  if device == :reactant && backend != :enzyme
+    error("`device=:reactant` requires `backend=:enzyme`. Got `backend=:$backend`.")
+  end
 
   # Build EmbeddingConfig from Dict if needed
   embed = args[:embedding_config]
@@ -380,6 +399,7 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     Float32(args[:wd]),
     args[:batchsize],
     args[:seed],
+    backend,
     device,
     args[:gpuID]
   )
