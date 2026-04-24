@@ -35,6 +35,11 @@ df_tot.grp = rand(1:round(Int, nrow(df_tot) / 800), nrow(df_tot))
 # end
 # transform!(df_tot, feature_names .=> percent_rank .=> feature_names)
 
+function norm(x::AbstractVector{T}) where {T}
+    return (x .- mean(x)) ./ std(x)
+end
+transform!(df_tot, feature_names .=> norm .=> feature_names)
+
 dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
 dtest = df_tot[(end-51630+1):end, :];
