@@ -16,36 +16,44 @@ feature_names = names(dtrain)
 dtrain.y = Y
 target_name = "y"
 
-# arch = NeuroTabModels.NeuroTreeConfig(;
-#     tree_type=:binary,
-#     actA=:identity,
-#     init_scale=1.0,
-#     depth=4,
-#     ntrees=32,
-#     stack_size=1,
-#     hidden_size=1,
-#     scaler=false,
-# )
-arch = NeuroTabModels.TabMConfig(;
-    arch_type=:tabm,
-    k=16,
-    d_block=64,
-    n_blocks=3,
-    dropout=0.1,
-    bins=nothing,
-    use_embeddings=false,
-    embedding_type=:periodic,
-    d_embedding=16,
-    scaling_init=:random_signs,
+arch = NeuroTabModels.NeuroTreeConfig(;
+    tree_type=:binary,
+    actA=:identity,
+    init_scale=1.0,
+    depth=4,
+    ntrees=32,
+    stack_size=1,
+    hidden_size=1,
+    scaler=false,
 )
+# arch = NeuroTabModels.TabMConfig(;
+#     arch_type=:tabm,
+#     k=16,
+#     d_block=64,
+#     n_blocks=3,
+#     dropout=0.1,
+#     bins=nothing,
+#     use_embeddings=false,
+#     embedding_type=:periodic,
+#     d_embedding=16,
+#     scaling_init=:random_signs,
+# )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
 #     stack_size=1,
 #     hidden_size=64,
 # )
 
+# embedding_config = Dict(
+#     :embedding_type => :linear,
+#     :d_embedding => 8,
+#     :activation => "identity",
+# )
+embedding_config = Dict(:embedding_type => :batchnorm)
+
 learner = NeuroTabRegressor(
     arch;
+    embedding_config,
     loss=:mse,
     nrounds=10,
     lr=1e-2,
