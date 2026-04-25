@@ -45,7 +45,7 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
 - `backend=:enzyme`:        AD backend used by Lux. One of `:enzyme` or `:zygote`.
-- `device=:reactant`:       Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
+- `device=:cpu`:            Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
   E.g. `embedding_config=Dict(:embedding_type => :periodic, :d_embedding => 24)`.
@@ -150,7 +150,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :batchsize => 2048,
     :seed => 123,
     :backend => :enzyme,
-    :device => :reactant,
+    :device => :cpu,
     :gpuID => 0,
     :embedding_config => nothing,
     :scale_target => true
@@ -253,7 +253,7 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
 - `backend=:enzyme`:        AD backend used by Lux. One of `:enzyme` or `:zygote`.
-- `device=:reactant`:       Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
+- `device=:cpu`:            Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
 
@@ -356,7 +356,7 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     :batchsize => 2048,
     :seed => 123,
     :backend => :enzyme,
-    :device => :reactant,
+    :device => :cpu,
     :gpuID => 0,
     :embedding_config => nothing,
   )
