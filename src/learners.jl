@@ -44,13 +44,14 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
-- `backend=:enzyme`:        AD backend used by Lux. One of `:enzyme` or `:zygote`.
-- `device=:cpu`:            Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
+- `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
+- `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
   E.g. `embedding_config=Dict(:embedding_type => :periodic, :d_embedding => 24)`.
 
-`backend=:enzyme` works on `:cpu`, `:gpu`, and `:reactant`; `backend=:zygote` works on `:cpu` and `:gpu`.
+`backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
+`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
 
 # Internal API
 
@@ -149,8 +150,8 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :wd => 0.0f0,
     :batchsize => 2048,
     :seed => 123,
-    :backend => :enzyme,
-    :device => :cpu,
+    :backend => :zygote,
+    :device => :gpu,
     :gpuID => 0,
     :embedding_config => nothing,
     :scale_target => true
@@ -186,8 +187,11 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
 
   backend = Symbol(args[:backend])
   device = Symbol(args[:device])
-  if device == :reactant && backend != :enzyme
-    error("`device=:reactant` requires `backend=:enzyme`. Got `backend=:$backend`.")
+  if device == :reactant
+    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+  end
+  if backend == :enzyme && device == :gpu
+    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
   end
 
   # Build EmbeddingConfig from Dict if needed
@@ -252,12 +256,13 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
-- `backend=:enzyme`:        AD backend used by Lux. One of `:enzyme` or `:zygote`.
-- `device=:cpu`:            Execution device. One of `:cpu`, `:gpu`, or `:reactant`.
+- `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
+- `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
 
-`backend=:enzyme` works on `:cpu`, `:gpu`, and `:reactant`; `backend=:zygote` works on `:cpu` and `:gpu`.
+`backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
+`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
 
 # Internal API
 
@@ -355,8 +360,8 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     :wd => 0.0f0,
     :batchsize => 2048,
     :seed => 123,
-    :backend => :enzyme,
-    :device => :cpu,
+    :backend => :zygote,
+    :device => :gpu,
     :gpuID => 0,
     :embedding_config => nothing,
   )
@@ -378,8 +383,11 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
 
   backend = Symbol(args[:backend])
   device = Symbol(args[:device])
-  if device == :reactant && backend != :enzyme
-    error("`device=:reactant` requires `backend=:enzyme`. Got `backend=:$backend`.")
+  if device == :reactant
+    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+  end
+  if backend == :enzyme && device == :gpu
+    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
   end
 
   # Build EmbeddingConfig from Dict if needed
