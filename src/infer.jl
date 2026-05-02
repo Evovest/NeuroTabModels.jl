@@ -19,15 +19,16 @@ reduce_pred(pred::AbstractArray{T,3}) where {T} = dropdims(mean(pred; dims=2); d
 """
     _get_device(device::Symbol; gpuID::Integer=0)
 
-Resolve a Lux device from a symbol: `:cpu`, `:gpu`, or `:reactant`.
-`:reactant` requires `using Reactant` to activate `NeuroTabModelsReactantExt`.
+Resolve a Lux device from a symbol: `:cpu` or `:gpu`.
+`backend=:reactant` requires `using Reactant` to activate `NeuroTabModelsReactantExt`.
 """
 _get_device(device::Symbol; gpuID::Integer=0) = _get_device(Val(device); gpuID)
+_get_device(backend::Symbol, device::Symbol; gpuID::Integer=0) = _get_device(Val(backend), Val(device); gpuID)
+_get_device(::Val, ::Val{D}; gpuID::Integer=0) where {D} = _get_device(Val(D); gpuID)
 _get_device(::Val{:cpu}; gpuID::Integer=0) = cpu_device()
 _get_device(::Val{:gpu}; gpuID::Integer=0) = gpu_device(gpuID == 0 ? nothing : gpuID)
 _get_device(::Val{D}; gpuID::Integer=0) where {D} = error(
-    "Unsupported `device=:$D`. Supported devices are [:cpu, :gpu, :reactant]. " *
-    "`:reactant` requires `using Reactant` to activate `NeuroTabModelsReactantExt`."
+    "Unsupported `device=:$D`. Supported devices are [:cpu, :gpu]."
 )
 
 function _forward_reduce(chain, x, ps, st)
@@ -81,16 +82,17 @@ function _infer_grp_loop(::Val, chain, data, x0, dev, cdev, ps, st)
     return preds
 end
 
-function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
+function infer(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true) where {L}
     device = Symbol(device)
-    dev = _get_device(device)
+    backend = Symbol(backend)
+    dev = _get_device(backend, device; gpuID=get(m.info, :gpuID, 0))
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
     scalers = m.info[:scalers]
 
     x0 = first(data)
-    preds = _infer_loop(Val(device), m.chain, data, x0, dev, cdev, ps, st)
+    preds = _infer_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
 
     p_raw = _assemble(L, preds)
     proj || return p_raw
@@ -98,9 +100,10 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L
     return _scaler(L, p, scalers)
 end
 
-function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
+function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true) where {L}
     device = Symbol(device)
-    dev = _get_device(device)
+    backend = Symbol(backend)
+    dev = _get_device(backend, device; gpuID=get(m.info, :gpuID, 0))
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
@@ -111,7 +114,7 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) wher
     # data = data |> dev
     # (x0, mask0) = first(data)
     # @info typeof("mask0-dev") mask0
-    preds = _infer_grp_loop(Val(device), m.chain, data, x0, dev, cdev, ps, st)
+    preds = _infer_grp_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
 
     p_raw = _assemble(L, preds)
     proj || return p_raw
@@ -119,21 +122,21 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) wher
     return _scaler(L, p, scalers)
 end
 
-function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, proj::Bool=true)
+function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true)
     group_key = m.info[:group_key]
     if isnothing(group_key)
         dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
-        p = infer(m, dinfer; device, proj)
+        p = infer(m, dinfer; device, backend, proj)
     else
         dfg = groupby(df, group_key; sort=true)
         dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
-        p = infer_grp(m, dinfer; device, proj)
+        p = infer_grp(m, dinfer; device, backend, proj)
     end
     return p
 end
 
-function (m::NeuroTabModel)(df::AbstractDataFrame; device=:cpu, proj::Bool=true)
-    return infer(m, df; device, proj)
+function (m::NeuroTabModel)(df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true)
+    return infer(m, df; device, backend, proj)
 end
 
 # function (m::NeuroTabModel)(x::AbstractMatrix; device=:cpu)

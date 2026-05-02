@@ -33,7 +33,7 @@ function CallBack(
     offset_name=nothing,
     group_key=nothing
 )
-    dev = _get_device(config.device; gpuID=config.gpuID)
+    dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     ts = cache[:train_state]
     scalers = cache[:scalers]
     batchsize = config.batchsize
@@ -44,7 +44,7 @@ function CallBack(
 
     ps, st = ts.parameters, testmode(ts.states)
     d0 = first(deval)
-    eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.device == :reactant)
+    eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.backend == :reactant)
 
     return CallBack(deval, eval_compiled)
 end

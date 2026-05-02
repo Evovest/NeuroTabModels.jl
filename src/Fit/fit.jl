@@ -20,9 +20,10 @@ using DataFrames
 using CategoricalArrays
 
 get_ad_backend(backend::Symbol) = get_ad_backend(Val(backend))
+get_ad_backend(::Val{:reactant}) = get_ad_backend(Val(:enzyme))
 get_ad_backend(::Val{b}) where {b} = error(
-    "Unsupported or unloaded `backend=:$b`. Supported: [:enzyme, :zygote]. " *
-    "`:enzyme` requires `using Enzyme`, `:zygote` requires `using Zygote`."
+    "Unsupported or unloaded `backend=:$b`. Supported: [:enzyme, :zygote, :reactant]. " *
+    "`:enzyme` and `:reactant` require `using Enzyme`, `:zygote` requires `using Zygote`."
 )
 
 include("callback.jl")
@@ -43,7 +44,7 @@ function init(
     offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
     group_key = isnothing(group_key) ? nothing : Symbol(group_key)
 
-    dev = _get_device(config.device; gpuID=config.gpuID)
+    dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     batchsize = config.batchsize
     nfeats = length(feature_names)
     L = get_loss_type(config.loss)
@@ -205,7 +206,7 @@ function fit_iter!(m, cache)
     ts, lux_loss = cache[:train_state], cache[:lux_loss]
     ad_backend = cache[:ad_backend]
     for d in cache[:data]
-        _, loss, _, ts = _single_train_step!(m.info[:device], ad_backend, lux_loss, d, ts)
+        _, loss, _, ts = _single_train_step!(m.info[:backend], ad_backend, lux_loss, d, ts)
     end
     cache[:train_state] = ts
     m.info[:nrounds] += 1

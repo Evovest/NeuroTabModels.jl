@@ -11,7 +11,10 @@ import NeuroTabModels.Fit.CallBacks: _compile_eval_step
 
 using NeuroTabModels.Infer: _forward_reduce
 
-_get_device(::Val{:reactant}; gpuID::Integer=0) = reactant_device()
+function _get_device(::Val{:reactant}, ::Val{D}; gpuID::Integer=0) where {D}
+    Reactant.set_default_backend(String(D))
+    return reactant_device()
+end
 
 function _infer_loop(::Val{:reactant}, chain, data, x0, dev, cdev, ps, st)
     compiled = @compile _forward_reduce(chain, dev(x0), ps, st)

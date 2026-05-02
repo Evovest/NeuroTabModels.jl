@@ -210,7 +210,7 @@ end
 
 end
 
-@testset "Backend/device - reactant requires enzyme" begin
+@testset "Backend/device - reactant is a backend" begin
     @test_throws ErrorException NeuroTabRegressor(; backend=:zygote, device=:reactant)
     @test_throws ErrorException NeuroTabClassifier(; backend=:zygote, device=:reactant)
 end
@@ -218,7 +218,7 @@ end
 @testset "Backend/device - Regression ($backend, $device)" for (backend, device) in [
     (:enzyme, :cpu),
     (:zygote, :cpu),
-    (:enzyme, :reactant),
+    (:reactant, :cpu),
 ]
 
     Random.seed!(123)
