@@ -2,11 +2,15 @@ using MLDatasets
 using DataFrames
 using Statistics: mean
 using StatsBase: median
-using CategoricalArrays
 using Random
 using CategoricalArrays
 using OrderedCollections
 using NeuroTabModels
+
+using CUDA, cuDNN
+using Reactant
+using Zygote
+using Enzyme
 
 Random.seed!(123)
 
@@ -78,7 +82,8 @@ learner = NeuroTabRegressor(
     nrounds=200,
     early_stopping_rounds=2,
     lr=1e-2,
-    device=:gpu
+    device=:reactant,
+    backend=:enzyme
 )
 
 @time m = NeuroTabModels.fit(
