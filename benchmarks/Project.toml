@@ -1,0 +1,20 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+MLDatasets = "eb30cadb-4394-5ae3-aed4-317e484a6458"
+NeuroTabModels = "f03403ce-56d7-46f9-9b5e-ff6add8ca7b3"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+WeightInitializers = "d49dbf32-c5c2-4618-8acc-27bb2598ef2d"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
+
+[compat]
+CUDA = "5.11"
+cuDNN = "1"

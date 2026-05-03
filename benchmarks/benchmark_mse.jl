@@ -3,6 +3,11 @@ using DataFrames
 using BenchmarkTools
 using Random: seed!
 
+using CUDA, cuDNN
+using Reactant
+using Zygote
+using Enzyme
+
 Threads.nthreads()
 
 seed!(123)
@@ -58,12 +63,16 @@ learner = NeuroTabRegressor(
     nrounds=10,
     lr=1e-2,
     batchsize=2048,
-    device=:gpu
+    device=:gpu,
+    backend=:enzyme
 )
 
 # Reactant GPU: 5.970480 seconds (2.33 M allocations: 5.242 GiB, 3.80% gc time, 0.00% compilation time)
-# Zygote GPU: 9.855853 seconds (27.92 M allocations: 6.005 GiB, 3.58% gc time)
-#  13.557744 seconds (26.40 M allocations: 5.989 GiB, 9.60% gc time)
+# Reactant GPU with eval: 10.154589 seconds (2.33 M allocations: 10.563 GiB, 17.66% gc time, 0.00% compilation time: 100% of which was recompilation)
+# Zygote GPU: 8.798624 seconds (15.09 M allocations: 5.728 GiB, 13.60% gc time)
+# Zygote GPU with eval: 13.715713 seconds (20.61 M allocations: 11.236 GiB, 22.54% gc time)
+# Zygote CPU: 338.912009 seconds (62.93 M allocations: 373.382 GiB, 10.93% gc time, 6.38% compilation time: <1% of which was recompilation)
+# Enzyme CPU: 657.713208 seconds (1.98 M allocations: 270.987 GiB, 6.37% gc time)
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
