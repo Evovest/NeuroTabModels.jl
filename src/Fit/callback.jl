@@ -4,12 +4,11 @@ using DataFrames
 using Statistics: mean, median
 
 using ..Learners: LearnerTypes
-using ...Infer: reduce_pred
+using ...Infer: reduce_pred, _get_device
 using ..Data: get_df_loader_train
 using ..Metrics
 
-using Lux: Training, reactant_device, testmode
-using Reactant: @compile, set_default_backend
+using Lux: Training, testmode
 
 export CallBack, init_logger, update_logger!, agg_logger
 
@@ -34,7 +33,7 @@ function CallBack(
     offset_name=nothing,
     group_key=nothing
 )
-    dev = reactant_device()
+    dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     ts = cache[:train_state]
     scalers = cache[:scalers]
     batchsize = config.batchsize
@@ -45,32 +44,34 @@ function CallBack(
 
     ps, st = ts.parameters, testmode(ts.states)
     d0 = first(deval)
-    eval_compiled = _compile_eval_step(ts.model, feval, d0, ps, st)
+    eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.backend == :reactant)
 
     return CallBack(deval, eval_compiled)
 end
 
-function _compile_eval_step(chain, feval, d0, ps, st)
+function _build_eval_step(chain, feval, d0, ps, st; reactant::Bool)
     if length(d0) == 2
         function _step2(x, y, ps, st)
             m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, x, y; agg=sum), eltype(y)(last(size(y)))
         end
-        return @compile _step2(d0[1], d0[2], ps, st)
+        return reactant ? _compile_eval_step(Val(:reactant), _step2, d0[1], d0[2], ps, st) : _step2
     elseif length(d0) == 3
         function _step3(x, y, w, ps, st)
             m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, x, y, w; agg=sum), sum(w)
         end
-        return @compile _step3(d0[1], d0[2], d0[3], ps, st)
+        return reactant ? _compile_eval_step(Val(:reactant), _step3, d0[1], d0[2], d0[3], ps, st) : _step3
     else
         function _step4(x, y, w, offset, ps, st)
             m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, x, y, w, offset; agg=sum), sum(w)
         end
-        return @compile _step4(d0[1], d0[2], d0[3], d0[4], ps, st)
+        return reactant ? _compile_eval_step(Val(:reactant), _step4, d0[1], d0[2], d0[3], d0[4], ps, st) : _step4
     end
 end
+
+_compile_eval_step(::Val{D}, step, args...) where {D} = step
 
 function init_logger(config::LearnerTypes)
     logger = Dict(

@@ -5,9 +5,7 @@ using ..Losses
 using ..Models
 
 using Lux
-using Lux: cpu_device, gpu_device, reactant_device
-using Reactant
-using Reactant: @compile
+using Lux: cpu_device, gpu_device
 using NNlib: sigmoid, softmax
 using Statistics: mean
 using DataFrames: AbstractDataFrame, GroupedDataFrame, groupby
@@ -18,17 +16,20 @@ export infer, reduce_pred
 reduce_pred(pred::AbstractMatrix) = pred
 reduce_pred(pred::AbstractArray{T,3}) where {T} = dropdims(mean(pred; dims=2); dims=2)
 
-
 """
-    _get_device(device::Symbol)
+    _get_device(device::Symbol; gpuID::Integer=0)
 
-!!! warning
-    Returns the default reactant device. 
-    Future behavior should support :cpu/gpu device in addition to the assumed :reactant device.
+Resolve a Lux device from a symbol: `:cpu` or `:gpu`.
+`backend=:reactant` requires `using Reactant` to activate `NeuroTabModelsReactantExt`.
 """
-function _get_device(device::Symbol)
-    return reactant_device()
-end
+_get_device(device::Symbol; gpuID::Integer=0) = _get_device(Val(device); gpuID)
+_get_device(backend::Symbol, device::Symbol; gpuID::Integer=0) = _get_device(Val(backend), Val(device); gpuID)
+_get_device(::Val, ::Val{D}; gpuID::Integer=0) where {D} = _get_device(Val(D); gpuID)
+_get_device(::Val{:cpu}; gpuID::Integer=0) = cpu_device()
+_get_device(::Val{:gpu}; gpuID::Integer=0) = gpu_device(gpuID == 0 ? nothing : gpuID)
+_get_device(::Val{D}; gpuID::Integer=0) where {D} = error(
+    "Unsupported `device=:$D`. Supported devices are [:cpu, :gpu]."
+)
 
 function _forward_reduce(chain, x, ps, st)
     pred, _ = chain(x, ps, st)
@@ -60,25 +61,38 @@ function _scaler(::Type{<:GaussianMLE}, p, scalers::NamedTuple)
     return p
 end
 
-function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
-    dev = _get_device(Symbol(device))
+# Default inference loops for :cpu and :gpu.
+# NeuroTabModelsReactantExt adds ::Val{:reactant} methods that run a Reactant-compiled forward pass.
+function _infer_loop(::Val, chain, data, x0, dev, cdev, ps, st)
+    preds = Vector{AbstractArray}()
+    for x in data
+        pred = _forward_reduce(chain, dev(x), ps, st)
+        push!(preds, cdev(pred))
+    end
+    return preds
+end
+
+# Grouped variant: each batch is `(x, mask)`; `mask` selects real rows from padded groups.
+function _infer_grp_loop(::Val, chain, data, x0, dev, cdev, ps, st)
+    preds = Vector{AbstractArray}()
+    for (x, mask) in data
+        pred = _forward_reduce(chain, dev(x), ps, st)
+        push!(preds, cdev(pred)[:, mask])
+    end
+    return preds
+end
+
+function infer(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true) where {L}
+    device = Symbol(device)
+    backend = Symbol(backend)
+    dev = _get_device(backend, device; gpuID=get(m.info, :gpuID, 0))
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
     scalers = m.info[:scalers]
 
     x0 = first(data)
-    compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
-
-    preds = Vector{AbstractArray}()
-    for x in data
-        if size(x) == size(x0)
-            pred = compiled(m.chain, dev(x), ps, st)
-        else
-            pred = Reactant.@jit _forward_reduce(m.chain, dev(x), ps, st)
-        end
-        push!(preds, cdev(pred))
-    end
+    preds = _infer_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
 
     p_raw = _assemble(L, preds)
     proj || return p_raw
@@ -86,8 +100,10 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L
     return _scaler(L, p, scalers)
 end
 
-function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) where {L}
-    dev = _get_device(Symbol(device))
+function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true) where {L}
+    device = Symbol(device)
+    backend = Symbol(backend)
+    dev = _get_device(backend, device; gpuID=get(m.info, :gpuID, 0))
     cdev = cpu_device()
     ps = dev(m.info[:ps])
     st = dev(m.info[:st])
@@ -98,13 +114,7 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) wher
     # data = data |> dev
     # (x0, mask0) = first(data)
     # @info typeof("mask0-dev") mask0
-    compiled = @compile _forward_reduce(m.chain, dev(x0), ps, st)
-
-    preds = Vector{AbstractArray}()
-    for (x, mask) in data
-        pred = compiled(m.chain, dev(x), ps, st)
-        push!(preds, cdev(pred)[:, mask])
-    end
+    preds = _infer_grp_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
 
     p_raw = _assemble(L, preds)
     proj || return p_raw
@@ -112,21 +122,21 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, proj::Bool=true) wher
     return _scaler(L, p, scalers)
 end
 
-function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, proj::Bool=true)
+function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true)
     group_key = m.info[:group_key]
     if isnothing(group_key)
         dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
-        p = infer(m, dinfer; device, proj)
+        p = infer(m, dinfer; device, backend, proj)
     else
         dfg = groupby(df, group_key; sort=true)
         dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
-        p = infer_grp(m, dinfer; device, proj)
+        p = infer_grp(m, dinfer; device, backend, proj)
     end
     return p
 end
 
-function (m::NeuroTabModel)(df::AbstractDataFrame; device=:cpu, proj::Bool=true)
-    return infer(m, df; device, proj)
+function (m::NeuroTabModel)(df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true)
+    return infer(m, df; device, backend, proj)
 end
 
 # function (m::NeuroTabModel)(x::AbstractMatrix; device=:cpu)
@@ -134,3 +144,4 @@ end
 # end
 
 end
+
