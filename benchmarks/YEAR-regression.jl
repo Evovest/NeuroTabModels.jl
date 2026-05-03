@@ -3,14 +3,15 @@ using CSV
 using DataFrames
 using Statistics: mean, std
 using StatsBase: tiedrank
-using NeuroTabModels
-using AWS: AWSCredentials, AWSConfig, @service
-@service S3
 
+using CUDA, cuDNN
 using Enzyme
 using Reactant
 using Zygote
-using CUDA, cuDNN
+
+using NeuroTabModels
+using AWS: AWSCredentials, AWSConfig, @service
+@service S3
 
 aws_creds = AWSCredentials(ENV["AWS_ACCESS_KEY_ID_JDB"], ENV["AWS_SECRET_ACCESS_KEY_JDB"])
 aws_config = AWSConfig(; creds=aws_creds, region="ca-central-1")
@@ -89,7 +90,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-backend = :zygote
+backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
 
 # embedding_config = Dict(
@@ -109,7 +110,8 @@ learner = NeuroTabRegressor(
     early_stopping_rounds=2,
     lr=1e-3,
     batchsize=512,
-    device
+    device,
+    backend
 )
 
 @time m = NeuroTabModels.fit(
