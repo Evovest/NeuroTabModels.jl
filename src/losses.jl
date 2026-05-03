@@ -47,8 +47,8 @@ function _mlogloss_core(pred, y)
     nclasses = size(pred, 1)
     classes = reshape(Int32(1):Int32(nclasses), :, 1, 1)
     y_idx = reshape(Int32.(y), 1, 1, :)
-    y_oh = Float32.(classes .== y_idx)
-    return -sum(y_oh .* logsoftmax(pred; dims=1); dims=1)
+    lsm = logsoftmax(pred; dims=1)
+    return -sum(ifelse.(classes .== y_idx, lsm, zero(eltype(lsm))); dims=1)
 end
 
 function _tweedie_core(pred, y)
