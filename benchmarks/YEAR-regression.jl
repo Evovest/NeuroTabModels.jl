@@ -7,6 +7,11 @@ using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
 @service S3
 
+using Enzyme
+using Reactant
+using Zygote
+using CUDA, cuDNN
+
 aws_creds = AWSCredentials(ENV["AWS_ACCESS_KEY_ID_JDB"], ENV["AWS_SECRET_ACCESS_KEY_JDB"])
 aws_config = AWSConfig(; creds=aws_creds, region="ca-central-1")
 
@@ -84,6 +89,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
+backend = :zygote
 loss = :mse # :mse :gaussian_mle :tweedie
 
 # embedding_config = Dict(
