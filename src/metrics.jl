@@ -160,22 +160,22 @@ function correlation(m, x, y, w; agg=mean)
     p = view(m(x), 1, :)
     y = vec(y)
     w = vec(w)
-    p_mean = w' * p
-    p_var = w' * (p .^ 2) - p_mean^2
-    y_mean = w' * y
-    y_var = w' * (y .^ 2) - y_mean^2
-    py_mean = w' * (p .* y)
+    p_mean = w' * p / sum(w)
+    p_var = w' * (p .^ 2) / sum(w) - p_mean^2
+    y_mean = w' * y / sum(w)
+    y_var = w' * (y .^ 2) / sum(w) - y_mean^2
+    py_mean = w' * (p .* y) / sum(w)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
 function correlation(m, x, y, w, offset; agg=mean)
     p = view(m(x), 1, :) .+ view(offset, 1, :)
     y = vec(y)
     w = vec(w)
-    p_mean = w' * p
-    p_var = w' * (p .^ 2) - p_mean^2
-    y_mean = w' * y
-    y_var = w' * (y .^ 2) - y_mean^2
-    py_mean = w' * (p .* y)
+    p_mean = w' * p / sum(w)
+    p_var = w' * (p .^ 2) / sum(w) - p_mean^2
+    y_mean = w' * y / sum(w)
+    y_var = w' * (y .^ 2) / sum(w) - y_mean^2
+    py_mean = w' * (p .* y) / sum(w)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
 
