@@ -1,5 +1,0 @@
-[deps]
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
-WeightInitializers = "d49dbf32-c5c2-4618-8acc-27bb2598ef2d"
-cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"

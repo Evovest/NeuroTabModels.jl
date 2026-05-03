@@ -92,6 +92,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 device = :gpu
 backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
+metric = :correlation # :mse :gaussian_mle :tweedie
 
 # embedding_config = Dict(
 #     :embedding_type => :piecewise,
@@ -106,6 +107,7 @@ learner = NeuroTabRegressor(
     arch;
     embedding_config,
     loss,
+    metric,
     nrounds=200,
     early_stopping_rounds=2,
     lr=1e-3,
