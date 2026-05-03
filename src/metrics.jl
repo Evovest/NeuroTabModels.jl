@@ -140,6 +140,45 @@ function gaussian_mle(m, x, y, w, offset; agg=mean)
     return metric
 end
 
+
+"""
+    correlation(m, x, y; agg=mean)
+    correlation(m, x, y, w; agg=mean)
+    correlation(m, x, y, w, offset; agg=mean)
+"""
+function correlation(m, x, y; agg=mean)
+    p = exp.(vec(m(x)))
+    y = vec(y)
+    p_mean = mean(p)
+    p_var = mean(p .^ 2) - p_mean^2
+    y_mean = mean(y)
+    y_var = mean(y .^ 2) - y_mean^2
+    py_mean = mean(p .* y)
+    return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * length(y)
+end
+function correlation(m, x, y, w; agg=mean)
+    p = exp.(vec(m(x)))
+    y = vec(y)
+    w = vec(w)
+    p_mean = w' * p
+    p_var = w' * (p .^ 2) - p_mean^2
+    y_mean = w' * y
+    y_var = w' * (y .^ 2) - y_mean^2
+    py_mean = w' * (p .* y)
+    return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
+end
+function correlation(m, x, y, w; agg=mean)
+    p = exp.(vec(m(x)) .+ vec(offset))
+    y = vec(y)
+    w = vec(w)
+    p_mean = w' * p
+    p_var = w' * (p .^ 2) - p_mean^2
+    y_mean = w' * y
+    y_var = w' * (y .^ 2) - y_mean^2
+    py_mean = w' * (p .* y)
+    return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
+end
+
 function get_metric(ts, data, eval_compiled)
     metric = 0.0f0
     ws = 0.0f0
@@ -165,6 +204,7 @@ const metric_dict = Dict(
     :mlogloss => mlogloss,
     :gaussian_mle => gaussian_mle,
     :tweedie => tweedie,
+    :correlation => correlation,
 )
 
 is_maximise(::typeof(mse)) = false
@@ -173,5 +213,6 @@ is_maximise(::typeof(logloss)) = false
 is_maximise(::typeof(mlogloss)) = false
 is_maximise(::typeof(gaussian_mle)) = true
 is_maximise(::typeof(tweedie)) = false
+is_maximise(::typeof(correlation)) = true
 
 end
