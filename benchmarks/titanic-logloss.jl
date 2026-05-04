@@ -38,11 +38,11 @@ feature_names = setdiff(names(df), ["Survived"])
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
-    k=8,
+    k=1,
     depth=4,
     ntrees=16,
-    stack_size=2,
-    hidden_size=8,
+    stack_size=1,
+    hidden_size=1,
     actA=:identity,
     init_scale=1.0,
     scaler=true,
@@ -82,8 +82,8 @@ learner = NeuroTabRegressor(
     nrounds=200,
     early_stopping_rounds=2,
     lr=1e-2,
-    device=:reactant,
-    backend=:enzyme
+    device=:cpu,
+    backend=:reactant
 )
 
 @time m = NeuroTabModels.fit(
