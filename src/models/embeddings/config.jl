@@ -9,76 +9,176 @@ const act_dict = Dict(
     :tanhshrink => tanhshrink,
 )
 
-"""
-    EmbeddingConfig(; kwargs...)
+_check_activation(s::Symbol) =
+    haskey(act_dict, s) || throw(ArgumentError(
+        "Unsupported activation `:$s`. Supported: $(sort(collect(keys(act_dict))))."))
 
-Architecture-agnostic configuration for numerical feature embeddings.
-Constructed by the user and passed as `embedding_config` to `NeuroTabRegressor`/`NeuroTabClassifier`.
+"""Supertype for column-wise numerical-feature embeddings."""
+abstract type AbstractNumericalEmbedding end
 
-# Arguments
-- `embedding_type::Symbol`: `:periodic`, `:linear`, or `:piecewise` (default `:periodic`).
-- `d_embedding::Int`: Embedding dimension per feature (default `24`).
-- `activation::Symbol`: activation function symbol (default `:relu` for periodic/linear,
-  `:identity` for piecewise).
-- `bins::Union{Int, Vector{Int}}`: Number of bins for piecewise embeddings (default `48`).
-- `frequencies::Int`: Frequency components for periodic embeddings (default `48`).
-- `frequencies_init_scale::Float32`: σ for periodic frequencies init (default `0.01f0`).
+"""Supertype for time-column embeddings."""
+abstract type AbstractTemporalEmbedding end
 
-# Callable
-    config(; nfeats, X_train=nothing)-Lux.Chain
-
-Returns a `Chain(embedding_layer, FlattenLayer())` ready to prepend to any backbone.
-"""
-struct EmbeddingConfig
-    embedding_type::Symbol
+"""    LinearEmbeddings(; d_embedding=16, activation=:relu)"""
+struct LinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
     activation::Symbol
-    bins::Union{Int,Vector{Int}}
+end
+function LinearEmbeddings(; d_embedding::Int=16, activation::Symbol=:relu)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
+    _check_activation(activation)
+    LinearEmbeddings(d_embedding, activation)
+end
+
+"""    PeriodicEmbeddings(; d_embedding=16, frequencies=32, frequencies_init_scale=0.01f0, activation=:relu, lite=false)"""
+struct PeriodicEmbeddings <: AbstractNumericalEmbedding
+    d_embedding::Int
     frequencies::Int
     frequencies_init_scale::Float32
+    activation::Symbol
+    lite::Bool
+end
+function PeriodicEmbeddings(; d_embedding::Int=16, frequencies::Int=32,
+                            frequencies_init_scale::Real=0.01f0, activation::Symbol=:relu,
+                            lite::Bool=false)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
+    frequencies > 0 || throw(ArgumentError("frequencies must be > 0, got $frequencies"))
+    _check_activation(activation)
+    PeriodicEmbeddings(d_embedding, frequencies, Float32(frequencies_init_scale),
+                       activation, lite)
 end
 
-function EmbeddingConfig(;
-    embedding_type=:periodic,
+"""    PiecewiseLinearEmbeddings(; d_embedding=16, bins=32, activation=:identity, version=:B)
+
+Requires training data to compute bin edges."""
+struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
+    d_embedding::Int
+    bins::Union{Int,Vector{Int}}
+    activation::Symbol
+    version::Symbol
+end
+function PiecewiseLinearEmbeddings(; d_embedding::Int=16, bins::Union{Int,Vector{Int}}=32,
+                                   activation::Symbol=:identity, version::Symbol=:B)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
+    _check_activation(activation)
+    version in (:A, :B) ||
+        throw(ArgumentError("version must be :A or :B, got :$version"))
+    PiecewiseLinearEmbeddings(d_embedding, bins, activation, version)
+end
+
+"""    BatchNormEmbeddings()"""
+struct BatchNormEmbeddings <: AbstractNumericalEmbedding end
+
+"""    TemporalEmbeddings(; index, order=[4,1,7,0], periods=_DEFAULT_TEMPORAL_PERIODS, trend=true, d_embedding=16)
+
+Fourier features on a single time column (`index` is 1-based into `feature_names`)."""
+struct TemporalEmbeddings <: AbstractTemporalEmbedding
+    index::Int
+    order::Vector{Int}
+    periods::Vector{Float32}
+    trend::Bool
+    d_embedding::Int
+end
+function TemporalEmbeddings(;
+    index::Int,
+    order::AbstractVector{<:Integer}=Int[4, 1, 7, 0],
+    periods::AbstractVector{<:Real}=_DEFAULT_TEMPORAL_PERIODS,
+    trend::Bool=true,
     d_embedding::Int=16,
-    activation=nothing,
-    bins::Union{Int,Vector{Int}}=32,
-    frequencies::Int=32,
-    frequencies_init_scale::Float32=0.01f0,
 )
-
-    embedding_type = Symbol(embedding_type)
-    # Default activation depends on embedding type
-    if isnothing(activation)
-        activation = embedding_type == :piecewise ? :identity : :relu
-    end
-    activation = Symbol(activation)
-
-    # Override d_embedding for batchnorm to 1 (for proper derivation of the number of input feature to core model block)
-    if embedding_type == :batchnorm
-        d_embedding = 1
-    end
-
-    return EmbeddingConfig(embedding_type, d_embedding, activation, bins, frequencies, frequencies_init_scale)
+    index >= 1 ||
+        throw(ArgumentError("index must be >= 1, got $index"))
+    length(order) == length(periods) ||
+        throw(ArgumentError("length(order)=$(length(order)) must equal length(periods)=$(length(periods))"))
+    all(>=(0), order) && any(>(0), order) ||
+        throw(ArgumentError("order must be non-negative with at least one positive entry"))
+    d_embedding > 0 ||
+        throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
+    TemporalEmbeddings(index, Vector{Int}(order), Vector{Float32}(periods),
+                       trend, d_embedding)
 end
 
-function (config::EmbeddingConfig)(; nfeats::Int, x_train=nothing)
-    emb = if config.embedding_type == :periodic
-        PeriodicEmbeddings(nfeats, config.d_embedding;
-            frequencies=config.frequencies,
-            frequencies_init_scale=config.frequencies_init_scale,
-            activation=act_dict[config.activation])
-    elseif config.embedding_type == :linear
-        LinearEmbeddings(nfeats, config.d_embedding; activation=act_dict[config.activation])
-    elseif config.embedding_type == :piecewise
-        @assert x_train !== nothing "Piecewise embeddings require `x_train` to compute bin edges."
-        bins = compute_bins(x_train; bins=config.bins)
-        @assert length(bins) == nfeats "Expected $nfeats bin vectors, got $(length(bins))"
-        PiecewiseLinearEmbeddings(bins, config.d_embedding; activation=act_dict[config.activation])
-    elseif config.embedding_type == :batchnorm
-        BatchNormEmbeddings(nfeats)
-    else
-        error("Unsupported embedding type: $(config.embedding_type)")
+"""    EmbeddingLayer(; num=nothing, temp=nothing)
+
+Two typed slots: numerical and temporal. When both are set, the temporal column
+(at `temp.index`) is embedded by `temp` and the rest by `num`; outputs are concatenated."""
+struct EmbeddingLayer{
+    N<:Union{Nothing,AbstractNumericalEmbedding},
+    T<:Union{Nothing,AbstractTemporalEmbedding},
+}
+    num::N
+    temp::T
+end
+EmbeddingLayer(; num=nothing, temp=nothing) = EmbeddingLayer(num, temp)
+
+temporal_out_dim(t::TemporalEmbeddings) = t.d_embedding + (t.trend ? 1 : 0)
+_num_d_embedding(s::Union{LinearEmbeddings,PeriodicEmbeddings,PiecewiseLinearEmbeddings}) = s.d_embedding
+
+needs_x_train(::Nothing) = false
+needs_x_train(::AbstractNumericalEmbedding) = false
+needs_x_train(::PiecewiseLinearEmbeddings) = true
+needs_x_train(::AbstractTemporalEmbedding) = true
+needs_x_train(e::EmbeddingLayer) = needs_x_train(e.num) || needs_x_train(e.temp)
+
+_build_num(s::LinearEmbeddings, nfeats::Int, _x) =
+    _LinearEmbeddings(nfeats, s.d_embedding; activation=act_dict[s.activation])
+_build_num(s::PeriodicEmbeddings, nfeats::Int, _x) =
+    _PeriodicEmbeddings(nfeats, s.d_embedding;
+        frequencies=s.frequencies, frequencies_init_scale=s.frequencies_init_scale,
+        activation=act_dict[s.activation], lite=s.lite)
+function _build_num(s::PiecewiseLinearEmbeddings, nfeats::Int, x_train)
+    x_train === nothing &&
+        error("PiecewiseLinearEmbeddings requires x_train to compute bin edges")
+    bins = compute_bins(x_train; bins=s.bins)
+    _PiecewiseLinearEmbeddings(bins, s.d_embedding; activation=act_dict[s.activation], version=s.version)
+end
+_build_num(::BatchNormEmbeddings, nfeats::Int, _x) = _BatchNormEmbeddings(nfeats)
+
+function _build_temp(t::TemporalEmbeddings, x_col)
+    x_col === nothing &&
+        error("TemporalEmbeddings requires x_train for t_mean/t_std")
+    t_mean = Float32(mean(x_col))
+    t_std = length(x_col) > 1 ? max(Float32(std(x_col)), 1f-6) : 1f0
+    _TemporalEmbeddings(t_mean, t_std, t.order, t.trend, t.d_embedding; periods=t.periods)
+end
+
+"""    build_embedding_chain(spec, nfeats; x_train=nothing) -> (; chain, d_in, d_features)
+
+Realize an `EmbeddingLayer` (or `nothing`) into a Lux chain plus downstream sizing."""
+build_embedding_chain(::Nothing, nfeats::Int; x_train=nothing) =
+    (chain=nothing, d_in=nfeats, d_features=fill(1, nfeats))
+function build_embedding_chain(e::EmbeddingLayer, nfeats::Int; x_train=nothing)
+    if e.num === nothing && e.temp === nothing
+        return (chain=nothing, d_in=nfeats, d_features=fill(1, nfeats))
     end
-    return Chain(emb, FlattenLayer())
+    if e.num === nothing
+        nfeats == 1 ||
+            throw(ArgumentError("temporal-only EmbeddingLayer requires nfeats == 1 (got $nfeats)"))
+        e.temp.index == 1 ||
+            throw(ArgumentError("temporal-only: temp.index must be 1 (got $(e.temp.index))"))
+        layer = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, 1])
+        d = temporal_out_dim(e.temp)
+        return (chain=layer, d_in=d, d_features=Int[d])
+    end
+    if e.temp === nothing
+        if e.num isa BatchNormEmbeddings
+            return (chain=_build_num(e.num, nfeats, nothing), d_in=nfeats, d_features=fill(1, nfeats))
+        end
+        d_emb = _num_d_embedding(e.num)
+        return (chain=Chain(_build_num(e.num, nfeats, x_train), FlattenLayer()),
+                d_in=nfeats * d_emb, d_features=fill(d_emb, nfeats))
+    end
+    e.num isa BatchNormEmbeddings &&
+        throw(ArgumentError("BatchNormEmbeddings + temporal embedding is not supported"))
+    idx = e.temp.index
+    1 <= idx <= nfeats ||
+        throw(ArgumentError("temporal index=$idx out of range for nfeats=$nfeats"))
+    keep = setdiff(1:nfeats, idx)
+    xp = x_train === nothing ? nothing : x_train[:, keep]
+    num_layer = _build_num(e.num, nfeats - 1, xp)
+    temp_layer = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, idx])
+    aug = TemporalAugmentedEmbeddings(num_layer, temp_layer, idx, nfeats)
+    t_out, d_emb = temporal_out_dim(e.temp), _num_d_embedding(e.num)
+    return (chain=aug, d_in=(nfeats - 1) * d_emb + t_out,
+            d_features=vcat(fill(d_emb, nfeats - 1), Int[t_out]))
 end

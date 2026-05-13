@@ -1,17 +1,14 @@
 module Embeddings
 
 using Lux
-using Lux: Chain, FlattenLayer
-using LuxCore
 using Random
 using NNlib
-using LuxLib: batched_matmul
-import Statistics: quantile
+import Statistics: mean, quantile, std
 
-export NLinear, LinearEmbeddings
-export Periodic, PeriodicEmbeddings
-export PiecewiseLinearEncoding, PiecewiseLinearEmbeddings
-export compute_bins, EmbeddingConfig
+export AbstractNumericalEmbedding, AbstractTemporalEmbedding
+export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
+export BatchNormEmbeddings, TemporalEmbeddings
+export EmbeddingLayer, build_embedding_chain, needs_x_train, temporal_out_dim
 
 include("compute_bins.jl")
 include("nlinear.jl")
@@ -19,6 +16,7 @@ include("linear.jl")
 include("periodic.jl")
 include("piecewise_linear.jl")
 include("batchnorm.jl")
+include("temporal.jl")
 include("config.jl")
 
 end

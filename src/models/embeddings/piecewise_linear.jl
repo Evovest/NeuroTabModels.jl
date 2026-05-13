@@ -66,11 +66,11 @@ function (l::PiecewiseLinearEncoding)(x::AbstractMatrix, ps, st)
 end
 
 """
-    PiecewiseLinearEmbeddings(bins, d_embedding; activation=identity, version=:B)
+    _PiecewiseLinearEmbeddings(bins, d_embedding; activation=identity, version=:B)
 
 Learnable embeddings on top of `PiecewiseLinearEncoding`.
 Version `:A`: PLE -> NLinear (with bias).
-Version `:B`: PLE -> NLinear (zero-init, no bias) + LinearEmbeddings residual.
+Version `:B`: PLE -> NLinear (zero-init, no bias) + per-feature linear residual.
 Output shape `(d_embedding, nfeats, batch)`.
 
 # Arguments
@@ -79,7 +79,7 @@ Output shape `(d_embedding, nfeats, batch)`.
 - `activation`: Activation function applied after projection (default `identity`). E.g. `relu`, `tanh`.
 - `version::Symbol`: `:A` or `:B` (default `:B`).
 """
-struct PiecewiseLinearEmbeddings{L0,I,L,F} <: Lux.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
+struct _PiecewiseLinearEmbeddings{L0,I,L,F} <: Lux.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
     linear0::L0
     encoding::I
     linear::L
@@ -87,7 +87,7 @@ struct PiecewiseLinearEmbeddings{L0,I,L,F} <: Lux.AbstractLuxContainerLayer{(:li
     version::Symbol
 end
 
-function PiecewiseLinearEmbeddings(
+function _PiecewiseLinearEmbeddings(
     bins::Vector{<:AbstractVector},
     d_embedding::Int;
     activation=identity,
@@ -99,13 +99,13 @@ function PiecewiseLinearEmbeddings(
 
     encoding = PiecewiseLinearEncoding(bins)
     # Residual path uses raw affine output (no activation)
-    linear0 = (version == :B) ? LinearEmbeddings(nfeats, d_embedding; activation=identity) : nothing
+    linear0 = (version == :B) ? _LinearEmbeddings(nfeats, d_embedding; activation=identity) : nothing
     linear = NLinear(nfeats, max_n_bins, d_embedding; bias=(version == :A))
 
-    return PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)
+    return _PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)
 end
 
-function Lux.initialparameters(rng::AbstractRNG, m::PiecewiseLinearEmbeddings)
+function Lux.initialparameters(rng::AbstractRNG, m::_PiecewiseLinearEmbeddings)
     ps_l0 = m.linear0 === nothing ? nothing : Lux.initialparameters(rng, m.linear0)
     ps_enc = Lux.initialparameters(rng, m.encoding)
 
@@ -119,7 +119,7 @@ function Lux.initialparameters(rng::AbstractRNG, m::PiecewiseLinearEmbeddings)
     return (linear0=ps_l0, encoding=ps_enc, linear=ps_lin)
 end
 
-function (m::PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
+function (m::_PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
     val_linear0 = nothing
     st_l0 = st.linear0
 

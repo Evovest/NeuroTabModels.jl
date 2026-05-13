@@ -73,7 +73,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     :bins => 16,
 #     :frequencies => 16,
 # )
-embedding_config = Dict(:embedding_type => :batchnorm)
+embedding_config = NeuroTabModels.EmbeddingLayer(num=NeuroTabModels.BatchNormEmbeddings())
 
 learner = NeuroTabRegressor(
     arch;

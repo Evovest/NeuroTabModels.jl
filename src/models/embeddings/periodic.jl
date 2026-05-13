@@ -35,7 +35,7 @@ function (l::Periodic)(x::AbstractMatrix, ps, st)
 end
 
 """
-    PeriodicEmbeddings(nfeats, d_embedding=24; n_frequencies=48,
+    _PeriodicEmbeddings(nfeats, d_embedding=24; n_frequencies=48,
                        frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
 Periodic sinusoidal encoding followed by a learned linear projection.
@@ -50,14 +50,14 @@ Applies `Periodic` → `NLinear` (or `Dense` if `lite`) → activation.
 - `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear` (default `false`).
   Only valid when `activation` is not `identity`.
 """
-struct PeriodicEmbeddings{P,L,F} <: Lux.AbstractLuxContainerLayer{(:periodic, :linear)}
+struct _PeriodicEmbeddings{P,L,F} <: Lux.AbstractLuxContainerLayer{(:periodic, :linear)}
     periodic::P
     linear::L
     activation::F
     lite::Bool
 end
 
-function PeriodicEmbeddings(
+function _PeriodicEmbeddings(
     nfeats::Int,
     d_embedding::Int=24;
     frequencies::Int=48,
@@ -74,10 +74,10 @@ function PeriodicEmbeddings(
     else
         NLinear(nfeats, 2 * frequencies, d_embedding)
     end
-    return PeriodicEmbeddings(periodic, linear, activation, lite)
+    return _PeriodicEmbeddings(periodic, linear, activation, lite)
 end
 
-function (m::PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
+function (m::_PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
     h, st_p = m.periodic(x, ps.periodic, st.periodic)
 
     h_lin, st_l = if m.lite

@@ -149,7 +149,7 @@ end
         arch_name="NeuroTreeConfig",
         arch_config=Dict(
             :depth => 4),
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=NeuroTabModels.EmbeddingLayer(num=NeuroTabModels.BatchNormEmbeddings()),
         nrounds=200,
         early_stopping_rounds=5,
         lr=3e-2,
@@ -187,7 +187,7 @@ end
 
     arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=2, d_block=16, dropout=0.0, arch_type)
     learner = NeuroTabClassifier(arch;
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=NeuroTabModels.EmbeddingLayer(num=NeuroTabModels.BatchNormEmbeddings()),
         nrounds=200,
         batchsize=32,
         early_stopping_rounds=5,
@@ -283,7 +283,7 @@ end
     learner = NeuroTabClassifier(;
         arch_name="NeuroTreeConfig",
         arch_config=Dict(:depth => 4),
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=NeuroTabModels.EmbeddingLayer(num=NeuroTabModels.BatchNormEmbeddings()),
         nrounds=200,
         early_stopping_rounds=5,
         lr=3e-2,
@@ -303,5 +303,59 @@ end
     peval = [argmax(x) for x in eachrow(m(deval))]
     @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
     @test mean(peval .== levelcode.(deval.class)) > 0.95
+
+end
+@testset "Regression - ModernNCA" begin
+
+    Random.seed!(123)
+    X = randn(Float32, 600, 8)
+    y = X[:, 1] .+ 0.5f0 .* X[:, 2] .+ 0.1f0 .* randn(Float32, 600)
+    df = DataFrame(X, :auto)
+    df[!, :y] = y
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name])
+
+    train_indices = randperm(nrow(df))[1:Int(0.75 * nrow(df))]
+    dtrain = df[train_indices, :]
+    deval = df[setdiff(1:nrow(df), train_indices), :]
+
+    arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.0f0)
+    learner = NeuroTabRegressor(arch;
+        loss=:mse, nrounds=30, batchsize=128, lr=5f-2,
+        backend=:zygote, device=:cpu)
+
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names)
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    @test !any(isnan, p)
+    mse_model = mean((p .- deval.y) .^ 2)
+    mse_baseline = mean((mean(dtrain.y) .- deval.y) .^ 2)
+    @test mse_model < mse_baseline
+
+end
+
+@testset "Classification - ModernNCA" begin
+
+    Random.seed!(123)
+    X, y = @load_crabs
+    df = DataFrame(X)
+    df[!, :class] = y
+    target_name = "class"
+    feature_names = setdiff(names(df), [target_name])
+
+    train_indices = randperm(nrow(df))[1:Int(0.8 * nrow(df))]
+    dtrain = df[train_indices, :]
+    deval = df[setdiff(1:nrow(df), train_indices), :]
+
+    arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.0f0)
+    learner = NeuroTabClassifier(arch;
+        nrounds=50, batchsize=32, lr=5f-2,
+        backend=:zygote, device=:cpu)
+
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names)
+    ptrain = [argmax(x) for x in eachrow(m(dtrain))]
+    peval = [argmax(x) for x in eachrow(m(deval))]
+    @test mean(ptrain .== levelcode.(dtrain.class)) > 0.85
+    @test mean(peval .== levelcode.(deval.class)) > 0.85
 
 end

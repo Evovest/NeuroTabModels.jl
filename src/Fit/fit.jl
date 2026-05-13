@@ -74,18 +74,14 @@ function init(
     # Build chain: optional embeddings + architecture backbone
     embed_config = config.embedding_config
     if isnothing(embed_config)
-        chain = config.arch(; nfeats, outsize)
+        embed_chain, d_in, d_features = nothing, nfeats, fill(1, nfeats)
     else
-        if embed_config.embedding_type == :piecewise
-            x_train = Matrix{Float32}(df[:, feature_names])
-        else
-            x_train = nothing
-        end
-        embed_chain = embed_config(; nfeats, x_train)
-        d_in = nfeats * embed_config.d_embedding
-        d_features = fill(embed_config.d_embedding, nfeats)
-        chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
+        x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
+        embed_chain, d_in, d_features = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
     end
+    chain = Models.build_chain(config.arch, embed_chain;
+        nfeats, outsize, d_in, d_features, loss_type=L)
+
 
     info = Dict(
         :nrounds => 0,
@@ -105,6 +101,8 @@ function init(
 
     rng = Xoshiro(config.seed)
     ps, st = Lux.setup(rng, m.chain) |> dev
+    data = Models.train_dataloader(config.arch, m, data, df;
+        feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng)
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 
