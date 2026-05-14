@@ -9,10 +9,6 @@ const act_dict = Dict(
     :tanhshrink => tanhshrink,
 )
 
-_check_activation(s::Symbol) =
-    haskey(act_dict, s) || throw(ArgumentError(
-        "Unsupported activation `:$s`. Supported: $(sort(collect(keys(act_dict))))."))
-
 """Supertype for column-wise numerical-feature embeddings."""
 abstract type AbstractNumericalEmbedding end
 
@@ -26,7 +22,6 @@ struct LinearEmbeddings <: AbstractNumericalEmbedding
 end
 function LinearEmbeddings(; d_embedding::Int=16, activation::Symbol=:relu)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
-    _check_activation(activation)
     LinearEmbeddings(d_embedding, activation)
 end
 
@@ -43,7 +38,6 @@ function PeriodicEmbeddings(; d_embedding::Int=16, frequencies::Int=32,
                             lite::Bool=false)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     frequencies > 0 || throw(ArgumentError("frequencies must be > 0, got $frequencies"))
-    _check_activation(activation)
     PeriodicEmbeddings(d_embedding, frequencies, Float32(frequencies_init_scale),
                        activation, lite)
 end
@@ -60,7 +54,6 @@ end
 function PiecewiseLinearEmbeddings(; d_embedding::Int=16, bins::Union{Int,Vector{Int}}=32,
                                    activation::Symbol=:identity, version::Symbol=:B)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
-    _check_activation(activation)
     version in (:A, :B) ||
         throw(ArgumentError("version must be :A or :B, got :$version"))
     PiecewiseLinearEmbeddings(d_embedding, bins, activation, version)
