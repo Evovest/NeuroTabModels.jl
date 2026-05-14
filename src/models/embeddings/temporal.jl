@@ -1,3 +1,8 @@
+"""
+Default Fourier base periods for `TemporalEmbeddings`, in seconds:
+year (`365.25 * 86_400`), 30-day month, week, day. Assumes the time column is
+encoded as a POSIX-style seconds-since-epoch float.
+"""
 const _DEFAULT_TEMPORAL_PERIODS = Float32[31_557_600, 2_629_800, 604_800, 86_400]
 
 """Fixed Fourier features `sin(ωᵢ t), cos(ωᵢ t)` per harmonic; `ωᵢ = 2πk/T`."""
@@ -6,6 +11,10 @@ struct TemporalPeriodic <: Lux.AbstractLuxLayer
 end
 
 Lux.initialparameters(::AbstractRNG, ::TemporalPeriodic) = (;)
+
+# `omega` is fixed (no gradient), but it lives in `st` rather than as a struct
+# field so that `dev(st)` transfers it to the GPU alongside the learnable
+# state. Reshaped to a column so the broadcast against `(1, batch)` x is unambiguous.
 Lux.initialstates(::AbstractRNG, l::TemporalPeriodic) =
     (omega = Matrix{Float32}(reshape(l.omega, length(l.omega), 1)),)
 
@@ -22,6 +31,20 @@ struct _TemporalEmbeddings{P,D,trend} <: Lux.AbstractLuxContainerLayer{(:periodi
     t_std::Float32
 end
 
+"""
+    _TemporalEmbeddings(t_mean, t_std, order, trend, d_embedding; periods)
+
+Realize a `_TemporalEmbeddings` layer from spec.
+
+`order` and `periods` are aligned per-band: for each `(o_i, p_i)`, the Fourier
+basis contributes harmonics `k = 1:o_i` with angular frequency `ω = 2πk/p_i`.
+All `ω` are concatenated into a single flat vector, so the resulting
+`TemporalPeriodic` outputs `2 * sum(order)` features (sin + cos per harmonic),
+which the `Dense` then projects to `d_embedding`.
+
+`trend` is lifted into the type parameter so the forward dispatches statically
+on whether the standardised raw time `(x - t_mean) / t_std` is appended.
+"""
 function _TemporalEmbeddings(
     t_mean::Real, t_std::Real,
     order::AbstractVector{<:Integer}, trend::Bool, d_embedding::Int;

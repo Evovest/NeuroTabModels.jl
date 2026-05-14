@@ -12,6 +12,28 @@ using Random: randperm, AbstractRNG
 using DataFrames: AbstractDataFrame, select
 using CategoricalArrays
 
+"""
+    ModernNCAConfig(; d_embedding=128, n_blocks=2, d_block=256,
+                     dropout=0.1, temperature=1.0, sample_rate=0.8, eps=1f-8)
+
+Hyperparameters for a ModernNCA architecture. Pass to `NeuroTabRegressor` /
+`NeuroTabClassifier` as the `arch` argument.
+
+# Arguments
+- `d_embedding`: dimension of the encoder output (the space distances are
+  computed in).
+- `n_blocks`, `d_block`: number and hidden width of the residual MLP blocks
+  that form the encoder. `n_blocks=0` collapses the encoder to a single
+  `Dense` projection.
+- `dropout`: dropout rate inside each MLP block (skipped when `<= 0`).
+- `temperature`: softmax temperature on the negative distances. Higher values
+  produce softer retrieval (more uniform attention over candidates).
+- `sample_rate`: fraction of the complement (everything outside the current
+  minibatch) kept as candidates each training step — the Stochastic
+  Neighborhood Sampling from the paper (section 4.3). `1.0` disables sampling.
+- `eps`: numerical-stability floor inside `sqrt(.)` for the pairwise distance
+  and as a denominator floor on `temperature`.
+"""
 struct ModernNCAConfig <: Architecture
     d_embedding::Int
     n_blocks::Int
