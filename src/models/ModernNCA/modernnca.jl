@@ -89,7 +89,8 @@ function _to_output(::Type{<:LogLoss}, α, cy, _)
 end
 
 function _to_output(::Type{<:MLogLoss}, α, cy, outsize::Int)
-    oh = Float32.(reshape(1:outsize, :, 1) .== reshape(cy, 1, :))
+    oh = ((k, c) -> ifelse(k == c, 1f0, 0f0)).(
+        reshape(UInt32(1):UInt32(outsize), :, 1), reshape(cy, 1, :))
     log.(clamp.(oh * α, 1f-7, Inf32))
 end
 
@@ -209,6 +210,13 @@ function Models.infer_dataloader(::ModernNCAModel, info, data, dev)
     ref = info[:nca_ref]
     cx, cy = dev(ref.cx), dev(ref.cy)
     return Iterators.map(x -> (x, cx, cy), data)
+end
+
+"Wrap each eval batch's `x` with the training corpus; leave `(y, w, offset)` untouched."
+function Models.eval_dataloader(::ModernNCAModel, info, data, dev)
+    ref = info[:nca_ref]
+    cx, cy = dev(ref.cx), dev(ref.cy)
+    return Iterators.map(d -> ((d[1], cx, cy), Base.tail(d)...), data)
 end
 
 end # module
