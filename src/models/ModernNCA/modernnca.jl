@@ -7,6 +7,7 @@ import ..Models: Architecture, NeuroTabModel
 import ..Losses: LossType, MSE, MAE, LogLoss, MLogLoss
 
 using Lux
+using LuxCore
 using NNlib: relu, softmax
 using Random: randperm, AbstractRNG
 using DataFrames: AbstractDataFrame, select
@@ -21,8 +22,8 @@ Hyperparameters for a ModernNCA architecture. Pass to `NeuroTabRegressor` or
 
 # Arguments
 - `d_embedding`: dimension of the encoder output.
-- `n_blocks`, `d_block`: count and hidden width of the encoder's residual MLP
-  blocks. `n_blocks=0` collapses the encoder to a single `Dense` projection.
+- `n_blocks`, `d_block`: count and hidden width of the post-encoder MLP blocks
+  after the linear encoder. `n_blocks=0` keeps only the linear encoder.
 - `dropout`: dropout rate inside each MLP block. Skipped when `<= 0`.
 - `temperature`: softmax temperature on the negative distances.
 - `sample_rate`: fraction of the minibatch complement kept as candidates each
@@ -47,13 +48,13 @@ function ModernNCAConfig(;
         Float32(dropout), Float32(temperature), Float32(sample_rate), Float32(eps))
 end
 
-"Build the residual MLP encoder."
-function _encoder(cfg::ModernNCAConfig, d_in::Int)
-    layers = Any[Dense(d_in => cfg.d_embedding)]
+"Embedding -> linear encoder -> optional post-encoder MLP tower."
+function _backbone(cfg::ModernNCAConfig, d_in::Int, embedding_layer)
+    emb = isnothing(embedding_layer) ? WrappedFunction(identity) : embedding_layer
+    layers = Any[emb, Dense(d_in => cfg.d_embedding)]
     for _ in 1:cfg.n_blocks
         push!(layers, BatchNorm(cfg.d_embedding))
-        push!(layers, Dense(cfg.d_embedding => cfg.d_block))
-        push!(layers, WrappedFunction(relu))
+        push!(layers, Dense(cfg.d_embedding => cfg.d_block, relu))
         cfg.dropout > 0 && push!(layers, Dropout(cfg.dropout))
         push!(layers, Dense(cfg.d_block => cfg.d_embedding))
     end
@@ -61,26 +62,12 @@ function _encoder(cfg::ModernNCAConfig, d_in::Int)
     Chain(layers...)
 end
 
-"Pairwise Euclidean distance between columns of `q` and `k`, with `ϵ` added under the square root."
 function _pairwise_dist(q::AbstractMatrix, k::AbstractMatrix, ϵ::Float32)
     q2 = sum(abs2, q; dims=1)
     k2 = sum(abs2, k; dims=1)
     sqrt.(max.(0f0, permutedims(k2, (2, 1)) .+ q2 .- 2f0 .* (k' * q)) .+ ϵ)
 end
 
-"""
-Set `d[i, i] = typemax(T)` for `i ≤ batch` to suppress self-pair retrieval.
-Fused into one broadcast to avoid materialising a CPU `BitMatrix`, which is
-not bitstype and would fail on GPU.
-"""
-function _mask_diag(d::AbstractMatrix{T}, batch::Int) where {T}
-    r, c = size(d)
-    inf = typemax(T)
-    ((i, j, x) -> ifelse((i == j) & (i <= batch), inf, x)).(
-        reshape(1:r, :, 1), reshape(1:c, 1, :), d)
-end
-
-"Reshape attention weights and candidate targets into the shape required by each loss."
 _to_output(::Type{<:Union{MSE,MAE}}, α, cy, _) = reshape(α' * cy, 1, :)
 
 function _to_output(::Type{<:LogLoss}, α, cy, _)
@@ -94,76 +81,89 @@ function _to_output(::Type{<:MLogLoss}, α, cy, outsize::Int)
     log.(clamp.(oh * α, 1f-7, Inf32))
 end
 
-"ModernNCA model container. State carries `training` for `Lux.testmode` to toggle."
-struct ModernNCAModel{B,LT} <: Lux.AbstractLuxContainerLayer{(:backbone,)}
+struct ModernNCAModel{B,LT} <: LuxCore.AbstractLuxWrapperLayer{:backbone}
     backbone::B
     cfg::ModernNCAConfig
     outsize::Int
     loss_type::Type{LT}
 end
 
-Lux.initialstates(rng::AbstractRNG, m::ModernNCAModel) = (
-    backbone = Lux.initialstates(rng, m.backbone),
-    training = Val(true),
-)
-
 "Construct a `ModernNCAModel` from the config, sizing, and optional embedding."
 function (cfg::ModernNCAConfig)(; nfeats, outsize,
                                  loss_type::Type{<:LossType}=MSE,
                                  embedding_layer=nothing)
-    emb = isnothing(embedding_layer) ? WrappedFunction(identity) : embedding_layer
-    backbone = Chain(emb, _encoder(cfg, nfeats))
-    ModernNCAModel(backbone, cfg, Int(outsize), loss_type)
+    ModernNCAModel(_backbone(cfg, nfeats, embedding_layer), cfg, Int(outsize), loss_type)
 end
 
-"Compute scaled pairwise distances. Training mode adds the self-pair concat and diagonal mask."
-function _train_distances(::Val{true}, zq, zk, cfg)
-    d = _pairwise_dist(zq, hcat(zq, zk), cfg.eps) ./ max(cfg.temperature, cfg.eps)
-    _mask_diag(d, size(zq, 2))
+function _encode(m::ModernNCAModel, x, cand_x, ps, st)
+    zq, st_bb = m.backbone(x, ps, st)
+    zk, st_bb = m.backbone(cand_x, ps, st_bb)
+    zq, zk, st_bb
 end
-_train_distances(::Val{false}, zq, zk, cfg) =
-    _pairwise_dist(zq, zk, cfg.eps) ./ max(cfg.temperature, cfg.eps)
 
-"Forward pass. The loader prefixes `cand_y` with the batch targets so it lines up with `hcat(zq, zk)`."
-function (m::ModernNCAModel)((x, cand_x, cand_y)::Tuple, ps, st)
-    f = Lux.StatefulLuxLayer{true}(m.backbone, ps.backbone, st.backbone)
-    zq, zk = f(x), f(cand_x)
-    d = _train_distances(st.training, zq, zk, m.cfg)
+function _nca_logits(m::ModernNCAModel, zq, zk, cand_y)
+    d = _pairwise_dist(zq, zk, m.cfg.eps) ./ max(m.cfg.temperature, m.cfg.eps)
     α = softmax(-d; dims=1)
-    out = _to_output(m.loss_type, α, cand_y, m.outsize)
-    return out, (backbone=f.st, training=st.training)
+    _to_output(m.loss_type, α, cand_y, m.outsize)
 end
 
-"Training iterator. Each step yields a minibatch and its complement (optionally subsampled) as candidates."
-struct ModernNCALoader{X,Y,R<:AbstractRNG}
+function _nca_logits(m::ModernNCAModel, zq, zk, cand_y, dist_mask)
+    d = _pairwise_dist(zq, zk, m.cfg.eps) ./ max(m.cfg.temperature, m.cfg.eps)
+    α = softmax(-(d .+ dist_mask); dims=1)
+    _to_output(m.loss_type, α, cand_y, m.outsize)
+end
+
+"Training forward: concat encoded queries into candidates and mask the diagonal."
+function (m::ModernNCAModel)((x, cand_x, cand_y, y, dist_mask)::Tuple{Any,Any,Any,Any,Any}, ps, st)
+    zq, zk, st_bb = _encode(m, x, cand_x, ps, st)
+    zk = hcat(zq, zk)
+    cy = vcat(vec(y), vec(cand_y))
+    out = _nca_logits(m, zq, zk, cy, dist_mask)
+    return out, st_bb
+end
+
+"Inference / eval forward: queries attend to the corpus only."
+function (m::ModernNCAModel)((x, cand_x, cand_y)::Tuple{Any,Any,Any}, ps, st)
+    zq, zk, st_bb = _encode(m, x, cand_x, ps, st)
+    out = _nca_logits(m, zq, zk, cand_y)
+    return out, st_bb
+end
+
+"Training iterator. Corpus is dev'd once at construction; per-batch gathers happen on-device."
+struct ModernNCALoader{X,Y,R<:AbstractRNG,D,M}
     full_x::X
     full_y::Y
     batchsize::Int
     sample_rate::Float32
     rng::R
+    dev::D
+    train_mask::M
 end
 
-Base.length(l::ModernNCALoader) = cld(size(l.full_x, 2), l.batchsize)
+Base.length(l::ModernNCALoader) = fld(size(l.full_x, 2), l.batchsize)
 
 function Base.iterate(l::ModernNCALoader, state=nothing)
     n = size(l.full_x, 2)
     perm, start = state === nothing ? (randperm(l.rng, n), 1) : state
-    start > n && return nothing
-    stop = min(start + l.batchsize - 1, n)
+    stop = start + l.batchsize - 1
+    stop > n && return nothing
     batch_idx = perm[start:stop]
     cand_full = vcat(@view(perm[1:start-1]), @view(perm[stop+1:end]))
     cand_idx = if l.sample_rate < 1f0
         m = length(cand_full)
-        k = max(1, floor(Int, l.sample_rate * m))
-        k < m ? cand_full[randperm(l.rng, m)[1:k]] : cand_full
+        k = Int(floor(l.sample_rate * m))
+        k == 0 ? cand_full[1:0] :
+            k < m ? cand_full[randperm(l.rng, m)[1:k]] : cand_full
     else
         cand_full
     end
-    x = l.full_x[:, batch_idx]
-    y = l.full_y[batch_idx]
-    cand_x = l.full_x[:, cand_idx]
-    cand_y = vcat(y, l.full_y[cand_idx])
-    return ((x, cand_x, cand_y), y), (perm, stop + 1)
+    bidx = l.dev(batch_idx)
+    cidx = l.dev(cand_idx)
+    x = l.full_x[:, bidx]
+    y = l.full_y[bidx]
+    cand_x = l.full_x[:, cidx]
+    cand_y = l.full_y[cidx]
+    return ((x, cand_x, cand_y, y, l.train_mask), y), (perm, stop + 1)
 end
 
 "Build the training corpus `(full_x, full_y)` in the encoding the model expects."
@@ -202,7 +202,14 @@ function Models.train_dataloader(cfg::ModernNCAConfig, m::NeuroTabModel, ::Any, 
         feature_names, target_name, loss_type, scalers, batchsize, dev, rng, kw...)
     cx, cy = build_corpus(df, feature_names, target_name, loss_type, scalers)
     m.info[:nca_ref] = (cx=cx, cy=cy)
-    return ModernNCALoader(dev(cx), dev(cy), batchsize, cfg.sample_rate, rng)
+    n = size(cx, 2)
+    k = cfg.sample_rate < 1f0 ? Int(floor(cfg.sample_rate * (n - batchsize))) : n - batchsize
+    mask_rows = batchsize + max(k, 0)
+    train_mask = zeros(Float32, mask_rows, batchsize)
+    for i in 1:batchsize
+        train_mask[i, i] = Inf32
+    end
+    return ModernNCALoader(dev(cx), dev(cy), batchsize, cfg.sample_rate, rng, dev, dev(train_mask))
 end
 
 "Wrap each inference batch with the training corpus to match the forward signature."
