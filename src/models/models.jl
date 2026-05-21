@@ -54,6 +54,17 @@ batch with extra inputs (e.g. a candidate corpus). Dispatched on
 infer_dataloader(::Any, ::Any, data, ::Any) = data
 
 """
+    eval_dataloader(chain, info, data, dev)
+
+Per-architecture hook: return the per-batch iterator the eval `CallBack` should
+use. Default returns `data` unchanged; retrieval-style archs override to wrap
+each batch's `x` with extra inputs (e.g. a candidate corpus) so that the eval
+forward pass matches the training/inference signature. Dispatched on
+`typeof(m.chain)`.
+"""
+eval_dataloader(::Any, ::Any, data, ::Any) = data
+
+"""
     NeuroTabModel
 
 The object containing the model and associated metadata.

@@ -7,6 +7,7 @@ using ..Learners: LearnerTypes
 using ...Infer: reduce_pred, _get_device
 using ..Data: get_df_loader_train
 using ..Metrics
+using ...Models
 
 using Lux: Training, testmode
 
@@ -26,7 +27,8 @@ end
 function CallBack(
     config::LearnerTypes,
     df::AbstractDataFrame,
-    cache;
+    cache,
+    m;
     feature_names,
     target_name,
     weight_name=nothing,
@@ -41,6 +43,7 @@ function CallBack(
 
     dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
     deval = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
+    deval = Models.eval_dataloader(m.chain, m.info, deval, dev)
 
     ps, st = ts.parameters, testmode(ts.states)
     d0 = first(deval)
