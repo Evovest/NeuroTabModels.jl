@@ -7,7 +7,7 @@ using StatsBase: tiedrank
 using CUDA, cuDNN
 using Enzyme
 using Reactant
-using Zygote
+# using Zygote
 
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
@@ -89,9 +89,9 @@ dtest = df_tot[(end-51630+1):end, :];
 #     MLE_tree_split=false
 # )
 
-arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.1f0, sample_rate=0.8)
+arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.1f0, sample_rate=0.1)
 
-device = :gpu
+device = :cpu
 backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
 # metric = :correlation # :mse :gaussian_mle :tweedie
@@ -110,10 +110,10 @@ learner = NeuroTabRegressor(
     embedding_config,
     loss,
     # metric,
-    nrounds=200,
+    nrounds=20,
     early_stopping_rounds=2,
     lr=1e-3,
-    batchsize=512,
+    batchsize=1024,
     device,
     backend
 )
@@ -121,7 +121,7 @@ learner = NeuroTabRegressor(
 @time m = NeuroTabModels.fit(
     learner,
     dtrain;
-    # deval,
+    deval,
     target_name,
     feature_names,
     print_every_n=5,
