@@ -48,17 +48,17 @@ dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
 dtest = df_tot[(end-51630+1):end, :];
 
-arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    actA=:identity,
-    k=1,
-    ntrees=32,
-    depth=4,
-    stack_size=1,
-    hidden_size=16,
-    init_scale=0.1,
-    scaler=true,
-)
+# arch = NeuroTabModels.NeuroTreeConfig(;
+#     tree_type=:binary,
+#     actA=:identity,
+#     k=1,
+#     ntrees=32,
+#     depth=4,
+#     stack_size=1,
+#     hidden_size=16,
+#     init_scale=0.1,
+#     scaler=true,
+# )
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
@@ -89,7 +89,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     MLE_tree_split=false
 # )
 
-# arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.1f0, sample_rate=0.1)
+arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.1f0, sample_rate=0.1)
 
 device = :gpu
 backend = :reactant
@@ -110,9 +110,9 @@ learner = NeuroTabRegressor(
     embedding_config,
     loss,
     # metric,
-    nrounds=200,
+    nrounds=10,
     early_stopping_rounds=2,
-    lr=1e-3,
+    lr=1e-2,
     batchsize=512,
     device,
     backend
@@ -127,10 +127,10 @@ learner = NeuroTabRegressor(
     print_every_n=5,
 );
 
-p_eval = m(deval; device=:cpu);
-p_eval = p_eval[:, 1]
-mse_eval = mean((p_eval .- deval.y) .^ 2)
-@info "MSE - deval" mse_eval
+# p_eval = m(deval; device=:cpu);
+# p_eval = p_eval[:, 1]
+# mse_eval = mean((p_eval .- deval.y) .^ 2)
+# @info "MSE - deval" mse_eval
 
 p_test = m(dtest; device=:cpu);
 p_test = p_test[:, 1]
