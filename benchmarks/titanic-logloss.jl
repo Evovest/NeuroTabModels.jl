@@ -66,7 +66,7 @@ feature_names = setdiff(names(df), ["Survived"])
 #     scaling_init=:normal,
 # )
 
-arch = NeuroTabModels.ModernNCAConfig(; d_embedding=16, n_blocks=1, d_block=32, dropout=0.5f0, sample_rate=0.1)
+arch = NeuroTabModels.ModernNCAConfig(; d_embedding=16, n_blocks=1, d_block=32, dropout=0.1f0, sample_rate=0.1)
 
 # embedding_config = Dict(
 #     :embedding_type => :piecewise,
@@ -83,7 +83,7 @@ learner = NeuroTabRegressor(
     loss=:logloss,
     nrounds=200,
     early_stopping_rounds=10,
-    lr=1e-1,
+    lr=1e-2,
     device=:cpu,
     backend=:reactant
 )

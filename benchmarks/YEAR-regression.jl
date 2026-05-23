@@ -89,10 +89,10 @@ dtest = df_tot[(end-51630+1):end, :];
 #     MLE_tree_split=false
 # )
 
-arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.1f0, sample_rate=0.1)
+arch = NeuroTabModels.ModernNCAConfig(; d_embedding=16, n_blocks=1, d_block=32, dropout=0.1f0, sample_rate=0.1)
 
 device = :gpu
-backend = :reactant
+backend = :zygote
 loss = :mse # :mse :gaussian_mle :tweedie
 # metric = :correlation # :mse :gaussian_mle :tweedie
 
