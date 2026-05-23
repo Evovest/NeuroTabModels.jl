@@ -36,17 +36,17 @@ deval = df[setdiff(1:nrow(df), train_indices), :]
 target_name = "Survived"
 feature_names = setdiff(names(df), ["Survived"])
 
-arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    k=1,
-    depth=4,
-    ntrees=16,
-    stack_size=1,
-    hidden_size=1,
-    actA=:identity,
-    init_scale=1.0,
-    scaler=true,
-)
+# arch = NeuroTabModels.NeuroTreeConfig(;
+#     tree_type=:binary,
+#     k=1,
+#     depth=4,
+#     ntrees=16,
+#     stack_size=1,
+#     hidden_size=1,
+#     actA=:identity,
+#     init_scale=1.0,
+#     scaler=true,
+# )
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
@@ -66,6 +66,8 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     scaling_init=:normal,
 # )
 
+arch = NeuroTabModels.ModernNCAConfig(; d_embedding=16, n_blocks=1, d_block=32, dropout=0.5f0, sample_rate=0.1)
+
 # embedding_config = Dict(
 #     :embedding_type => :piecewise,
 #     :d_embedding => 8,
@@ -80,8 +82,8 @@ learner = NeuroTabRegressor(
     embedding_config,
     loss=:logloss,
     nrounds=200,
-    early_stopping_rounds=2,
-    lr=1e-2,
+    early_stopping_rounds=10,
+    lr=1e-1,
     device=:cpu,
     backend=:reactant
 )
@@ -99,3 +101,7 @@ p_train = m(dtrain)
 p_eval = m(deval)
 @info mean((p_train .> 0.5) .== (dtrain[!, target_name] .> 0.5))
 @info mean((p_eval .> 0.5) .== (deval[!, target_name] .> 0.5))
+
+# p_test = select(dtrain, Not(:Survived))
+# p_test = m(p_test)
+# @info mean((p_test .> 0.5) .== (dtrain[!, target_name] .> 0.5))

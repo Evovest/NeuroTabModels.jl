@@ -7,7 +7,7 @@ using StatsBase: tiedrank
 using CUDA, cuDNN
 using Enzyme
 using Reactant
-# using Zygote
+using Zygote
 
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
@@ -48,17 +48,17 @@ dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
 dtest = df_tot[(end-51630+1):end, :];
 
-# arch = NeuroTabModels.NeuroTreeConfig(;
-#     tree_type=:binary,
-#     actA=:identity,
-#     k=1,
-#     ntrees=32,
-#     depth=4,
-#     stack_size=1,
-#     hidden_size=16,
-#     init_scale=0.1,
-#     scaler=true,
-# )
+arch = NeuroTabModels.NeuroTreeConfig(;
+    tree_type=:binary,
+    actA=:identity,
+    k=1,
+    ntrees=32,
+    depth=4,
+    stack_size=1,
+    hidden_size=16,
+    init_scale=0.1,
+    scaler=true,
+)
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
@@ -89,9 +89,9 @@ dtest = df_tot[(end-51630+1):end, :];
 #     MLE_tree_split=false
 # )
 
-arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.1f0, sample_rate=0.1)
+# arch = NeuroTabModels.ModernNCAConfig(; d_embedding=32, n_blocks=1, d_block=64, dropout=0.1f0, sample_rate=0.1)
 
-device = :cpu
+device = :gpu
 backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
 # metric = :correlation # :mse :gaussian_mle :tweedie
@@ -110,10 +110,10 @@ learner = NeuroTabRegressor(
     embedding_config,
     loss,
     # metric,
-    nrounds=20,
+    nrounds=200,
     early_stopping_rounds=2,
     lr=1e-3,
-    batchsize=1024,
+    batchsize=512,
     device,
     backend
 )
