@@ -92,7 +92,7 @@ dtest = df_tot[(end-51630+1):end, :];
 arch = NeuroTabModels.ModernNCAConfig(; d_embedding=16, n_blocks=1, d_block=32, dropout=0.1f0, sample_rate=0.1)
 
 device = :gpu
-backend = :zygote
+backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
 # metric = :correlation # :mse :gaussian_mle :tweedie
 
@@ -110,7 +110,7 @@ learner = NeuroTabRegressor(
     embedding_config,
     loss,
     # metric,
-    nrounds=10,
+    nrounds=100,
     early_stopping_rounds=2,
     lr=1e-2,
     batchsize=512,
