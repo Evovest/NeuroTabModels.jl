@@ -317,45 +317,45 @@ function (m::ModernNCAModel)((x, cx, cand_y)::Tuple{Any,Any,Any}, ps, st)
 end
 
 """
-    Base.iterate(l::ModernNCALoader, step=0)
+    Base.iterate(l::ModernNCALoader, state=nothing)
 
-`state` is a plain step counter; iteration ends after `Base.length(l)` steps.
-Each call independently samples a contiguous random query window and candidates,
-so there is no epoch-level shuffle — uniform random batching is sufficient for
-NCA training.
+`state = (perm, start)` carries the epoch permutation across calls, so query
+batches are random without depending on dataframe row order.
 
-Candidates are drawn from the complement of the query window using index-skip
-arithmetic: for `j ∈ 1:(n-batchsize)`, map `j < start → j`, else `j + batchsize`,
-avoiding an O(n) complement allocation. `n_cand == 0` only when `batchsize == n`;
-the forward pass then keys on the batch itself with diagonal masking.
+Candidates are sampled from the complement of the query batch within `perm`.
+The index-skip mapping avoids allocating that complement: for `j` in
+`1:(n-batchsize)`, use `perm[j]` before the batch window and
+`perm[j + batchsize]` after it. `n_cand == 0` only when `batchsize == n`; then
+the forward pass keys on the batch itself with diagonal masking.
 """
-function Base.iterate(l::ModernNCALoader, step=0)
-    step >= Base.length(l) && return nothing
+function Base.iterate(l::ModernNCALoader, state=nothing)
     n = size(l.full_x, 2)
+    perm, start = state === nothing ? (randperm(l.rng, n), 1) : state
+    stop = start + l.batchsize - 1
+    stop > n && return nothing
 
-    start = rand(l.rng, 1:(n - l.batchsize + 1))
-    bidx = l.dev(start:(start + l.batchsize - 1))
+    bidx = l.dev(perm[start:stop])
     x = l.full_x[:, bidx]
     y = l.full_y[bidx]
 
     if l.n_cand > 0
         m = n - l.batchsize
         js = rand(l.rng, 1:m, l.n_cand)
-        cidx = l.dev(@. ifelse(js < start, js, js + l.batchsize))
+        cidx = l.dev(perm[@. ifelse(js < start, js, js + l.batchsize)])
         cand_x = l.full_x[:, cidx]
         cand_y = l.full_y[cidx]
     else
         cand_x = similar(l.full_x, size(l.full_x, 1), 0)
         cand_y = similar(l.full_y, 0)
     end
-    return ((x, cand_x, cand_y, y), y), step + 1
+    return ((x, cand_x, cand_y, y), y), (perm, stop + 1)
 end
 
 """
     build_corpus(df, feature_names, target_name, loss_type, scalers)
 
-Return `(full_x, full_y)` — the corpus feature matrix `(d_in, N)` as `Float32`
-and the encoded target vector — ready for `ModernNCALoader`.
+Return `(full_x, full_y)`: the corpus feature matrix `(d_in, N)` as `Float32`
+and the encoded target vector, ready for `ModernNCALoader`.
 """
 function build_corpus(df::AbstractDataFrame, feature_names, target_name,
                       loss_type::Type{<:LossType}, scalers)
