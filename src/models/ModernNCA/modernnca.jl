@@ -101,11 +101,66 @@ function (cfg::ModernNCAConfig)(; nfeats, outsize,
     ModernNCAModel(_backbone(cfg, nfeats, embedding_layer), cfg, Int(outsize), loss_type)
 end
 
-function _nca_logits(m::ModernNCAModel, zq, zk, cy; mask_self::Bool=false)
-    d = _pairwise_dist(zq, zk, m.cfg.eps) ./ max(m.cfg.temperature, m.cfg.eps)
-    mask_self && (d = _mask_diag(d))
-    α = softmax(-d; dims=1)
-    _to_output(m.loss_type, α, cy, m.outsize)
+function _streaming_nca_logits(m::ModernNCAModel, zq, zk, cy; corpus_chunk::Int=4096)
+    n = size(zk, 2)
+    b = size(zq, 2)
+    t = max(m.cfg.temperature, m.cfg.eps)
+
+    running_max = fill!(similar(zq, 1, b), -Inf32)
+    denom = fill!(similar(zq, 1, b), 0f0)
+    num_rows = m.loss_type <: MLogLoss ? m.outsize : 1
+    num = fill!(similar(zq, num_rows, b), 0f0)
+
+    function chunk_numerator(weights, chunk_y)
+        if m.loss_type <: MLogLoss
+            oh = ((k, c) -> ifelse(k == c, 1f0, 0f0)).(
+                reshape(UInt32(1):UInt32(m.outsize), :, 1), reshape(chunk_y, 1, :))
+            return oh * weights
+        end
+        return reshape(chunk_y, 1, :) * weights
+    end
+
+    function accumulate_chunk(chunk_zk, chunk_y, num, denom, running_max)
+        scores = -_pairwise_dist(zq, chunk_zk, m.cfg.eps) ./ t
+        chunk_max = maximum(scores; dims=1)
+        next_max = max.(running_max, chunk_max)
+        old_scale = exp.(running_max .- next_max)
+        weights = exp.(scores .- next_max)
+        num = num .* old_scale .+ chunk_numerator(weights, chunk_y)
+        denom = denom .* old_scale .+ sum(weights; dims=1)
+        return num, denom, next_max
+    end
+
+    n_full = fld(n, corpus_chunk)
+    for chunk_idx in 1:n_full
+        s = (chunk_idx - 1) * corpus_chunk + 1
+        e = chunk_idx * corpus_chunk
+        num, denom, running_max = accumulate_chunk(zk[:, s:e], cy[s:e], num, denom, running_max)
+    end
+
+    s = n_full * corpus_chunk + 1
+    if s <= n
+        num, denom, _ = accumulate_chunk(zk[:, s:n], cy[s:n], num, denom, running_max)
+    end
+
+    out = num ./ denom
+    m.loss_type <: Union{MSE,MAE} && return out
+    m.loss_type <: LogLoss && begin
+        p = clamp.(out, 1f-6, 1f0 - 1f-6)
+        return log.(p ./ (1f0 .- p))
+    end
+    log.(clamp.(out, 1f-7, Inf32))
+end
+
+function _nca_logits(m::ModernNCAModel, zq, zk, cy; mask_self::Bool=false, corpus_chunk::Int=4096)
+    if mask_self || size(zk, 2) <= corpus_chunk
+        d = _pairwise_dist(zq, zk, m.cfg.eps) ./ max(m.cfg.temperature, m.cfg.eps)
+        mask_self && (d = _mask_diag(d))
+        α = softmax(-d; dims=1)
+        return _to_output(m.loss_type, α, cy, m.outsize)
+    end
+
+    _streaming_nca_logits(m, zq, zk, cy; corpus_chunk)
 end
 
 # Chunked corpus encode to bound peak memory and stay within
@@ -116,11 +171,17 @@ function _encode_corpus(m::ModernNCAModel, cx, ps, st; chunk::Int=2048)
     z0, _ = m.backbone(cx[:, 1:chunk], ps, st)
     zk = similar(z0, size(z0, 1), n)
     zk[:, 1:chunk] .= z0
-    s = chunk + 1
-    while s <= n
-        e = min(s + chunk - 1, n)
+
+    n_full = fld(n, chunk)
+    for chunk_idx in 2:n_full
+        s = (chunk_idx - 1) * chunk + 1
+        e = chunk_idx * chunk
         zk[:, s:e] .= m.backbone(cx[:, s:e], ps, st)[1]
-        s = e + 1
+    end
+
+    s = n_full * chunk + 1
+    if s <= n
+        zk[:, s:n] .= m.backbone(cx[:, s:n], ps, st)[1]
     end
     return zk
 end
@@ -164,19 +225,24 @@ function Base.iterate(l::ModernNCALoader, state=nothing)
     stop > n && return nothing
 
     batch_idx = perm[start:stop]
-    cand_idx = Vector{Int}(undef, l.n_cand)
-    m = n - l.batchsize
-    @inbounds for i in 1:l.n_cand
-        j = rand(l.rng, 1:m)
-        cand_idx[i] = j < start ? perm[j] : perm[j + l.batchsize]
-    end
-
     bidx = l.dev(batch_idx)
-    cidx = l.dev(cand_idx)
     x = l.full_x[:, bidx]
     y = l.full_y[bidx]
-    cand_x = l.full_x[:, cidx]
-    cand_y = l.full_y[cidx]
+
+    if l.n_cand > 0
+        cand_idx = Vector{Int}(undef, l.n_cand)
+        m = n - l.batchsize
+        @inbounds for i in 1:l.n_cand
+            j = rand(l.rng, 1:m)
+            cand_idx[i] = j < start ? perm[j] : perm[j + l.batchsize]
+        end
+        cidx = l.dev(cand_idx)
+        cand_x = l.full_x[:, cidx]
+        cand_y = l.full_y[cidx]
+    else
+        cand_x = similar(l.full_x, size(l.full_x, 1), 0)
+        cand_y = similar(l.full_y, 0)
+    end
     return ((x, cand_x, cand_y, y), y), (perm, stop + 1)
 end
 
@@ -217,8 +283,11 @@ function Models.train_dataloader(cfg::ModernNCAConfig, m::NeuroTabModel, ::Any, 
     cx, cy = build_corpus(df, feature_names, target_name, loss_type, scalers)
     m.info[:nca_ref] = (cx=cx, cy=cy)
     n = size(cx, 2)
-    n_cand = cfg.sample_rate >= 1f0 ? max(n - batchsize, 1) :
-        max(Int(floor(cfg.sample_rate * (n - batchsize))), 1)
+    batchsize = min(batchsize, n)
+    pool = n - batchsize
+    n_cand = pool == 0 ? 0 :
+        cfg.sample_rate >= 1f0 ? pool :
+        max(Int(floor(cfg.sample_rate * pool)), 1)
     return ModernNCALoader(dev(cx), dev(cy), batchsize, n_cand, rng, dev)
 end
 
