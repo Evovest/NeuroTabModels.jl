@@ -158,6 +158,7 @@ function fit(
     verbosity=1
 )
 
+    @warn "fit new"
     m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
 
     logger = nothing

@@ -124,14 +124,14 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :
     return _scaler(L, p, scalers)
 end
 
-function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true)
+function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true, batchsize=1024)
     group_key = m.info[:group_key]
     if isnothing(group_key)
-        dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
+        dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize)
         p = infer(m, dinfer; device, backend, proj)
     else
         dfg = groupby(df, group_key; sort=true)
-        dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
+        dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize)
         p = infer_grp(m, dinfer; device, backend, proj)
     end
     return p
