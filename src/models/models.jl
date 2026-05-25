@@ -44,17 +44,17 @@ function build_chain(arch::Architecture, embed_chain;
 end
 
 """
-    infer_dataloader(chain, info, data, dev)
+    infer_dataloader(chain, info, data, dev, ps, st)
 
 Per-architecture hook: return the per-batch iterator `infer` should use.
 Default returns `data` unchanged; retrieval-style archs override to wrap each
 batch with extra inputs (e.g. a candidate corpus). Dispatched on
 `typeof(m.chain)` so arch modules can override on their concrete model type.
 """
-infer_dataloader(::Any, ::Any, data, ::Any) = data
+infer_dataloader(::Any, ::Any, data, ::Any, ::Any, ::Any) = data
 
 """
-    eval_dataloader(chain, info, data, dev)
+    eval_dataloader(chain, info, data, dev, ps, st)
 
 Per-architecture hook: return the per-batch iterator the eval `CallBack` should
 use. Default returns `data` unchanged; retrieval-style archs override to wrap
@@ -62,7 +62,7 @@ each batch's `x` with extra inputs (e.g. a candidate corpus) so that the eval
 forward pass matches the training/inference signature. Dispatched on
 `typeof(m.chain)`.
 """
-eval_dataloader(::Any, ::Any, data, ::Any) = data
+eval_dataloader(::Any, ::Any, data, ::Any, ::Any, ::Any) = data
 
 """
     NeuroTabModel

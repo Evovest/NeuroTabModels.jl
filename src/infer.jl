@@ -91,7 +91,7 @@ function infer(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :back
     st = dev(m.info[:st])
     scalers = m.info[:scalers]
 
-    data = Models.infer_dataloader(m.chain, m.info, data, dev)
+    data = Models.infer_dataloader(m.chain, m.info, data, dev, ps, st)
 
     x0 = first(data)
     preds = _infer_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
