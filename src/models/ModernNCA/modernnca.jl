@@ -55,7 +55,12 @@ end
     ModernNCALoader
 
 Training iterator yielding `((x, cand_x, cand_y, y), y)` batches. The corpus is
+<<<<<<< HEAD
 moved to device once at construction; each step draws an independent random batch.
+=======
+moved to device once at construction; query rows follow a shuffled epoch
+permutation and candidates are resampled each step.
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
 
 # Fields
 - `full_x`, `full_y`: device corpus.
@@ -104,9 +109,119 @@ function (cfg::ModernNCAConfig)(; nfeats, outsize,
                                  embedding_layer=nothing)
     return ModernNCAModel(_backbone(cfg, nfeats, embedding_layer), cfg, Int(outsize), loss_type)
 end
+<<<<<<< HEAD
+=======
 
 Base.length(l::ModernNCALoader) = fld(size(l.full_x, 2), l.batchsize)
 
+"""
+    _pairwise_dist(q, k, ϵ) -> Matrix
+
+`(num_keys, batch)` Euclidean distance matrix between `q` `(d, batch)` and `k` `(d, num_keys)`.
+`ϵ` is added under `sqrt` for numerical stability.
+"""
+function _pairwise_dist(q::AbstractMatrix, k::AbstractMatrix, ϵ::Float32)
+    q2 = sum(abs2, q; dims=1)  # (1, batch)
+    k2 = sum(abs2, k; dims=1)  # (1, num_keys)
+    kq = k' * q                 # (num_keys, batch)
+    return sqrt.(max.(0f0, k2' .+ q2 .- 2f0 .* kq) .+ ϵ)
+end
+
+_diag_inf(i, j, d) = ifelse(i == j, typemax(typeof(d)), d)
+
+"""
+    _mask_diag(d) -> Matrix
+
+Set the diagonal of distance matrix `d` to `typemax`, collapsing self-attention
+weights to zero during training.
+"""
+_mask_diag(d::AbstractMatrix) =
+    _diag_inf.(reshape(1:size(d, 1), :, 1), reshape(1:size(d, 2), 1, :), d)
+
+_to_output(::Type{<:Union{MSE,MAE}}, α, cy, _) = reshape(α' * cy, 1, :)
+
+function _to_output(::Type{<:LogLoss}, α, cy, _)
+    p = clamp.(reshape(α' * cy, 1, :), 1f-6, 1f0 - 1f-6)
+    return log.(p ./ (1f0 .- p))
+end
+
+function _to_output(::Type{<:MLogLoss}, α, cy, outsize::Int)
+    oh = ((k, c) -> ifelse(k == c, 1f0, 0f0)).(
+        reshape(UInt32(1):UInt32(outsize), :, 1), reshape(cy, 1, :))
+    return log.(clamp.(oh * α, 1f-7, Inf32))
+end
+
+"""
+    _nca_logits(m, zq, zk, cy; mask_self=false) -> Matrix
+
+Softmax attention over corpus keys `zk` for query embeddings `zq`.
+When `mask_self=true`, diagonal entries are masked (training path).
+"""
+function _nca_logits(m::ModernNCAModel, zq, zk, cy; mask_self::Bool=false)
+    d = _pairwise_dist(zq, zk, m.cfg.eps) ./ max(m.cfg.temperature, m.cfg.eps)
+    mask_self && (d = _mask_diag(d))
+    α = softmax(-d; dims=1)
+    return _to_output(m.loss_type, α, cy, m.outsize)
+end
+
+"""
+    _encode_corpus(m, cx, ps, st; chunk=2048) -> Matrix
+
+Encode raw corpus `cx` `(d_in, N)` in chunks of `chunk` rows to bound peak
+memory and stay within BatchNorm shape limits. Returns `zk` `(d_embedding, N)`.
+"""
+function _encode_corpus(m::ModernNCAModel, cx, ps, st; chunk::Int=2048)
+    n = size(cx, 2)
+    if n <= chunk
+        return m.backbone(cx, ps, st)[1]
+    end
+    z0, _ = m.backbone(cx[:, 1:chunk], ps, st)
+    zk = similar(z0, size(z0, 1), n)
+    zk[:, 1:chunk] .= z0
+    s = chunk + 1
+    while s <= n
+        e = min(s + chunk - 1, n)
+        zk[:, s:e] .= m.backbone(cx[:, s:e], ps, st)[1]
+        s = e + 1
+    end
+    return zk
+end
+
+"""
+    (m::ModernNCAModel)((x, cand_x, cand_y, y), ps, st)
+
+Training forward: encodes queries and candidates in one backbone call (shared
+BatchNorm statistics), then computes NCA logits with diagonal self-masking.
+"""
+function (m::ModernNCAModel)((x, cand_x, cand_y, y)::Tuple{Any,Any,Any,Any}, ps, st)
+    B = size(x, 2)
+    z_all, st_bb = m.backbone(hcat(x, cand_x), ps, st)
+    zq = z_all[:, 1:B]
+    cy = vcat(vec(y), vec(cand_y))
+    return _nca_logits(m, zq, z_all, cy; mask_self=true), st_bb
+end
+
+"""
+    (m::ModernNCAModel)((x, cx, cy), ps, st)
+
+Inference/eval forward: encodes queries and the raw corpus `cx` with the current
+parameters, then attends over the corpus. Encoding is done here (not pre-computed)
+so the corpus embeddings always match the current model during evaluation.
+"""
+function (m::ModernNCAModel)((x, cand_x, cand_y)::Tuple{Any,Any,Any}, ps, st)
+    zq, st_bb = m.backbone(x, ps, st)
+    zk = _encode_corpus(m, cand_x, ps, st_bb)
+    return _nca_logits(m, zq, zk, cand_y), st_bb
+end
+
+"""
+    Base.iterate(l::ModernNCALoader, state=nothing)
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
+
+`state = (perm, start)` carries the epoch permutation across calls, so query
+batches are random without depending on dataframe row order.
+
+<<<<<<< HEAD
 """
     _pairwise_dist(q, k, ϵ) -> Matrix
 
@@ -322,6 +437,8 @@ end
 `state = (perm, start)` carries the epoch permutation across calls, so query
 batches are random without depending on dataframe row order.
 
+=======
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
 Candidates are sampled from the complement of the query batch within `perm`.
 The index-skip mapping avoids allocating that complement: for `j` in
 `1:(n-batchsize)`, use `perm[j]` before the batch window and
@@ -334,7 +451,13 @@ function Base.iterate(l::ModernNCALoader, state=nothing)
     stop = start + l.batchsize - 1
     stop > n && return nothing
 
+<<<<<<< HEAD
     bidx = l.dev(perm[start:stop])
+=======
+    batch_idx = perm[start:stop]
+
+    bidx = l.dev(batch_idx)
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
     x = l.full_x[:, bidx]
     y = l.full_y[bidx]
 
@@ -360,7 +483,12 @@ and the encoded target vector, ready for `ModernNCALoader`.
 function build_corpus(df::AbstractDataFrame, feature_names, target_name,
                       loss_type::Type{<:LossType}, scalers)
     full_x = permutedims(Matrix{Float32}(select(df, collect(feature_names))))
+<<<<<<< HEAD
     return full_x, _encode_targets(df, target_name, loss_type, scalers)
+=======
+    full_y = _encode_targets(df, target_name, loss_type, scalers)
+    return full_x, full_y
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
 end
 
 """
@@ -369,7 +497,11 @@ end
 Encode targets for each loss type:
 - `MLogLoss`: 1-based `UInt32` class codes.
 - `LogLoss`: `Float32` in `{0, 1}`.
+<<<<<<< HEAD
 - `MSE / MAE / GaussianMLE`: `Float32`, standardised when `scalers` is provided.
+=======
+- `MSE / MAE`: `Float32`, standardised when `scalers` is provided.
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
 
 # Arguments
 - `df`: source data frame.
@@ -383,8 +515,13 @@ _encode_targets(df, target_name, ::Type{<:MLogLoss}, _) =
 function _encode_targets(df, target_name, ::Type{<:LogLoss}, _)
     col = df[!, target_name]
     eltype(col) <: CategoricalValue || return Float32.(col)
+<<<<<<< HEAD
     length(CategoricalArrays.levels(col)) == 2 ||
         error("LogLoss target must have exactly 2 classes.")
+=======
+    levels = CategoricalArrays.levels(col)
+    length(levels) == 2 || error("For `loss=:logloss`, target must have exactly 2 classes.")
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
     return Float32.(CategoricalArrays.levelcode.(col) .- 1)
 end
 
@@ -437,7 +574,11 @@ end
 Wrap each inference batch as `(x, cx, cy)` with the raw training corpus.
 The corpus is encoded inside the forward pass using the current parameters.
 """
+<<<<<<< HEAD
 function Models.infer_dataloader(m::ModernNCAModel, info, data, dev, _, _)
+=======
+function Models.infer_dataloader(::ModernNCAModel, info, data, dev)
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
     ref = info[:nca_ref]
     cx, cy = dev(ref.cx), dev(ref.cy)
     return Iterators.map(x -> (x, cx, cy), data)
@@ -450,7 +591,11 @@ Wrap each eval batch as `((x, cx, cy), rest...)` with the raw training corpus.
 The corpus is encoded inside the forward pass so embeddings always use the
 current model parameters rather than a stale pre-encoded version.
 """
+<<<<<<< HEAD
 function Models.eval_dataloader(m::ModernNCAModel, info, data, dev, _, _)
+=======
+function Models.eval_dataloader(::ModernNCAModel, info, data, dev)
+>>>>>>> 03042848d2ae6f0c6e0d4107d399388b3ccb897f
     ref = info[:nca_ref]
     cx, cy = dev(ref.cx), dev(ref.cy)
     return Iterators.map(d -> ((d[1], cx, cy), Base.tail(d)...), data)
