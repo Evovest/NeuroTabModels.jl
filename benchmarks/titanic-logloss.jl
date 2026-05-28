@@ -83,9 +83,9 @@ learner = NeuroTabRegressor(
     loss=:logloss,
     nrounds=200,
     early_stopping_rounds=10,
-    lr=3e-3,
+    lr=1e-2,
     device=:cpu,
-    backend=:reactant
+    backend=:zygote
 )
 
 @time m = NeuroTabModels.fit(
