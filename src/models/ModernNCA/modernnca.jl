@@ -15,7 +15,8 @@ using CategoricalArrays
 
 """
     ModernNCAConfig(; d_embedding=128, n_blocks=2, d_block=256,
-                     dropout=0.1, temperature=1.0, sample_rate=0.8, eps=1f-8)
+                     dropout=0.1, temperature=1.0, sample_rate=0.8,
+                     max_candidates=8192, eps=1f-8)
 
 Hyperparameters for ModernNCA. Pass as the `arch` argument to `NeuroTabRegressor`
 or `NeuroTabClassifier`.
@@ -27,6 +28,8 @@ or `NeuroTabClassifier`.
 - `temperature`: softmax temperature on negative pairwise distances.
 - `sample_rate`: fraction of the batch complement sampled as candidates per step
   (Stochastic Neighborhood Sampling). `1.0` uses the full complement.
+- `max_candidates`: cap on sampled training candidates per batch. Set `<= 0`
+  to disable the cap.
 - `eps`: numerical floor in `sqrt` and as a `temperature` lower bound.
 """
 struct ModernNCAConfig <: Architecture
@@ -36,6 +39,7 @@ struct ModernNCAConfig <: Architecture
     dropout::Float32
     temperature::Float32
     sample_rate::Float32
+    max_candidates::Int
     eps::Float32
 end
 
@@ -76,10 +80,12 @@ end
 
 function ModernNCAConfig(;
     d_embedding::Int=128, n_blocks::Int=2, d_block::Int=256,
-    dropout::Real=0.1, temperature::Real=1.0, sample_rate::Real=0.8, eps::Real=1f-8,
+    dropout::Real=0.1, temperature::Real=1.0, sample_rate::Real=0.8,
+    max_candidates::Int=8192, eps::Real=1f-8,
 )
     return ModernNCAConfig(d_embedding, n_blocks, d_block,
-        Float32(dropout), Float32(temperature), Float32(sample_rate), Float32(eps))
+        Float32(dropout), Float32(temperature), Float32(sample_rate),
+        max_candidates, Float32(eps))
 end
 
 """
@@ -184,13 +190,16 @@ end
 """
     (m::ModernNCAModel)((x, cand_x, cand_y, y), ps, st)
 
-Training forward: encodes queries and candidates in one backbone call (shared
-BatchNorm statistics), then computes NCA logits with diagonal self-masking.
+Training forward: encodes queries and candidates separately, matching the
+reference ModernNCA BatchNorm behavior. The encoded queries are prepended to
+the candidate embeddings before NCA attention, then self-neighbors are masked.
 """
 function (m::ModernNCAModel)((x, cand_x, cand_y, y)::Tuple{Any,Any,Any,Any}, ps, st)
-    B = size(x, 2)
-    z_all, st_bb = m.backbone(hcat(x, cand_x), ps, st)
-    zq = z_all[:, 1:B]
+    zq, st_bb = m.backbone(x, ps, st)
+    zc, st_bb = size(cand_x, 2) == 0 ?
+        (similar(zq, size(zq, 1), 0), st_bb) :
+        m.backbone(cand_x, ps, st_bb)
+    z_all = hcat(zq, zc)
     cy = vcat(vec(y), vec(cand_y))
     return _nca_logits(m, zq, z_all, cy; mask_self=true), st_bb
 end
@@ -302,8 +311,9 @@ Models.build_chain(cfg::ModernNCAConfig, embed_chain;
     Models.train_dataloader(cfg::ModernNCAConfig, ...)
 
 Build `ModernNCALoader` and stash the raw corpus on `m.info[:nca_ref]`.
-`n_cand = floor(sample_rate × (N − batchsize))`; `sample_rate ≥ 1` uses the full
-complement; `batchsize == N` gives `n_cand = 0`.
+`n_cand = floor(sample_rate × (N − batchsize))`, capped by
+`cfg.max_candidates` when positive. `sample_rate ≥ 1` uses the full complement
+before the cap; `batchsize == N` gives `n_cand = 0`.
 
 # Arguments
 - `cfg`: ModernNCA config.
@@ -320,9 +330,10 @@ function Models.train_dataloader(cfg::ModernNCAConfig, m::NeuroTabModel, ::Any, 
     n = size(cx, 2)
     batchsize = min(batchsize, n)
     pool = n - batchsize
-    n_cand = pool == 0 ? 0 :
+    raw_n_cand = pool == 0 ? 0 :
         cfg.sample_rate >= 1f0 ? pool :
         max(Int(floor(cfg.sample_rate * pool)), 1)
+    n_cand = cfg.max_candidates > 0 ? min(raw_n_cand, cfg.max_candidates) : raw_n_cand
     return ModernNCALoader(dev(cx), dev(cy), batchsize, n_cand, rng, dev)
 end
 
