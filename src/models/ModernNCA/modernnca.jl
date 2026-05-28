@@ -332,7 +332,7 @@ end
 Wrap each inference batch as `(x, cx, cy)` with the raw training corpus.
 The corpus is encoded inside the forward pass using the current parameters.
 """
-function Models.infer_dataloader(::ModernNCAModel, info, data, dev)
+function Models.infer_dataloader(::ModernNCAModel, info, data, dev, ps=nothing, st=nothing)
     ref = info[:nca_ref]
     cx, cy = dev(ref.cx), dev(ref.cy)
     return Iterators.map(x -> (x, cx, cy), data)
@@ -345,7 +345,7 @@ Wrap each eval batch as `((x, cx, cy), rest...)` with the raw training corpus.
 The corpus is encoded inside the forward pass so embeddings always use the
 current model parameters rather than a stale pre-encoded version.
 """
-function Models.eval_dataloader(::ModernNCAModel, info, data, dev)
+function Models.eval_dataloader(::ModernNCAModel, info, data, dev, ps=nothing, st=nothing)
     ref = info[:nca_ref]
     cx, cy = dev(ref.cx), dev(ref.cy)
     return Iterators.map(d -> ((d[1], cx, cy), Base.tail(d)...), data)
