@@ -89,7 +89,7 @@ dtest = df_tot[(end-51630+1):end, :];
 #     MLE_tree_split=false
 # )
 
-arch = NeuroTabModels.ModernNCAConfig(; d_embedding=16, n_blocks=1, d_block=32, dropout=0.1f0, sample_rate=0.1)
+# arch = NeuroTabModels.ModernNCAConfig(; d_embedding=16, n_blocks=1, d_block=32, dropout=0.1f0, sample_rate=0.1)
 
 device = :gpu
 backend = :reactant
@@ -112,7 +112,7 @@ learner = NeuroTabRegressor(
     # metric,
     nrounds=100,
     early_stopping_rounds=2,
-    lr=1e-2,
+    lr=1e-3,
     batchsize=512,
     device,
     backend
@@ -127,10 +127,10 @@ learner = NeuroTabRegressor(
     print_every_n=5,
 );
 
-# p_eval = m(deval; device=:cpu);
-# p_eval = p_eval[:, 1]
-# mse_eval = mean((p_eval .- deval.y) .^ 2)
-# @info "MSE - deval" mse_eval
+p_eval = m(deval; device=:cpu);
+p_eval = p_eval[:, 1]
+mse_eval = mean((p_eval .- deval.y) .^ 2)
+@info "MSE - deval" mse_eval
 
 p_test = m(dtest; device=:cpu);
 p_test = p_test[:, 1]
