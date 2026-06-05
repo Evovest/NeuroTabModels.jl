@@ -73,12 +73,8 @@ function init(
 
     # Build chain: optional embeddings + architecture backbone
     embed_config = config.embedding_config
-    if isnothing(embed_config)
-        embed_chain, d_in, d_features = nothing, nfeats, fill(1, nfeats)
-    else
-        x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
-        embed_chain, d_in, d_features = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
-    end
+    x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
+    embed_chain, d_in, d_features = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
     chain = Models.build_chain(config.arch, embed_chain;
         nfeats, outsize, d_in, d_features, loss_type=L)
 

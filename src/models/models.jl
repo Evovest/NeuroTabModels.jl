@@ -3,8 +3,8 @@ module Models
 export NeuroTabModel, Architecture
 export Embeddings, EmbeddingLayer
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
-export BatchNormEmbeddings, TemporalEmbeddings
-export AbstractNumericalEmbedding, AbstractTemporalEmbedding
+export BatchNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
+export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractEmbedding
 export NeuroTreeConfig, MLPConfig, ResNetConfig, TabMConfig, MOETreeConfig, ModernNCAConfig
 
 using ..Losses
