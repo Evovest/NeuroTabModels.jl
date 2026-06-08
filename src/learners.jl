@@ -5,14 +5,19 @@ import MLJModelInterface: fit, update, predict, schema
 import Random
 
 using ..Models
-using ..Models: EmbeddingLayer
+using ..Models: AbstractEmbedding, IdentityEmbedding, EmbeddingLayer
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
+
+_to_embedding(::Nothing)            = IdentityEmbedding()
+_to_embedding(e::AbstractEmbedding) = e
+_to_embedding(d::AbstractDict)      = EmbeddingLayer(d)
+_to_embedding(x) = error("`embedding_config` must be `nothing`, an `AbstractDict`, or an `AbstractEmbedding`; got $(typeof(x)).")
 
 mutable struct NeuroTabRegressor <: MMI.Deterministic
   loss::Symbol
   metric::Symbol
   arch::Architecture
-  embedding_config::Union{Nothing,EmbeddingLayer}
+  embedding_config::AbstractEmbedding
   nrounds::Int
   early_stopping_rounds::Int
   lr::Float32
@@ -47,8 +52,10 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 - `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
-- `embedding_config=nothing`: Optional `EmbeddingLayer` describing numerical and/or temporal embeddings.
-  E.g. `embedding_config=EmbeddingLayer(num=PeriodicEmbeddings(d_embedding=24))`.
+- `embedding_config=nothing`: Optional numerical/temporal embeddings. Accepts `nothing` (no-op),
+  an `AbstractEmbedding` (e.g. `EmbeddingLayer(num=PeriodicEmbeddings(d_embedding=24))`), or an
+  `AbstractDict` selecting the type via `:embedding_type` (e.g.
+  `Dict(:embedding_type => :periodic, :d_embedding => 24)`).
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
@@ -194,9 +201,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
   end
 
-  embed = args[:embedding_config]
-  isnothing(embed) || embed isa EmbeddingLayer ||
-    error("`embedding_config` must be `nothing` or an `EmbeddingLayer`; got $(typeof(embed)).")
+  embed = _to_embedding(args[:embedding_config])
 
   config = NeuroTabRegressor(
     loss,
@@ -229,7 +234,7 @@ mutable struct NeuroTabClassifier <: MMI.Probabilistic
   loss::Symbol
   metric::Symbol
   arch::Architecture
-  embedding_config::Union{Nothing,EmbeddingLayer}
+  embedding_config::AbstractEmbedding
   nrounds::Int
   early_stopping_rounds::Int
   lr::Float32
@@ -257,7 +262,8 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 - `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
-- `embedding_config=nothing`: Optional `EmbeddingLayer` describing numerical and/or temporal embeddings.
+- `embedding_config=nothing`: Optional numerical/temporal embeddings. Accepts `nothing` (no-op),
+  an `AbstractEmbedding`, or an `AbstractDict` selecting the type via `:embedding_type`.
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
@@ -388,9 +394,7 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
   end
 
-  embed = args[:embedding_config]
-  isnothing(embed) || embed isa EmbeddingLayer ||
-    error("`embedding_config` must be `nothing` or an `EmbeddingLayer`; got $(typeof(embed)).")
+  embed = _to_embedding(args[:embedding_config])
 
   config = NeuroTabClassifier(
     :mlogloss,

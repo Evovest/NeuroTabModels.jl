@@ -15,6 +15,12 @@ abstract type AbstractNumericalEmbedding end
 """Supertype for time-column embeddings."""
 abstract type AbstractTemporalEmbedding end
 
+"""Top-level embedding spec held by the learner."""
+abstract type AbstractEmbedding end
+
+"""No-op embedding: passes raw features through unchanged."""
+struct IdentityEmbedding <: AbstractEmbedding end
+
 """    LinearEmbeddings(; d_embedding=16, activation=:relu)"""
 struct LinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
@@ -92,22 +98,73 @@ function TemporalEmbeddings(;
 end
 
 """    EmbeddingLayer(; num=nothing, temp=nothing)
+    EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing)
+    EmbeddingLayer(d::AbstractDict)
 
 Two typed slots: numerical and temporal. When both are set, the temporal column
-(at `temp.index`) is embedded by `temp` and the rest by `num`; outputs are concatenated."""
+(at `temp.index`) is embedded by `temp` and the rest by `num`; outputs are concatenated.
+
+The `AbstractDict` form mirrors the `arch_name`/`arch_config` mechanism: the
+numerical type is selected by `:embedding_type` and built from the remaining
+keys (extra/`nothing` keys are ignored so a superset hyper-param Dict is safe).
+An optional `:temporal` key holds a `Dict` of `TemporalEmbeddings` kwargs."""
 struct EmbeddingLayer{
     N<:Union{Nothing,AbstractNumericalEmbedding},
     T<:Union{Nothing,AbstractTemporalEmbedding},
-}
+} <: AbstractEmbedding
     num::N
     temp::T
 end
 EmbeddingLayer(; num=nothing, temp=nothing) = EmbeddingLayer(num, temp)
+EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing) = EmbeddingLayer(num, temp)
+
+const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
+    :linear    => LinearEmbeddings,
+    :periodic  => PeriodicEmbeddings,
+    :piecewise => PiecewiseLinearEmbeddings,
+    :batchnorm => BatchNormEmbeddings,
+)
+
+# keep only keys the target ctor accepts; drop `nothing` so the ctor default applies
+function _pick(d, keys)
+    ps = Pair{Symbol,Any}[]
+    for k in keys
+        haskey(d, k) && d[k] !== nothing && push!(ps, k => d[k])
+    end
+    return ps
+end
+
+_num_from_dict(::Type{LinearEmbeddings}, d) =
+    LinearEmbeddings(; _pick(d, (:d_embedding, :activation))...)
+_num_from_dict(::Type{PeriodicEmbeddings}, d) =
+    PeriodicEmbeddings(; _pick(d, (:d_embedding, :frequencies, :frequencies_init_scale, :activation, :lite))...)
+_num_from_dict(::Type{PiecewiseLinearEmbeddings}, d) =
+    PiecewiseLinearEmbeddings(; _pick(d, (:d_embedding, :bins, :activation, :version))...)
+_num_from_dict(::Type{BatchNormEmbeddings}, d) = BatchNormEmbeddings()
+
+function EmbeddingLayer(d::AbstractDict)
+    d = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
+    haskey(d, :embedding_type) ||
+        throw(ArgumentError("embedding Dict requires `:embedding_type`"))
+    etype = Symbol(d[:embedding_type])
+    T = get(_NUM_EMBEDDING_TYPES, etype) do
+        throw(ArgumentError("unknown :embedding_type $(repr(etype)); valid: $(collect(keys(_NUM_EMBEDDING_TYPES)))"))
+    end
+    num = _num_from_dict(T, d)
+    temp = if haskey(d, :temporal)
+        td = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d[:temporal])
+        TemporalEmbeddings(; td...)
+    else
+        nothing
+    end
+    return EmbeddingLayer(num, temp)
+end
 
 temporal_out_dim(t::TemporalEmbeddings) = t.d_embedding + (t.trend ? 1 : 0)
 _num_d_embedding(s::Union{LinearEmbeddings,PeriodicEmbeddings,PiecewiseLinearEmbeddings}) = s.d_embedding
 
 needs_x_train(::Nothing) = false
+needs_x_train(::IdentityEmbedding) = false
 needs_x_train(::AbstractNumericalEmbedding) = false
 needs_x_train(::PiecewiseLinearEmbeddings) = true
 needs_x_train(::AbstractTemporalEmbedding) = true
@@ -137,8 +194,8 @@ end
 
 """    build_embedding_chain(spec, nfeats; x_train=nothing) -> (; chain, d_in, d_features)
 
-Realize an `EmbeddingLayer` (or `nothing`) into a Lux chain plus downstream sizing."""
-build_embedding_chain(::Nothing, nfeats::Int; x_train=nothing) =
+Realize an `IdentityEmbedding` (no-op) or `EmbeddingLayer` into a Lux chain plus downstream sizing."""
+build_embedding_chain(::IdentityEmbedding, nfeats::Int; x_train=nothing) =
     (chain=nothing, d_in=nfeats, d_features=fill(1, nfeats))
 function build_embedding_chain(e::EmbeddingLayer, nfeats::Int; x_train=nothing)
     if e.num === nothing && e.temp === nothing

@@ -5,9 +5,9 @@ using Random
 using NNlib
 import Statistics: mean, quantile, std
 
-export AbstractNumericalEmbedding, AbstractTemporalEmbedding
+export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractEmbedding
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
-export BatchNormEmbeddings, TemporalEmbeddings
+export BatchNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
 export EmbeddingLayer, build_embedding_chain, needs_x_train, temporal_out_dim
 
 include("compute_bins.jl")
