@@ -8,7 +8,8 @@ using LuxCore
 using NNlib
 
 import ..Losses: get_loss_type, GaussianMLE
-import ..Models: Architecture, _broadcast_relu
+import ..Models: Architecture, _broadcast_relu, build_chain
+import ..Models.Embeddings: per_feature_widths, has_real_embedding
 
 include("layers.jl")
 
@@ -71,7 +72,7 @@ during training and at inference.
 - `d_block::Int`: Hidden dimension per block (default `512`).
 - `dropout::Float64`: Dropout rate (default `0.1`).
 - `arch_type::Symbol`: `:tabm`, `:tabm_mini`, or `:tabm_packed` (default `:tabm`).
-- `scaling_init::Union{Nothing,Symbol}`: Init for ensemble scaling — `:random_signs`, `:normal`,
+- `scaling_init::Union{Nothing,Symbol}`: Init for ensemble scaling (`:random_signs`, `:normal`,
   `:ones`, or `nothing` for auto-detection (default `nothing`).
   When `nothing`, defaults to `:random_signs` without embeddings and `:normal` with embeddings.
   Explicit values always take priority.
@@ -169,6 +170,14 @@ function (config::TabMConfig)(; nfeats, outsize, d_features=nothing, scaling_ini
     end
 
     return Chain(EnsembleView(k), bb..., head)
+end
+
+function build_chain(arch::TabMConfig, embed_chain;
+        nfeats, outsize, d_in, embedding_config, kw...)
+    d_features = per_feature_widths(embedding_config, nfeats)
+    scaling_override = has_real_embedding(embedding_config) ? :normal : nothing
+    return Chain(embed_chain,
+        arch(; nfeats=d_in, outsize, d_features, scaling_init_override=scaling_override))
 end
 
 end

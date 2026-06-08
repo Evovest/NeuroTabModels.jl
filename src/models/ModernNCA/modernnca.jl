@@ -91,7 +91,7 @@ end
 """
     _backbone(cfg, d_in, embedding_layer)
 
-Build the ModernNCA encoder: embedding → linear → n_blocks × (BN → Dense(relu) → Dropout → Dense) → BN.
+Build the ModernNCA encoder: embedding, linear, then n_blocks times (BN, Dense(relu), Dropout, Dense), then BN.
 """
 function _backbone(cfg::ModernNCAConfig, d_in::Int, embedding_layer)
     emb = isnothing(embedding_layer) ? WrappedFunction(identity) : embedding_layer

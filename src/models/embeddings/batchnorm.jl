@@ -24,3 +24,5 @@ function (l::_BatchNormEmbeddings)(x::AbstractMatrix, ps, st)
     x_bn, st = l.layer(x, ps, st)
     return x_bn, st
 end
+
+Lux.outputsize(l::_BatchNormEmbeddings, x, ::AbstractRNG) = (size(x, 1),)

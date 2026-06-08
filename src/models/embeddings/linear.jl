@@ -40,3 +40,5 @@ function (l::_LinearEmbeddings)(x::AbstractMatrix, ps, st)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
     return l.activation.(muladd.(ps.weight, x_r, ps.bias)), st
 end
+
+Lux.outputsize(l::_LinearEmbeddings, x, ::AbstractRNG) = (l.d_embedding, size(x, 1))

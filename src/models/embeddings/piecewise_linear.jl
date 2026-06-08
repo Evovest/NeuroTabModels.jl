@@ -135,3 +135,5 @@ function (m::_PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
 
     return h_final, (linear0=st_l0, encoding=st_enc, linear=st_lin)
 end
+
+Lux.outputsize(m::_PiecewiseLinearEmbeddings, x, ::AbstractRNG) = (m.linear.out_features, size(x, 1))

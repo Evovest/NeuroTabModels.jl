@@ -27,21 +27,15 @@ Overrides may write into `m.info` (e.g. to stash a corpus for inference).
 train_dataloader(::Architecture, ::Any, data, ::Any; kw...) = data
 
 """
-    build_chain(arch, embed_chain; nfeats, outsize, d_in, d_features, loss_type)
+    build_chain(arch, embed_chain; nfeats, outsize, d_in, kw...)
 
 Per-architecture hook for assembling the Lux chain that `fit` will train.
-Default wires the optional `embed_chain` in front of the architecture's
-backbone via `Chain(embed_chain, arch(...))`. Architectures that consume the
-embedding internally (e.g. retrieval models that re-apply it to a candidate
-set) should override and accept `embedding_layer` directly.
+The embedding chain always exists (identity is `WrappedFunction(identity)`);
+`d_in` is supplied by the caller. Default wires `embed_chain` in front of the
+architecture's backbone via `Chain(embed_chain, arch(...))`.
 """
-function build_chain(arch::Architecture, embed_chain;
-        nfeats, outsize, d_in, d_features, kw...)
-    isnothing(embed_chain) ?
-        arch(; nfeats, outsize) :
-        Chain(embed_chain, arch(; nfeats=d_in, outsize, d_features,
-                                  scaling_init_override=:normal))
-end
+build_chain(arch::Architecture, embed_chain; nfeats, outsize, d_in, kw...) =
+    Chain(embed_chain, arch(; nfeats=d_in, outsize))
 
 """
     infer_dataloader(chain, info, data, dev, ps, st)
