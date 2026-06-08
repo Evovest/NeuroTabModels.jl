@@ -4,7 +4,7 @@ using LuxLib: batched_matmul
 using Random: AbstractRNG
 
 """
-    _init_rsqrt_uniform(rng, dims, d) -> Array{Float32}
+    _init_rsqrt_uniform(rng, dims, d) → Array{Float32}
 
 Uniform init in `[-1/√d, 1/√d]`.
 """
@@ -14,12 +14,12 @@ function _init_rsqrt_uniform(rng::AbstractRNG, dims, d::Int)
 end
 
 """
-    _init_scaling(rng, dims, init) -> Array{Float32}
+    _init_scaling(rng, dims, init) → Array{Float32}
 
 Initialize scaling vectors for ensemble adapters.
-- `:ones`: deterministic ones
-- `:normal`: N(0,1)
-- `:random_signs`: ±1
+- `:ones` — deterministic ones
+- `:normal` — N(0,1)
+- `:random_signs` — ±1
 """
 function _init_scaling(rng::AbstractRNG, dims, init::Symbol)
     if init == :ones
@@ -34,7 +34,7 @@ function _init_scaling(rng::AbstractRNG, dims, init::Symbol)
 end
 
 """
-    _init_scaling_with_chunks(rng, dims, init, chunks) -> Array{Float32}
+    _init_scaling_with_chunks(rng, dims, init, chunks) → Array{Float32}
 
 Initialize scaling with grouped chunks. Each chunk shares the same random value
 per ensemble member, providing structured diversity for features with different
@@ -187,7 +187,7 @@ Per-member elementwise scaling (and optional bias).
 # Arguments
 - `k::Int`: Number of ensemble members.
 - `d::Int`: Feature dimension.
-- `init::Symbol`: Weight init (`:ones`, `:normal`, or `:random_signs`).
+- `init::Symbol`: Weight init — `:ones`, `:normal`, or `:random_signs`.
 - `init_chunks`: Chunk sizes for grouped init.
 - `bias::Bool`: Include per-member additive bias (default `false`).
 """
