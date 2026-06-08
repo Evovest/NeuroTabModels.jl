@@ -243,16 +243,12 @@ end
 """
     embedding_width(chain, x, rng) -> Int
 
-Flattened output width of an embedding chain, read from each layer's own analytic
-`Lux.outputsize` (never by tracing a forward pass)."""
-embedding_width(layer, x, rng::AbstractRNG) = Lux.outputsize(layer, x, rng)[1]
+Flattened output width of an embedding chain: the product of the embedding
+layer's own analytic `Lux.outputsize` (a `FlattenLayer` collapses all non-batch
+dims, so the width is their product). Computed without tracing a forward pass."""
+embedding_width(layer, x, rng::AbstractRNG) = prod(Lux.outputsize(layer, x, rng))
 embedding_width(::WrappedFunction, x, ::AbstractRNG) = size(x, 1)
-function embedding_width(c::Chain, x, rng::AbstractRNG)
-    layers = c.layers
-    length(layers) == 2 && layers[2] isa FlattenLayer ||
-        error("unexpected embedding chain structure")
-    return prod(Lux.outputsize(layers[1], x, rng))
-end
+embedding_width(c::Chain, x, rng::AbstractRNG) = prod(Lux.outputsize(first(c.layers), x, rng))
 
 """    has_real_embedding(spec) -> Bool
 
