@@ -126,7 +126,9 @@ const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
     :batchnorm => BatchNormEmbeddings,
 )
 
-# keep only keys the target ctor accepts; drop `nothing` so the ctor default applies
+# Used by the `_num_from_dict` methods below. Filters a (possibly superset) config
+# Dict down to the keyword arguments one embedding constructor accepts; absent and
+# `nothing`-valued keys are skipped so the constructor's own defaults apply.
 function _pick(d, keys)
     ps = Pair{Symbol,Any}[]
     for k in keys
