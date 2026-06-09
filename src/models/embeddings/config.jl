@@ -1,3 +1,4 @@
+using Lux: Chain, FlattenLayer, WrappedFunction
 using NNlib: relu, tanh, softplus, hardtanh, tanhshrink
 
 const act_dict = Dict(
@@ -170,17 +171,21 @@ needs_x_train(::PiecewiseLinearEmbeddings) = true
 needs_x_train(::AbstractTemporalEmbedding) = true
 needs_x_train(e::EmbeddingLayer) = needs_x_train(e.num) || needs_x_train(e.temp)
 
+# Numerical embeddings: each builds its own chain emitting a flat (width, batch)
+# output. Expanding types append their own FlattenLayer; BatchNorm is already 2D.
+# The builder never inspects the type to decide how to flatten; adding a new
+# numerical embedding (e.g. categorical) means adding one method here.
 _build_num(s::LinearEmbeddings, nfeats::Int, _x) =
-    _LinearEmbeddings(nfeats, s.d_embedding; activation=act_dict[s.activation])
+    Chain(_LinearEmbeddings(nfeats, s.d_embedding; activation=act_dict[s.activation]), FlattenLayer())
 _build_num(s::PeriodicEmbeddings, nfeats::Int, _x) =
-    _PeriodicEmbeddings(nfeats, s.d_embedding;
+    Chain(_PeriodicEmbeddings(nfeats, s.d_embedding;
         frequencies=s.frequencies, frequencies_init_scale=s.frequencies_init_scale,
-        activation=act_dict[s.activation], lite=s.lite)
+        activation=act_dict[s.activation], lite=s.lite), FlattenLayer())
 function _build_num(s::PiecewiseLinearEmbeddings, nfeats::Int, x_train)
     x_train === nothing &&
         error("PiecewiseLinearEmbeddings requires x_train to compute bin edges")
-    bins = compute_bins(x_train; bins=s.bins)
-    _PiecewiseLinearEmbeddings(bins, s.d_embedding; activation=act_dict[s.activation], version=s.version)
+    Chain(_PiecewiseLinearEmbeddings(compute_bins(x_train; bins=s.bins), s.d_embedding;
+        activation=act_dict[s.activation], version=s.version), FlattenLayer())
 end
 _build_num(::BatchNormEmbeddings, nfeats::Int, _x) = _BatchNormEmbeddings(nfeats)
 
@@ -192,43 +197,76 @@ function _build_temp(t::TemporalEmbeddings, x_col)
     _TemporalEmbeddings(t_mean, t_std, t.order, t.trend, t.d_embedding; periods=t.periods)
 end
 
-"""    build_embedding_chain(spec, nfeats; x_train=nothing) -> (; chain, d_in, d_features)
+"""
+    build_embedding_chain(spec, nfeats; x_train=nothing) -> embedding chain
 
-Realize an `IdentityEmbedding` (no-op) or `EmbeddingLayer` into a Lux chain plus downstream sizing."""
-build_embedding_chain(::IdentityEmbedding, nfeats::Int; x_train=nothing) =
-    (chain=nothing, d_in=nfeats, d_features=fill(1, nfeats))
+Builds the input embedding as a numerical core, optionally augmented by a
+temporal branch. There are four cases:
+
+  - `IdentityEmbedding` / empty `EmbeddingLayer`: pass features through unchanged.
+  - numerical only: the numerical embedding builds the core chain.
+  - temporal only (single time column): the time column is embedded on its own.
+  - numerical + temporal: the numerical core embeds the feature columns and the
+    time column is embedded separately, then concatenated as a parallel branch
+    (`TemporalAugmentedEmbeddings`).
+
+The chain emits a flat `(width, batch)` output; its width is recovered with
+[`embedding_width`](@ref) rather than returned here.
+"""
+build_embedding_chain(::IdentityEmbedding, nfeats::Int; x_train=nothing) = WrappedFunction(identity)
 function build_embedding_chain(e::EmbeddingLayer, nfeats::Int; x_train=nothing)
-    if e.num === nothing && e.temp === nothing
-        return (chain=nothing, d_in=nfeats, d_features=fill(1, nfeats))
-    end
-    if e.num === nothing
+    # no embedding set: pass-through
+    isnothing(e.num) && isnothing(e.temp) && return WrappedFunction(identity)
+
+    # numerical only: the core chain
+    isnothing(e.temp) && return _build_num(e.num, nfeats, x_train)
+
+    # temporal only: the single time column embedded alone
+    if isnothing(e.num)
         nfeats == 1 ||
-            throw(ArgumentError("temporal-only EmbeddingLayer requires nfeats == 1 (got $nfeats)"))
+            throw(ArgumentError("temporal-only embedding requires nfeats == 1 (got $nfeats)"))
         e.temp.index == 1 ||
             throw(ArgumentError("temporal-only: temp.index must be 1 (got $(e.temp.index))"))
-        layer = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, 1])
-        d = temporal_out_dim(e.temp)
-        return (chain=layer, d_in=d, d_features=Int[d])
+        return _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, 1])
     end
-    if e.temp === nothing
-        if e.num isa BatchNormEmbeddings
-            return (chain=_build_num(e.num, nfeats, nothing), d_in=nfeats, d_features=fill(1, nfeats))
-        end
-        d_emb = _num_d_embedding(e.num)
-        return (chain=Chain(_build_num(e.num, nfeats, x_train), FlattenLayer()),
-                d_in=nfeats * d_emb, d_features=fill(d_emb, nfeats))
-    end
-    e.num isa BatchNormEmbeddings &&
-        throw(ArgumentError("BatchNormEmbeddings + temporal embedding is not supported"))
+
+    # numerical + temporal: core over the other columns, temporal branch concatenated
     idx = e.temp.index
     1 <= idx <= nfeats ||
         throw(ArgumentError("temporal index=$idx out of range for nfeats=$nfeats"))
     keep = setdiff(1:nfeats, idx)
-    xp = x_train === nothing ? nothing : x_train[:, keep]
-    num_layer = _build_num(e.num, nfeats - 1, xp)
-    temp_layer = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, idx])
-    aug = TemporalAugmentedEmbeddings(num_layer, temp_layer, idx, nfeats)
-    t_out, d_emb = temporal_out_dim(e.temp), _num_d_embedding(e.num)
-    return (chain=aug, d_in=(nfeats - 1) * d_emb + t_out,
-            d_features=vcat(fill(d_emb, nfeats - 1), Int[t_out]))
+    core = _build_num(e.num, nfeats - 1, x_train === nothing ? nothing : x_train[:, keep])
+    temp = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, idx])
+    return TemporalAugmentedEmbeddings(core, temp, idx, nfeats)
+end
+
+"""
+    embedding_width(chain, x, rng) -> Int
+
+Flattened output width of an embedding chain: the product of the embedding
+layer's own analytic `Lux.outputsize` (a `FlattenLayer` collapses all non-batch
+dims, so the width is their product). Computed without tracing a forward pass."""
+embedding_width(layer, x, rng::AbstractRNG) = prod(Lux.outputsize(layer, x, rng))
+embedding_width(::WrappedFunction, x, ::AbstractRNG) = size(x, 1)
+embedding_width(c::Chain, x, rng::AbstractRNG) = prod(Lux.outputsize(first(c.layers), x, rng))
+
+"""    has_real_embedding(spec) -> Bool
+
+Whether the spec applies a non-identity embedding."""
+has_real_embedding(::IdentityEmbedding) = false
+has_real_embedding(e::EmbeddingLayer) = e.num !== nothing || e.temp !== nothing
+
+"""    per_feature_widths(spec, nfeats) -> Vector{Int}
+
+How many output dimensions each input feature expands to, summing to the embedding
+output width. A neutral feature-grouping fact; consumers (e.g. TabM's grouped
+ensemble scaling init) decide what to do with it."""
+per_feature_widths(::IdentityEmbedding, nfeats::Int) = fill(1, nfeats)
+function per_feature_widths(e::EmbeddingLayer, nfeats::Int)
+    isnothing(e.num) && isnothing(e.temp) && return fill(1, nfeats)
+    isnothing(e.temp) && return e.num isa BatchNormEmbeddings ?
+        fill(1, nfeats) : fill(_num_d_embedding(e.num), nfeats)
+    isnothing(e.num) && return Int[temporal_out_dim(e.temp)]
+    d_emb = e.num isa BatchNormEmbeddings ? 1 : _num_d_embedding(e.num)
+    return vcat(fill(d_emb, nfeats - 1), Int[temporal_out_dim(e.temp)])
 end

@@ -6,7 +6,7 @@ using NNlib
     NLinear(n, in_features, out_features; bias=true)
 
 A batch of `n` independent linear layers applied in parallel via `batched_mul`.
-Input shape `(in_features, n, batch)` → output shape `(out_features, n, batch)`.
+Input shape `(in_features, n, batch)`; output shape `(out_features, n, batch)`.
 
 # Arguments
 - `n::Int`: Number of independent linear layers (typically one per feature).

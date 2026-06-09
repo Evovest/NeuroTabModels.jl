@@ -94,6 +94,13 @@ function (l::TemporalAugmentedEmbeddings)(x::AbstractMatrix, ps, st)
     end
     h_feats, st_f = l.features(x_feats, ps.features, st.features)
     h_time, st_t = l.temporal(x_time, ps.temporal, st.temporal)
-    d, k, b = size(h_feats)
-    return vcat(reshape(h_feats, d * k, b), h_time), (features=st_f, temporal=st_t)
+    return vcat(h_feats, h_time), (features=st_f, temporal=st_t)
+end
+
+Lux.outputsize(m::_TemporalEmbeddings{P,D,true},  x, ::AbstractRNG) where {P,D} = (m.dense.out_dims + 1,)
+Lux.outputsize(m::_TemporalEmbeddings{P,D,false}, x, ::AbstractRNG) where {P,D} = (m.dense.out_dims,)
+function Lux.outputsize(l::TemporalAugmentedEmbeddings, x, rng::AbstractRNG)
+    fw = embedding_width(l.features, x[1:(l.nfeats - 1), :], rng)
+    tw = embedding_width(l.temporal, x[1:1, :], rng)
+    return (fw + tw,)
 end

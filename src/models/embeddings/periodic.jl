@@ -39,7 +39,7 @@ end
                        frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
 Periodic sinusoidal encoding followed by a learned linear projection.
-Applies `Periodic` → `NLinear` (or `Dense` if `lite`) → activation.
+Applies `Periodic`, then `NLinear` (or `Dense` if `lite`), then activation.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
@@ -93,3 +93,6 @@ function (m::_PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
 
     return h_lin, (periodic=st_p, linear=st_l)
 end
+
+Lux.outputsize(m::_PeriodicEmbeddings, x, ::AbstractRNG) =
+    m.lite ? error("lite _PeriodicEmbeddings outputsize undefined") : (m.linear.out_features, size(x, 1))
