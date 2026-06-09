@@ -83,7 +83,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     hidden_size=256,
 # )
 # arch = NeuroTabModels.ResNetConfig(;
-#     num_blocks=1,
+#     stack_size=1,
 #     hidden_size=128,
 #     act=:relu,
 #     dropout=0.5,

@@ -12,6 +12,19 @@ abstract type Architecture end
 
 _broadcast_relu(x) = NNlib.relu.(x)
 
+const activation_dict = Dict{Symbol,Function}(
+    :relu => NNlib.relu,
+    :gelu => NNlib.gelu,
+    :sigmoid => NNlib.sigmoid_fast,
+    :tanh => NNlib.tanh_fast,
+)
+
+function get_activation(act::Symbol)
+    haskey(activation_dict, act) ||
+        error("Unknown activation: $act. Supported: $(sort(collect(keys(activation_dict))))")
+    return activation_dict[act]
+end
+
 """
     NeuroTabModel
 
@@ -41,10 +54,10 @@ using .MOETrees
 include("TabM/TabM.jl")
 using .TabM
 
-# include("MLP/mlp.jl")
-# using .MLP
+include("MLP/mlp.jl")
+using .MLP
 
-# include("ResNet/resnet.jl")
-# using .ResNet
+include("ResNet/resnet.jl")
+using .ResNet
 
 end

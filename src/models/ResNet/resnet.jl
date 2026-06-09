@@ -2,16 +2,13 @@ module ResNet
 
 export ResNetConfig
 
-import Flux
-import Flux: @functor, trainmode!, gradient, Chain, DataLoader, cpu, gpu
-import Flux: relu, gelu, sigmoid, sigmoid_fast, hardsigmoid, tanh, tanh_fast, hardtanh, softplus, onecold
-import Flux: BatchNorm, Dense, Dropout, Parallel, SkipConnection
+using Lux
+using LuxCore
 
-import ..Models: get_loss_type, GaussianMLE
-import ..Models: Architecture
+import ..Models: Architecture, get_activation
 
 struct ResNetConfig <: Architecture
-    num_blocks::Int
+    stack_size::Int
     hidden_size::Int
     act::Symbol
     dropout::Float64
@@ -19,127 +16,78 @@ struct ResNetConfig <: Architecture
 end
 
 function ResNetConfig(; kwargs...)
-
-    # defaults arguments
     args = Dict{Symbol,Any}(
-        :num_blocks => 1,
+        :stack_size => 1,
         :hidden_size => 64,
         :act => :relu,
-        :dropout => 1.0,
-        :MLE_tree_split => false
+        :dropout => 0.0,
+        :MLE_tree_split => false,
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
-    args_ignored_str = join(args_ignored, ", ")
     length(args_ignored) > 0 &&
-        @warn "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
+        @warn "Following $(length(args_ignored)) provided arguments will be ignored: $(join(args_ignored, ", "))."
 
     args_default = setdiff(keys(args), keys(kwargs))
-    args_default_str = join(args_default, ", ")
     length(args_default) > 0 &&
-        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
+        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(join(args_default, ", "))."
 
-    args_override = intersect(keys(args), keys(kwargs))
-    for arg in args_override
+    for arg in intersect(keys(args), keys(kwargs))
         args[arg] = kwargs[arg]
     end
 
-    config = ResNetConfig(
-        args[:num_blocks],
+    return ResNetConfig(
+        args[:stack_size],
         args[:hidden_size],
         Symbol(args[:act]),
         args[:dropout],
-        args[:MLE_tree_split]
+        args[:MLE_tree_split],
     )
-
-    return config
 end
 
-function ResBlock_v1(; hsize, dropout)
-    layer = SkipConnection(
-        Chain(
-            BatchNorm(hsize),
-            Dense(hsize => hsize, relu),
-            Dropout(dropout),
-            Dense(hsize => hsize),
-            Dropout(dropout),
-        ),
-        +
+function _res_block(hsize::Int, act, dropout::Float64)
+    layers = Any[
+        Dense(hsize => hsize),
+        BatchNorm(hsize, act),
+    ]
+    dropout > 0 && push!(layers, Dropout(dropout))
+    push!(layers, Dense(hsize => hsize))
+    push!(layers, BatchNorm(hsize))
+
+    return Chain(
+        SkipConnection(Chain(layers...), +),
+        BatchNorm(hsize, act),
     )
-    return layer
-end
-function ResBlock_v2A(; hsize, dropout, kwargs...)
-    layer = Chain(
-        SkipConnection(
-            Chain(
-                Dense(hsize => hsize),
-                BatchNorm(hsize, relu),
-                Dropout(dropout),
-                Dense(hsize => hsize),
-                BatchNorm(hsize),
-            ),
-            +
-        ),
-        x -> relu.(x)
-    )
-    return layer
-end
-function ResBlock_v2B(; hsize, dropout, kwargs...)
-    layer = Chain(
-        SkipConnection(
-            Chain(
-                Dense(hsize => hsize),
-                BatchNorm(hsize, relu),
-                Dropout(dropout),
-                Dense(hsize => hsize),
-                BatchNorm(hsize),
-            ),
-            vcat
-        ),
-        Dense(2 * hsize => hsize, relu),
-    )
-    return layer
 end
 
+function _resnet_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::Int, dropout::Float64)
+    layers = Any[
+        Dense(nfeats => hsize),
+        BatchNorm(hsize, act),
+    ]
+    for _ in 1:stack_size
+        push!(layers, _res_block(hsize, act, dropout))
+    end
+    push!(layers, Dense(hsize => outsize))
+    return Chain(layers...)
+end
 
-function (config::ResNetConfig)(; nfeats, outsize)
-
+function (config::ResNetConfig)(; nfeats, outsize, kwargs...)
+    act = get_activation(config.act)
     hsize = config.hidden_size
-    dropout = config.dropout
 
-    if config.MLE_tree_split && outsize == 2
-        outsize ÷= 2
+    if config.MLE_tree_split
+        iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
+        head_outsize = outsize ÷ 2
         chain = Chain(
-            BatchNorm(nfeats),
-            Dense(nfeats => hsize),
-            BatchNorm(hsize, relu),
             Parallel(
                 vcat,
-                Chain(
-                    ResBlock_v2A(; hsize, dropout),
-                    # BatchNorm(hsize),
-                    Dense(hsize => outsize),
-                    # BatchNorm(outsize),
-                ),
-                Chain(
-                    ResBlock_v2A(; hsize, dropout),
-                    # BatchNorm(hsize),
-                    Dense(hsize => outsize),
-                    # BatchNorm(outsize),
-                )
+                _resnet_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
+                _resnet_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
             ),
         )
     else
-        chain = Chain(
-            BatchNorm(nfeats),
-            Dense(nfeats => hsize),
-            BatchNorm(hsize, relu),
-            ResBlock_v2A(; hsize, dropout),
-            # BatchNorm(hsize),
-            Dense(hsize => outsize),
-            # BatchNorm(outsize),
-        )
-        @info "single chain"
+        chain = _resnet_trunk(nfeats, hsize, outsize, act, config.stack_size, config.dropout)
     end
 
     return chain

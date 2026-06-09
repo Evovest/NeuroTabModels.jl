@@ -76,18 +76,20 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     dropout=0.1,
 #     # scaling_init=:normal,
 # )
+
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
-#     stack_size=1,
-#     hidden_size=256,
-# )
-# arch = NeuroTabModels.ResNetConfig(;
-#     num_blocks=1,
+#     stack_size=2,
 #     hidden_size=128,
-#     act=:relu,
-#     dropout=0.5,
-#     MLE_tree_split=false
+#     dropout=0.2
 # )
+
+arch = NeuroTabModels.ResNetConfig(;
+    stack_size=2,
+    hidden_size=128,
+    act=:relu,
+    dropout=0.5,
+)
 
 device = :gpu
 backend = :reactant
@@ -111,7 +113,7 @@ learner = NeuroTabRegressor(
     nrounds=200,
     early_stopping_rounds=2,
     lr=1e-3,
-    batchsize=512,
+    batchsize=1024,
     device,
     backend
 )

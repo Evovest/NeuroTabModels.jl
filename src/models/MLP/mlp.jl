@@ -2,90 +2,78 @@ module MLP
 
 export MLPConfig
 
-import Flux
-import Flux: @functor, trainmode!, gradient, Chain, DataLoader, cpu, gpu
-import Flux: relu, gelu, sigmoid, sigmoid_fast, hardsigmoid, tanh, tanh_fast, hardtanh, softplus, onecold
-import Flux: BatchNorm, Dense, Dropout, Parallel, SkipConnection
+using Lux
+using LuxCore
 
-import ..Models: get_loss_type, GaussianMLE
-import ..Models: Architecture
+import ..Models: Architecture, get_activation
 
 struct MLPConfig <: Architecture
     act::Symbol
     hidden_size::Int
     stack_size::Int
+    dropout::Float64
     MLE_tree_split::Bool
 end
 
 function MLPConfig(; kwargs...)
-
-    # defaults arguments
     args = Dict{Symbol,Any}(
         :act => :relu,
         :hidden_size => 64,
         :stack_size => 1,
-        :MLE_tree_split => false
+        :dropout => 0.0,
+        :MLE_tree_split => false,
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
-    args_ignored_str = join(args_ignored, ", ")
     length(args_ignored) > 0 &&
-        @warn "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
+        @warn "Following $(length(args_ignored)) provided arguments will be ignored: $(join(args_ignored, ", "))."
 
     args_default = setdiff(keys(args), keys(kwargs))
-    args_default_str = join(args_default, ", ")
     length(args_default) > 0 &&
-        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
+        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(join(args_default, ", "))."
 
-    args_override = intersect(keys(args), keys(kwargs))
-    for arg in args_override
+    for arg in intersect(keys(args), keys(kwargs))
         args[arg] = kwargs[arg]
     end
 
-    config = MLPConfig(
+    return MLPConfig(
         Symbol(args[:act]),
         args[:hidden_size],
         args[:stack_size],
-        args[:MLE_tree_split]
+        args[:dropout],
+        args[:MLE_tree_split],
     )
-
-    return config
 end
 
-function (config::MLPConfig)(; nfeats, outsize)
+function _mlp_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::Int, dropout::Float64)
+    layers = Any[
+        Dense(nfeats => hsize),
+    ]
+    for _ in 1:stack_size
+        push!(layers, BatchNorm(hsize, act))
+        push!(layers, Dense(hsize => hsize))
+        dropout > 0 && push!(layers, Dropout(dropout))
+    end
+    push!(layers, Dense(hsize => outsize))
+    return Chain(layers...)
+end
 
+function (config::MLPConfig)(; nfeats, outsize, kwargs...)
+    act = get_activation(config.act)
     hsize = config.hidden_size
 
-    if config.MLE_tree_split && outsize == 2
-        outsize ÷= 2
+    if config.MLE_tree_split
+        iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
+        head_outsize = outsize ÷ 2
         chain = Chain(
-            BatchNorm(nfeats),
-            Dense(nfeats => hsize),
             Parallel(
                 vcat,
-                Chain(
-                    BatchNorm(nfeats),
-                    Dense(nfeats => hsize),
-                    BatchNorm(hsize, relu),
-                    Dense(hsize => outsize)
-                ),
-                Chain(
-                    BatchNorm(nfeats),
-                    Dense(nfeats => hsize),
-                    BatchNorm(hsize, relu),
-                    Dense(hsize => outsize)
-                )
-            )
+                _mlp_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
+                _mlp_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
+            ),
         )
     else
-        chain = Chain(
-            BatchNorm(nfeats),
-            Dense(nfeats => hsize),
-            BatchNorm(hsize, relu),
-            Dense(hsize => hsize),
-            BatchNorm(hsize, relu),
-            Dense(hsize => outsize)
-        )
+        chain = _mlp_trunk(nfeats, hsize, outsize, act, config.stack_size, config.dropout)
     end
 
     return chain
