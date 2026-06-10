@@ -1,28 +1,69 @@
 module Models
 
 export NeuroTabModel, Architecture
-export NeuroTreeConfig, MLPConfig, ResNetConfig
+export Embeddings
+export NeuroTreeConfig, MLPConfig, ResNetConfig, TabMConfig, MOETreeConfig
 
 using ..Losses
-import Flux: @layer, Chain
-import Functors: @functor
+using Lux: Chain
+using NNlib
 
+"""
+    Architecture
+
+Abstract supertype for backbone configuration objects.
+
+Subtypes are functors: call with `(config)(; nfeats, outsize)` to build a `Lux.Chain`.
+"""
 abstract type Architecture end
+
+_broadcast_relu(x) = NNlib.relu.(x)
+
+const activation_dict = Dict{Symbol,Function}(
+    :relu => NNlib.relu,
+    :gelu => NNlib.gelu,
+    :sigmoid => NNlib.sigmoid_fast,
+    :tanh => NNlib.tanh_fast,
+)
+
+function get_activation(act::Symbol)
+    haskey(activation_dict, act) ||
+        error("Unknown activation: $act. Supported: $(sort(collect(keys(activation_dict))))")
+    return activation_dict[act]
+end
 
 """
     NeuroTabModel
+
+The object containing the model and associated metadata.
+
+## Fields
+
+- `loss_type`: the loss function type used during training (e.g. `MSE`, `LogLoss`, `MLogLoss`, `GaussianMLE`)
+- `chain`: the underlying `Lux.Chain` neural network
+- `info`: a `Dict{Symbol,Any}` storing metadata such as `:feature_names`, `:target_levels`, `:device`, `logger`, as well as fitted parameters (`ps`) and state (`st`).
 """
-struct NeuroTabModel{L<:LossType,C<:Chain}
-    _loss_type::Type{L}
+struct NeuroTabModel{L<:LossType,C}
+    loss_type::Type{L}
     chain::C
     info::Dict{Symbol,Any}
 end
-@functor NeuroTabModel (chain,)
+# @functor NeuroTabModel (chain,)
+include("embeddings/embeddings.jl")
+using .Embeddings
 
 include("NeuroTree/neurotrees.jl")
 using .NeuroTrees
+
+include("MOETree/moetrees.jl")
+using .MOETrees
+
+include("TabM/TabM.jl")
+using .TabM
+
 include("MLP/mlp.jl")
 using .MLP
+
 include("ResNet/resnet.jl")
 using .ResNet
 

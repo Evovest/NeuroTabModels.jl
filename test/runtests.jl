@@ -8,6 +8,10 @@ using StatsBase: sample
 using Random
 using MLJBase
 using MLJTestInterface
+using Enzyme
+using Reactant
+using Zygote
 
 include("core.jl")
+include("embedding.jl")
 include("MLJ.jl")

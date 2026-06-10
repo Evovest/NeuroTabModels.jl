@@ -5,18 +5,22 @@ import MLJModelInterface: fit, update, predict, schema
 import Random
 
 using ..Models
+using ..Models: EmbeddingConfig
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
 
 mutable struct NeuroTabRegressor <: MMI.Deterministic
   loss::Symbol
   metric::Symbol
   arch::Architecture
+  embedding_config::Union{Nothing,EmbeddingConfig}
   nrounds::Int
   early_stopping_rounds::Int
   lr::Float32
   wd::Float32
   batchsize::Int
   seed::Int
+  scale_target::Bool
+  backend::Symbol
   device::Symbol
   gpuID::Int
 end
@@ -36,12 +40,18 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
   - `:mlogloss`
   - `:gaussian_mle`
 - `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.   
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
-- `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
-- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu` 
+- `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
+- `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
+- `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
+- `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
+  E.g. `embedding_config=Dict(:embedding_type => :periodic, :d_embedding => 24)`.
+
+`backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
+`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
 
 # Internal API
 
@@ -140,8 +150,11 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     :wd => 0.0f0,
     :batchsize => 2048,
     :seed => 123,
-    :device => :cpu,
-    :gpuID => 0
+    :backend => :zygote,
+    :device => :gpu,
+    :gpuID => 0,
+    :embedding_config => nothing,
+    :scale_target => true
   )
 
   args_ignored = setdiff(keys(kwargs), keys(args))
@@ -162,7 +175,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
   loss = Symbol(args[:loss])
   loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle] && error("The provided kwarg `loss`: $loss is not supported.")
 
-  _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle]
+  _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation]
   if isnothing(args[:metric])
     metric = loss
   else
@@ -172,18 +185,34 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     error("Invalid metric. Must be one of: $_metric_list")
   end
 
+  backend = Symbol(args[:backend])
   device = Symbol(args[:device])
+  if device == :reactant
+    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+  end
+  if backend == :enzyme && device == :gpu
+    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
+  end
+
+  # Build EmbeddingConfig from Dict if needed
+  embed = args[:embedding_config]
+  if embed isa AbstractDict
+    embed = EmbeddingConfig(; embed...)
+  end
 
   config = NeuroTabRegressor(
     loss,
     metric,
     arch,
+    embed,
     args[:nrounds],
     args[:early_stopping_rounds],
     Float32(args[:lr]),
     Float32(args[:wd]),
     args[:batchsize],
     args[:seed],
+    args[:scale_target],
+    backend,
     device,
     args[:gpuID]
   )
@@ -202,12 +231,14 @@ mutable struct NeuroTabClassifier <: MMI.Probabilistic
   loss::Symbol
   metric::Symbol
   arch::Architecture
+  embedding_config::Union{Nothing,EmbeddingConfig}
   nrounds::Int
   early_stopping_rounds::Int
   lr::Float32
   wd::Float32
   batchsize::Int
   seed::Int
+  backend::Symbol
   device::Symbol
   gpuID::Int
 end
@@ -221,12 +252,17 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 # Hyper-parameters
 
 - `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.   
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
-- `device=:cpu`:            Device on which to perform the computation, either `:cpu` or `:gpu`
-- `gpuID=0`:                GPU device to use, only relveant if `device = :gpu` 
+- `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
+- `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
+- `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
+- `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
+
+`backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
+`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
 
 # Internal API
 
@@ -293,7 +329,7 @@ The fields of `report(mach)` are:
 ## Internal API
 
 ```julia
-using NeuroTabModels, DataFrames, CategoricalArrays, Random 
+using NeuroTabModels, DataFrames, CategoricalArrays, Random
 config = NeuroTabClassifier(depth=5, nrounds=10)
 nobs, nfeats = 1_000, 5
 dtrain = DataFrame(randn(nobs, nfeats), :auto)
@@ -324,8 +360,10 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     :wd => 0.0f0,
     :batchsize => 2048,
     :seed => 123,
-    :device => :cpu,
-    :gpuID => 0
+    :backend => :zygote,
+    :device => :gpu,
+    :gpuID => 0,
+    :embedding_config => nothing,
   )
 
   args_ignored = setdiff(keys(kwargs), keys(args))
@@ -343,18 +381,33 @@ function NeuroTabClassifier(arch::Architecture; kwargs...)
     args[arg] = kwargs[arg]
   end
 
+  backend = Symbol(args[:backend])
   device = Symbol(args[:device])
+  if device == :reactant
+    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+  end
+  if backend == :enzyme && device == :gpu
+    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
+  end
+
+  # Build EmbeddingConfig from Dict if needed
+  embed = args[:embedding_config]
+  if embed isa AbstractDict
+    embed = EmbeddingConfig(; embed...)
+  end
 
   config = NeuroTabClassifier(
     :mlogloss,
     :mlogloss,
     arch,
+    embed,
     args[:nrounds],
     args[:early_stopping_rounds],
     Float32(args[:lr]),
     Float32(args[:wd]),
     args[:batchsize],
     args[:seed],
+    backend,
     device,
     args[:gpuID]
   )

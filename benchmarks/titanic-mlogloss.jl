@@ -5,15 +5,16 @@ using Statistics: mean
 using StatsBase: median
 using CategoricalArrays
 using Random
-using CUDA
 using CategoricalArrays
+
+using Enzyme
+using Reactant
+# using CUDA, cuDNN
+using Zygote
 
 Random.seed!(123)
 
 df = MLDatasets.Titanic().dataframe
-
-# convert target variable to a categorical
-transform!(df, :Survived => categorical => :y_cat)
 
 # convert string feature to Categorical
 transform!(df, :Sex => categorical => :Sex)
@@ -25,6 +26,9 @@ transform!(df, :Age => (x -> coalesce.(x, median(skipmissing(x)))) => :Age);
 
 # remove unneeded variables
 df = df[:, Not([:PassengerId, :Name, :Embarked, :Cabin, :Ticket])]
+
+# convert target variable to a categorical
+transform!(df, :Survived => categorical => :y_cat)
 
 train_ratio = 0.8
 train_indices = randperm(nrow(df))[1:Int(round(train_ratio * nrow(df)))]
@@ -39,17 +43,34 @@ eltype(dtrain[:, "y_cat"])
 arch = NeuroTabModels.NeuroTreeConfig(;
     actA=:identity,
     init_scale=1.0,
+    k=8,
     depth=4,
     ntrees=16,
     stack_size=1,
     hidden_size=1,
+    scaler=true
 )
+
+# arch = NeuroTabModels.TabMConfig(;
+#     arch_type=:tabm_mini,
+#     k=16,
+#     d_block=32,
+#     n_blocks=1,
+#     dropout=0.1,
+#     use_embeddings=true,
+#     embedding_type=:piecewise,
+#     n_bins=32,
+#     d_embedding=32,
+#     scaling_init=:normal,
+# )
 
 learner = NeuroTabClassifier(
     arch;
-    nrounds=100,
+    nrounds=200,
     early_stopping_rounds=2,
-    lr=1e-2,
+    lr=2e-2,
+    device=:cpu,
+    backend=:reactant
 )
 
 m = NeuroTabModels.fit(

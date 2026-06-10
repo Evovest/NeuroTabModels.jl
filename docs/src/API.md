@@ -3,7 +3,7 @@
 ## Training
 
 ```@docs
-NeuroTabModels.fit
+NeuroTabModels.Fit.fit
 ```
 
 ## Inference

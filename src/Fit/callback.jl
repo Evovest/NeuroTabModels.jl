@@ -2,41 +2,76 @@ module CallBacks
 
 using DataFrames
 using Statistics: mean, median
-using Flux: cpu, gpu
-using CUDA: CuIterator
 
 using ..Learners: LearnerTypes
+using ...Infer: reduce_pred, _get_device
 using ..Data: get_df_loader_train
 using ..Metrics
 
+using Lux: Training, testmode
+
 export CallBack, init_logger, update_logger!, agg_logger
 
-struct CallBack{F,D}
-    feval::F
+struct CallBack{D,C}
     deval::D
+    eval_compiled::C
 end
 
-function (cb::CallBack)(logger, iter, m)
-    metric = Metrics.get_metric(m, cb.feval, cb.deval)
+function (cb::CallBack)(logger, iter, ts::Training.TrainState)
+    metric = Metrics.get_metric(ts, cb.deval, cb.eval_compiled)
     update_logger!(logger; iter, metric)
     return nothing
 end
 
 function CallBack(
     config::LearnerTypes,
-    deval::AbstractDataFrame;
+    df::AbstractDataFrame,
+    cache;
     feature_names,
     target_name,
     weight_name=nothing,
-    offset_name=nothing
+    offset_name=nothing,
+    group_key=nothing
 )
-
-    device = config.device
+    dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
+    ts = cache[:train_state]
+    scalers = cache[:scalers]
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
-    deval = get_df_loader_train(deval; feature_names, target_name, weight_name, offset_name, batchsize, device)
-    return CallBack(feval, deval)
+
+    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
+    deval = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
+
+    ps, st = ts.parameters, testmode(ts.states)
+    d0 = first(deval)
+    eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.backend == :reactant)
+
+    return CallBack(deval, eval_compiled)
 end
+
+function _build_eval_step(chain, feval, d0, ps, st; reactant::Bool)
+    if length(d0) == 2
+        function _step2(x, y, ps, st)
+            m = x -> reduce_pred(first(chain(x, ps, st)))
+            return feval(m, x, y; agg=sum), eltype(y)(last(size(y)))
+        end
+        return reactant ? _compile_eval_step(Val(:reactant), _step2, d0[1], d0[2], ps, st) : _step2
+    elseif length(d0) == 3
+        function _step3(x, y, w, ps, st)
+            m = x -> reduce_pred(first(chain(x, ps, st)))
+            return feval(m, x, y, w; agg=sum), sum(w)
+        end
+        return reactant ? _compile_eval_step(Val(:reactant), _step3, d0[1], d0[2], d0[3], ps, st) : _step3
+    else
+        function _step4(x, y, w, offset, ps, st)
+            m = x -> reduce_pred(first(chain(x, ps, st)))
+            return feval(m, x, y, w, offset; agg=sum), sum(w)
+        end
+        return reactant ? _compile_eval_step(Val(:reactant), _step4, d0[1], d0[2], d0[3], d0[4], ps, st) : _step4
+    end
+end
+
+_compile_eval_step(::Val{D}, step, args...) where {D} = step
 
 function init_logger(config::LearnerTypes)
     logger = Dict(
@@ -71,7 +106,6 @@ function update_logger!(logger; iter, metric)
 end
 
 function agg_logger(logger_raw::Vector{Dict})
-
     _l1 = first(logger_raw)
     best_iters = [d[:best_iter] for d in logger_raw]
     best_iter = ceil(Int, median(best_iters))
@@ -90,14 +124,13 @@ function agg_logger(logger_raw::Vector{Dict})
     logger = Dict(
         :name => _l1[:name],
         :maximise => _l1[:maximise],
-        :early_stopping_rounds => _l1[:name],
+        :early_stopping_rounds => _l1[:early_stopping_rounds],
         :metrics => metrics,
         :best_iters => best_iters,
         :best_iter => best_iter,
         :best_metrics => best_metrics,
         :best_metric => best_metric,
     )
-
     return logger
 end
 
