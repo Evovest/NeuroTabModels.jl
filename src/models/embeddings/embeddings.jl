@@ -1,6 +1,7 @@
 module Embeddings
 
 using Lux
+using LuxCore
 using Random
 using NNlib
 import Statistics: mean, quantile, std

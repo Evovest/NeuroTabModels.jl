@@ -6,16 +6,16 @@ encoded as a POSIX-style seconds-since-epoch float.
 const _DEFAULT_TEMPORAL_PERIODS = Float32[31_557_600, 2_629_800, 604_800, 86_400]
 
 """Fixed Fourier features `sin(ωᵢ t), cos(ωᵢ t)` per harmonic; `ωᵢ = 2πk/T`."""
-struct TemporalPeriodic <: Lux.AbstractLuxLayer
+struct TemporalPeriodic <: LuxCore.AbstractLuxLayer
     omega::Vector{Float32}
 end
 
-Lux.initialparameters(::AbstractRNG, ::TemporalPeriodic) = (;)
+LuxCore.initialparameters(::AbstractRNG, ::TemporalPeriodic) = (;)
 
 # `omega` is fixed (no gradient), but it lives in `st` rather than as a struct
 # field so that `dev(st)` transfers it to the GPU alongside the learnable
 # state. Reshaped to a column so the broadcast against `(1, batch)` x is unambiguous.
-Lux.initialstates(::AbstractRNG, l::TemporalPeriodic) =
+LuxCore.initialstates(::AbstractRNG, l::TemporalPeriodic) =
     (omega = Matrix{Float32}(reshape(l.omega, length(l.omega), 1)),)
 
 function (l::TemporalPeriodic)(x::AbstractMatrix, ps, st)
@@ -24,7 +24,7 @@ function (l::TemporalPeriodic)(x::AbstractMatrix, ps, st)
 end
 
 """Realized temporal embedding: Fourier features + dense projection (+ optional linear trend)."""
-struct _TemporalEmbeddings{P,D,trend} <: Lux.AbstractLuxContainerLayer{(:periodic, :dense)}
+struct _TemporalEmbeddings{P,D,trend} <: LuxCore.AbstractLuxContainerLayer{(:periodic, :dense)}
     periodic::P
     dense::D
     t_mean::Float32
@@ -75,7 +75,7 @@ end
 
 """Composes a numerical embedding over `nfeats-1` columns with a temporal embedding
 on column `temporal_index`. Output is flattened-numerical concatenated with temporal."""
-struct TemporalAugmentedEmbeddings{F,T} <: Lux.AbstractLuxContainerLayer{(:features, :temporal)}
+struct TemporalAugmentedEmbeddings{F,T} <: LuxCore.AbstractLuxContainerLayer{(:features, :temporal)}
     features::F
     temporal::T
     temporal_index::Int
@@ -97,9 +97,9 @@ function (l::TemporalAugmentedEmbeddings)(x::AbstractMatrix, ps, st)
     return vcat(h_feats, h_time), (features=st_f, temporal=st_t)
 end
 
-Lux.outputsize(m::_TemporalEmbeddings{P,D,true},  x, ::AbstractRNG) where {P,D} = (m.dense.out_dims + 1,)
-Lux.outputsize(m::_TemporalEmbeddings{P,D,false}, x, ::AbstractRNG) where {P,D} = (m.dense.out_dims,)
-function Lux.outputsize(l::TemporalAugmentedEmbeddings, x, rng::AbstractRNG)
+LuxCore.outputsize(m::_TemporalEmbeddings{P,D,true},  x, ::AbstractRNG) where {P,D} = (m.dense.out_dims + 1,)
+LuxCore.outputsize(m::_TemporalEmbeddings{P,D,false}, x, ::AbstractRNG) where {P,D} = (m.dense.out_dims,)
+function LuxCore.outputsize(l::TemporalAugmentedEmbeddings, x, rng::AbstractRNG)
     fw = embedding_width(l.features, x[1:(l.nfeats - 1), :], rng)
     tw = embedding_width(l.temporal, x[1:1, :], rng)
     return (fw + tw,)

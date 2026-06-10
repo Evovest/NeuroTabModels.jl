@@ -1,6 +1,3 @@
-using Lux: Chain, FlattenLayer, WrappedFunction
-using NNlib: relu, tanh, softplus, hardtanh, tanhshrink
-
 const act_dict = Dict(
     :identity => identity,
     :relu => relu,
@@ -354,12 +351,12 @@ end
     embedding_width(chain, x, rng) -> Int
 
 Flattened output width of an embedding `chain`, computed analytically with
-`Lux.outputsize` without tracing a forward pass. A trailing `FlattenLayer`
+`LuxCore.outputsize` without tracing a forward pass. A trailing `FlattenLayer`
 collapses all non-batch dimensions, so the width is their product.
 """
-embedding_width(layer, x, rng::AbstractRNG) = prod(Lux.outputsize(layer, x, rng))
+embedding_width(layer, x, rng::AbstractRNG) = prod(LuxCore.outputsize(layer, x, rng))
 embedding_width(::WrappedFunction, x, ::AbstractRNG) = size(x, 1)
-embedding_width(c::Chain, x, rng::AbstractRNG) = prod(Lux.outputsize(first(c.layers), x, rng))
+embedding_width(c::Chain, x, rng::AbstractRNG) = prod(LuxCore.outputsize(first(c.layers), x, rng))
 
 """
     has_real_embedding(spec) -> Bool

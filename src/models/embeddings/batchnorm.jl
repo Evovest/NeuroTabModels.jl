@@ -1,7 +1,3 @@
-using Lux
-using Random
-using NNlib
-
 """
     _BatchNormEmbeddings(n_features)
 
@@ -12,7 +8,7 @@ Produces a `(d_embedding, n_features, batch)` tensor.
 # Arguments
 - `n_features::Int`: Number of input features.
 """
-struct _BatchNormEmbeddings{L} <: Lux.AbstractLuxWrapperLayer{:layer}
+struct _BatchNormEmbeddings{L} <: LuxCore.AbstractLuxWrapperLayer{:layer}
     layer::L
 end
 
@@ -25,4 +21,4 @@ function (l::_BatchNormEmbeddings)(x::AbstractMatrix, ps, st)
     return x_bn, st
 end
 
-Lux.outputsize(l::_BatchNormEmbeddings, x, ::AbstractRNG) = (size(x, 1),)
+LuxCore.outputsize(l::_BatchNormEmbeddings, x, ::AbstractRNG) = (size(x, 1),)

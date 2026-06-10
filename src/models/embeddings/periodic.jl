@@ -1,7 +1,3 @@
-using Lux
-using Random
-using NNlib
-
 """
     Periodic(nfeats, n_frequencies, sigma)
 
@@ -13,20 +9,20 @@ Output shape `(2 * n_frequencies, nfeats, batch)`.
 - `n_frequencies::Int`: Number of frequency components per feature.
 - `sigma::Float32`: Std-dev for the frequency weight initialization (clamped to ±3σ).
 """
-struct Periodic <: Lux.AbstractLuxLayer
+struct Periodic <: LuxCore.AbstractLuxLayer
     nfeats::Int
     n_frequencies::Int
     sigma::Float32
 end
 
-function Lux.initialparameters(rng::AbstractRNG, l::Periodic)
+function LuxCore.initialparameters(rng::AbstractRNG, l::Periodic)
     bound = l.sigma * 3f0
     w = clamp.(l.sigma .* randn(rng, Float32, l.n_frequencies, l.nfeats), -bound, bound)
     w = reshape(2f0 * Float32(π) .* w, l.n_frequencies, l.nfeats, 1)
     return (weight=w,)
 end
 
-Lux.initialstates(::AbstractRNG, ::Periodic) = (;)
+LuxCore.initialstates(::AbstractRNG, ::Periodic) = (;)
 
 function (l::Periodic)(x::AbstractMatrix, ps, st)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
@@ -50,7 +46,7 @@ Applies `Periodic`, then `NLinear` (or `Dense` if `lite`), then activation.
 - `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear` (default `false`).
   Only valid when `activation` is not `identity`.
 """
-struct _PeriodicEmbeddings{P,L,F} <: Lux.AbstractLuxContainerLayer{(:periodic, :linear)}
+struct _PeriodicEmbeddings{P,L,F} <: LuxCore.AbstractLuxContainerLayer{(:periodic, :linear)}
     periodic::P
     linear::L
     activation::F
@@ -94,5 +90,5 @@ function (m::_PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
     return h_lin, (periodic=st_p, linear=st_l)
 end
 
-Lux.outputsize(m::_PeriodicEmbeddings, x, ::AbstractRNG) =
+LuxCore.outputsize(m::_PeriodicEmbeddings, x, ::AbstractRNG) =
     m.lite ? error("lite _PeriodicEmbeddings outputsize undefined") : (m.linear.out_features, size(x, 1))
