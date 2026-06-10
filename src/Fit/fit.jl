@@ -9,7 +9,7 @@ using ..Losses
 using ..Metrics
 using ..Infer: reduce_pred, _get_device
 
-import Random: Xoshiro
+import Random: Xoshiro, default_rng
 import Statistics: mean, std
 import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
@@ -73,19 +73,12 @@ function init(
 
     # Build chain: optional embeddings + architecture backbone
     embed_config = config.embedding_config
-    if isnothing(embed_config)
-        chain = config.arch(; nfeats, outsize)
-    else
-        if embed_config.embedding_type == :piecewise
-            x_train = Matrix{Float32}(df[:, feature_names])
-        else
-            x_train = nothing
-        end
-        embed_chain = embed_config(; nfeats, x_train)
-        d_in = nfeats * embed_config.d_embedding
-        d_features = fill(embed_config.d_embedding, nfeats)
-        chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
-    end
+    x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
+    embed_chain = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
+    d_in = Models.Embeddings.embedding_width(embed_chain, randn(Float32, nfeats, 2), default_rng())
+    chain = Models.build_chain(config.arch, embed_chain;
+        nfeats, outsize, d_in, embedding_config=embed_config, loss_type=L)
+
 
     info = Dict(
         :nrounds => 0,
@@ -105,6 +98,8 @@ function init(
 
     rng = Xoshiro(config.seed)
     ps, st = Lux.setup(rng, m.chain) |> dev
+    data = Models.train_dataloader(config.arch, m, data, df;
+        feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng)
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 
@@ -164,7 +159,7 @@ function fit(
 
     logger = nothing
     if !isnothing(deval)
-        cb = CallBack(config, deval, cache; feature_names, target_name, weight_name, offset_name, group_key)
+        cb = CallBack(config, deval, cache, m; feature_names, target_name, weight_name, offset_name, group_key)
         logger = init_logger(config)
         cb(logger, 0, cache[:train_state])
         (verbosity > 0) && @info "Init training" metric = logger[:metrics][end]
