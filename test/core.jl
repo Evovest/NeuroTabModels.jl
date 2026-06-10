@@ -187,12 +187,12 @@ end
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
 
-    arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=32, dropout=0.1, arch_type)
+    arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=64, dropout=0.1, arch_type)
     learner = NeuroTabClassifier(arch;
         embedding_config=Dict(:embedding_type => :batchnorm),
         nrounds=200,
         batchsize=32,
-        early_stopping_rounds=5,
+        early_stopping_rounds=10,
         lr=1e-2,
     )
 
