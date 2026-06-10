@@ -3,11 +3,12 @@
 ## Training
 
 ```@docs
-NeuroTabModels.fit
+NeuroTabModels.Fit.fit
 ```
 
 ## Inference
 
 ```@docs
 NeuroTabModels.infer
+NeuroTabModels.NeuroTabModel(::AbstractDataFrame)
 ```

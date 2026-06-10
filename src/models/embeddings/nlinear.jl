@@ -1,20 +1,15 @@
-using Lux
-using Random
-using NNlib
-
 """
     NLinear(n, in_features, out_features; bias=true)
 
-A batch of `n` independent linear layers applied in parallel via `batched_mul`.
-Input shape `(in_features, n, batch)`; output shape `(out_features, n, batch)`.
+`n` independent linear layers on `(in_features, n, batch)` via `batched_mul`.
 
 # Arguments
-- `n::Int`: Number of independent linear layers (typically one per feature).
-- `in_features::Int`: Input dimension for each linear layer.
-- `out_features::Int`: Output dimension for each linear layer.
-- `bias::Bool`: Whether to include a learnable bias (default `true`).
+- `n::Int`: Number of parallel linear layers.
+- `in_features::Int`: Input dimension per layer.
+- `out_features::Int`: Output dimension per layer.
+- `bias::Bool`: Include bias (default `true`).
 """
-struct NLinear <: Lux.AbstractLuxLayer
+struct NLinear <: LuxCore.AbstractLuxLayer
     n::Int
     in_features::Int
     out_features::Int
@@ -25,7 +20,7 @@ function NLinear(n::Int, in_features::Int, out_features::Int; bias::Bool=true)
     return NLinear(n, in_features, out_features, bias)
 end
 
-function Lux.initialparameters(rng::AbstractRNG, l::NLinear)
+function LuxCore.initialparameters(rng::AbstractRNG, l::NLinear)
     limit = Float32(l.in_features)^(-0.5f0)
     weight = (rand(rng, Float32, l.out_features, l.in_features, l.n) .* 2f0 .* limit) .- limit
 
@@ -36,7 +31,7 @@ function Lux.initialparameters(rng::AbstractRNG, l::NLinear)
     end
 end
 
-Lux.initialstates(::AbstractRNG, ::NLinear) = (;)
+LuxCore.initialstates(::AbstractRNG, ::NLinear) = (;)
 
 function (l::NLinear)(x::AbstractArray{T,3}, ps, st) where T
     x_perm = PermutedDimsArray(x, (1, 3, 2))

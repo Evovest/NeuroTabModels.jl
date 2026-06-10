@@ -1,9 +1,11 @@
 module Embeddings
 
 using Lux
-using Random
+using Lux: BatchNorm, Chain, Dense, FlattenLayer
+using LuxCore
 using NNlib
-import Statistics: mean, quantile, std
+using Random: AbstractRNG, rand, randn
+using Statistics: quantile
 
 export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractEmbedding
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings

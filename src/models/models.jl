@@ -11,9 +11,29 @@ using ..Losses
 using Lux: Chain
 using NNlib
 
+"""
+    Architecture
+
+Abstract supertype for backbone configuration objects.
+
+Subtypes are functors: call with `(config)(; nfeats, outsize)` to build a `Lux.Chain`.
+"""
 abstract type Architecture end
 
 _broadcast_relu(x) = NNlib.relu.(x)
+
+const activation_dict = Dict{Symbol,Function}(
+    :relu => NNlib.relu,
+    :gelu => NNlib.gelu,
+    :sigmoid => NNlib.sigmoid_fast,
+    :tanh => NNlib.tanh_fast,
+)
+
+function get_activation(act::Symbol)
+    haskey(activation_dict, act) ||
+        error("Unknown activation: $act. Supported: $(sort(collect(keys(activation_dict))))")
+    return activation_dict[act]
+end
 
 """
     train_dataloader(arch, m, default, df; kwargs...)
@@ -87,13 +107,10 @@ using .MOETrees
 include("TabM/TabM.jl")
 using .TabM
 
-include("ModernNCA/modernnca.jl")
-using .ModernNCA
+include("MLP/mlp.jl")
+using .MLP
 
-# include("MLP/mlp.jl")
-# using .MLP
-
-# include("ResNet/resnet.jl")
-# using .ResNet
+include("ResNet/resnet.jl")
+using .ResNet
 
 end

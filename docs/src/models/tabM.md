@@ -1,5 +1,5 @@
 # TabM
 
-```@docs
-TabMConfig
+```@autodocs
+Modules = [NeuroTabModels.Models.TabM]
 ```

@@ -2,12 +2,16 @@
 using Documenter
 using DocumenterVitepress
 using NeuroTabModels
+using DataFrames
 
 pages = [
     "Quick start" => "quick-start.md",
+    "API" => "API.md",
     "Design" => "design.md",
     "Models" => [
         "Interface" => "models/models.md",
+        "MLP" => "models/mlp.md",
+        "ResNet" => "models/resnet.md",
         "NeuroTrees" => "models/neurotrees.md",
         "TabM" => "models/tabM.md",
     ],
