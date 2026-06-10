@@ -82,6 +82,22 @@ function _infer_grp_loop(::Val, chain, data, x0, dev, cdev, ps, st)
     return preds
 end
 
+"""
+    infer(m::NeuroTabModel, data; device=:cpu, backend=get(m.info, :backend, :zygote), proj=true)
+
+Run inference on batched feature data.
+
+# Arguments
+
+- `m::NeuroTabModel`: A fitted model.
+- `data`: Iterable of feature batches.
+
+# Keyword arguments
+
+- `device=:cpu`: Execution device (`:cpu` or `:gpu`).
+- `backend`: AD backend (`:zygote`, `:enzyme`, or `:reactant`). Defaults to the value stored on the model.
+- `proj=true`: When `true`, map raw outputs to natural scale. Set to `false` for raw model-scale predictions.
+"""
 function infer(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true) where {L}
     device = Symbol(device)
     backend = Symbol(backend)
@@ -122,6 +138,22 @@ function infer_grp(m::NeuroTabModel{L}, data; device=:cpu, backend=get(m.info, :
     return _scaler(L, p, scalers)
 end
 
+"""
+    infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj=true)
+
+Run inference on tabular data and return predictions.
+
+# Arguments
+
+- `m::NeuroTabModel`: A fitted model.
+- `df`: Feature data as an `AbstractDataFrame`.
+
+# Keyword arguments
+
+- `device=:cpu`: Execution device (`:cpu` or `:gpu`).
+- `backend`: AD backend (`:zygote`, `:enzyme`, or `:reactant`). Defaults to the value stored on the model.
+- `proj=true`: When `true`, map raw outputs to natural scale. Set to `false` for raw model-scale outputs.
+"""
 function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true)
     group_key = m.info[:group_key]
     if isnothing(group_key)
@@ -135,6 +167,11 @@ function infer(m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get
     return p
 end
 
+"""
+    (m::NeuroTabModel)(df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj=true)
+
+Run inference on tabular data.
+"""
 function (m::NeuroTabModel)(df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true)
     return infer(m, df; device, backend, proj)
 end
