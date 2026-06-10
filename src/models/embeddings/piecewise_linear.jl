@@ -59,16 +59,9 @@ end
 """
     _PiecewiseLinearEmbeddings(bins, d_embedding; activation=identity, version=:B)
 
-<<<<<<< HEAD
-Learnable embeddings on top of `PiecewiseLinearEncoding`.
-Version `:A`: PLE -> NLinear (with bias).
-Version `:B`: PLE -> NLinear (zero-init, no bias) + per-feature linear residual.
-Output shape `(d_embedding, nfeats, batch)`.
-=======
 Learnable projection on top of [`PiecewiseLinearEncoding`](@ref).
 Version `:A`: encoding → `NLinear` (with bias).
 Version `:B`: encoding → zero-init `NLinear` + [`LinearEmbeddings`](@ref) residual.
->>>>>>> 179e40916e204abf45fd153b8cb3eefd011abb8b
 
 # Arguments
 - `bins::Vector{<:AbstractVector}`: Bin edges from [`compute_bins`](@ref).
@@ -76,11 +69,7 @@ Version `:B`: encoding → zero-init `NLinear` + [`LinearEmbeddings`](@ref) resi
 - `activation`: Post-projection activation (default `identity`).
 - `version::Symbol`: `:A` or `:B` (default `:B`).
 """
-<<<<<<< HEAD
-struct _PiecewiseLinearEmbeddings{L0,I,L,F} <: Lux.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
-=======
 struct PiecewiseLinearEmbeddings{L0,I,L,F} <: LuxCore.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
->>>>>>> 179e40916e204abf45fd153b8cb3eefd011abb8b
     linear0::L0
     encoding::I
     linear::L
