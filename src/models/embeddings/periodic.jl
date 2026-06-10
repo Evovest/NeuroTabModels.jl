@@ -1,32 +1,27 @@
-using Lux
-using Random
-using NNlib
-
 """
     Periodic(nfeats, n_frequencies, sigma)
 
-Maps each feature to `2 * n_frequencies` sinusoidal components: `[cos(2π w x), sin(2π w x)]`.
-Output shape `(2 * n_frequencies, nfeats, batch)`.
+Sinusoidal encoding `[cos(2π w x), sin(2π w x)]`. Output shape `(2 * n_frequencies, nfeats, batch)`.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
-- `n_frequencies::Int`: Number of frequency components per feature.
-- `sigma::Float32`: Std-dev for the frequency weight initialization (clamped to ±3σ).
+- `n_frequencies::Int`: Frequency components per feature.
+- `sigma::Float32`: Std-dev for frequency weight init (clamped to ±3σ).
 """
-struct Periodic <: Lux.AbstractLuxLayer
+struct Periodic <: LuxCore.AbstractLuxLayer
     nfeats::Int
     n_frequencies::Int
     sigma::Float32
 end
 
-function Lux.initialparameters(rng::AbstractRNG, l::Periodic)
+function LuxCore.initialparameters(rng::AbstractRNG, l::Periodic)
     bound = l.sigma * 3f0
     w = clamp.(l.sigma .* randn(rng, Float32, l.n_frequencies, l.nfeats), -bound, bound)
     w = reshape(2f0 * Float32(π) .* w, l.n_frequencies, l.nfeats, 1)
     return (weight=w,)
 end
 
-Lux.initialstates(::AbstractRNG, ::Periodic) = (;)
+LuxCore.initialstates(::AbstractRNG, ::Periodic) = (;)
 
 function (l::Periodic)(x::AbstractMatrix, ps, st)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
@@ -35,22 +30,20 @@ function (l::Periodic)(x::AbstractMatrix, ps, st)
 end
 
 """
-    PeriodicEmbeddings(nfeats, d_embedding=24; n_frequencies=48,
+    PeriodicEmbeddings(nfeats, d_embedding=24; frequencies=48,
                        frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
-Periodic sinusoidal encoding followed by a learned linear projection.
-Applies `Periodic` → `NLinear` (or `Dense` if `lite`) → activation.
+`Periodic` followed by per-feature linear projection and activation.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
-- `d_embedding::Int`: Output embedding dimension per feature (default `24`).
-- `n_frequencies::Int`: Sinusoidal frequency components per feature (default `48`).
-- `frequencies_init_scale::Float32`: σ for frequency weight init (default `0.01f0`).
-- `activation`: Activation function applied after projection (default `relu`). E.g. `relu`, `tanh`, `identity`.
-- `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear` (default `false`).
-  Only valid when `activation` is not `identity`.
+- `d_embedding::Int`: Output dimension per feature (default `24`).
+- `frequencies::Int`: Sinusoidal components per feature (default `48`).
+- `frequencies_init_scale::Float32`: σ for frequency init (default `0.01f0`).
+- `activation`: Post-projection activation (default `relu`).
+- `lite::Bool`: Use shared `Dense` instead of per-feature `NLinear` (default `false`).
 """
-struct PeriodicEmbeddings{P,L,F} <: Lux.AbstractLuxContainerLayer{(:periodic, :linear)}
+struct PeriodicEmbeddings{P,L,F} <: LuxCore.AbstractLuxContainerLayer{(:periodic, :linear)}
     periodic::P
     linear::L
     activation::F
@@ -62,7 +55,7 @@ function PeriodicEmbeddings(
     d_embedding::Int=24;
     frequencies::Int=48,
     frequencies_init_scale::Float32=0.01f0,
-    activation=NNlib.relu,
+    activation=relu,
     lite::Bool=false,
 )
     if lite && activation === identity
@@ -89,7 +82,5 @@ function (m::PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
         m.linear(h, ps.linear, st.linear)
     end
 
-    h_lin = m.activation.(h_lin)
-
-    return h_lin, (periodic=st_p, linear=st_l)
+    return m.activation.(h_lin), (periodic=st_p, linear=st_l)
 end

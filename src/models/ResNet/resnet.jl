@@ -7,6 +7,18 @@ using LuxCore
 
 import ..Models: Architecture, get_activation
 
+"""
+    ResNetConfig(; kwargs...)
+
+Configuration for a residual MLP backbone for tabular data.
+
+# Arguments
+- `stack_size::Int`: Number of residual blocks (default `1`).
+- `hidden_size::Int`: Hidden dimension (default `64`).
+- `act::Symbol`: Activation — `:relu`, `:gelu`, `:sigmoid`, or `:tanh` (default `:relu`).
+- `dropout::Float64`: Dropout rate within each block (default `0.0`).
+- `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
+"""
 struct ResNetConfig <: Architecture
     stack_size::Int
     hidden_size::Int
@@ -30,7 +42,7 @@ function ResNetConfig(; kwargs...)
 
     args_default = setdiff(keys(args), keys(kwargs))
     length(args_default) > 0 &&
-        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(join(args_default, ", "))."
+        @info "Following $(length(args_default)) arguments set to default: $(join(args_default, ", "))."
 
     for arg in intersect(keys(args), keys(kwargs))
         args[arg] = kwargs[arg]
@@ -72,6 +84,20 @@ function _resnet_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::I
     return Chain(layers...)
 end
 
+"""
+    (config::ResNetConfig)(; nfeats, outsize)
+
+Build a `Lux.Chain` from `config`.
+
+Each block applies two `Dense` layers with batch norm and a skip connection.
+
+# Arguments
+- `nfeats::Int`: Number of input features.
+- `outsize::Int`: Number of output units.
+
+# Returns
+A `Lux.Chain` with residual blocks.
+"""
 function (config::ResNetConfig)(; nfeats, outsize, kwargs...)
     act = get_activation(config.act)
     hsize = config.hidden_size

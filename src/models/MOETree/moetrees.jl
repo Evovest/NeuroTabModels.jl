@@ -2,13 +2,12 @@ module MOETrees
 
 export MOETreeConfig
 
-using Random
 using Lux
 using LuxCore
+using Random: AbstractRNG
 using Statistics: mean
-using NNlib: softplus, sigmoid_fast, hardsigmoid, tanh_fast, hardtanh, tanhshrink
+using NNlib: tanh_fast, hardtanh, tanhshrink
 
-import ..Losses: get_loss_type, GaussianMLE
 import ..Models: Architecture
 
 include("model.jl")
@@ -33,6 +32,23 @@ function StackedMOETree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int
     return StackedMOETree(Chain(layers...))
 end
 
+"""
+    MOETreeConfig(; kwargs...)
+
+Configuration for mixture-of-experts tree ensembles.
+
+# Arguments
+- `tree_type::Symbol`: `:binary` or `:oblivious` (default `:binary`).
+- `actA::Symbol`: Feature activation — `:identity`, `:tanh`, `:hardtanh`, or `:tanhshrink` (default `:identity`).
+- `depth::Int`: Tree depth (default `4`).
+- `ntrees::Int`: Number of trees per layer (default `32`).
+- `k::Int`: Output width multiplier (default `1`).
+- `hidden_size::Int`: Hidden dimension for stacked trees (default `1`).
+- `stack_size::Int`: Number of stacked tree layers (default `1`).
+- `scaler::Bool`: Apply softplus scaling on tree logits (default `true`).
+- `init_scale::Float32`: Leaf weight init scale (default `0.1`).
+- `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
+"""
 struct MOETreeConfig <: Architecture
     tree_type::Symbol
     actA::Symbol
@@ -66,10 +82,9 @@ function MOETreeConfig(; kwargs...)
 
     args_default = setdiff(keys(args), keys(kwargs))
     length(args_default) > 0 &&
-        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(join(args_default, ", "))."
+        @info "Following $(length(args_default)) arguments set to default: $(join(args_default, ", "))."
 
-    args_override = intersect(keys(args), keys(kwargs))
-    for arg in args_override
+    for arg in intersect(keys(args), keys(kwargs))
         args[arg] = kwargs[arg]
     end
 
@@ -99,6 +114,18 @@ function _tree_kwargs(config::MOETreeConfig)
     )
 end
 
+"""
+    (config::MOETreeConfig)(; nfeats, outsize)
+
+Build a `Lux.Chain` from `config`.
+
+# Arguments
+- `nfeats::Int`: Number of input features.
+- `outsize::Int`: Number of output units.
+
+# Returns
+A `Lux.Chain` of stacked mixture-of-experts tree layers.
+"""
 function (config::MOETreeConfig)(; nfeats, outsize, kwargs...)
     kwargs = _tree_kwargs(config)
 
@@ -138,13 +165,10 @@ function _tanhshrink_act(x)
 end
 
 """
-    act_dict = Dict(
-        :identity => _identity_act,
-        :tanh => _tanh_act,
-        :hardtanh => _hardtanh_act,
-        :tanhshrink => _tanhshrink_act,
-    )
-Dictionary mapping features activation name to their function.
+    act_dict
+
+Dictionary mapping feature activation symbols to their functions.
+Supported keys: `:identity`, `:tanh`, `:hardtanh`, `:tanhshrink`.
 """
 const act_dict = Dict(
     :identity => _identity_act,

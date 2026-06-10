@@ -1,3 +1,20 @@
+"""
+    NeuroTree(feats => outs; tree_type=:binary, actA=identity, scaler=true,
+              depth, trees, k, init_scale=0.1)
+
+Differentiable oblivious or binary tree ensemble layer.
+
+# Arguments
+- `feats::Int`: Number of input features.
+- `outs::Int`: Number of output targets per tree ensemble.
+- `tree_type::Symbol`: `:binary` or `:oblivious`.
+- `actA`: Feature activation applied to split weights.
+- `scaler::Bool`: Scale logits with a learned softplus factor.
+- `depth::Int`: Tree depth.
+- `trees::Int`: Number of trees in the ensemble.
+- `k::Int`: Output width multiplier averaged over trees.
+- `init_scale::Float32`: Standard deviation for leaf weight initialization.
+"""
 struct NeuroTree{F} <: AbstractLuxLayer
     tree_type::Symbol
     actA::F

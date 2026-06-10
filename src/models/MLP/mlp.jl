@@ -7,6 +7,18 @@ using LuxCore
 
 import ..Models: Architecture, get_activation
 
+"""
+    MLPConfig(; kwargs...)
+
+Configuration for a multi-layer perceptron backbone.
+
+# Arguments
+- `act::Symbol`: Activation — `:relu`, `:gelu`, `:sigmoid`, or `:tanh` (default `:relu`).
+- `hidden_size::Int`: Hidden dimension (default `64`).
+- `stack_size::Int`: Number of hidden blocks (default `1`).
+- `dropout::Float64`: Dropout rate between blocks (default `0.0`).
+- `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
+"""
 struct MLPConfig <: Architecture
     act::Symbol
     hidden_size::Int
@@ -30,7 +42,7 @@ function MLPConfig(; kwargs...)
 
     args_default = setdiff(keys(args), keys(kwargs))
     length(args_default) > 0 &&
-        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(join(args_default, ", "))."
+        @info "Following $(length(args_default)) arguments set to default: $(join(args_default, ", "))."
 
     for arg in intersect(keys(args), keys(kwargs))
         args[arg] = kwargs[arg]
@@ -58,6 +70,18 @@ function _mlp_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::Int,
     return Chain(layers...)
 end
 
+"""
+    (config::MLPConfig)(; nfeats, outsize)
+
+Build a `Lux.Chain` from `config`.
+
+# Arguments
+- `nfeats::Int`: Number of input features.
+- `outsize::Int`: Number of output units.
+
+# Returns
+A `Lux.Chain` of `Dense` → `BatchNorm` → `Dense` blocks with optional dropout.
+"""
 function (config::MLPConfig)(; nfeats, outsize, kwargs...)
     act = get_activation(config.act)
     hsize = config.hidden_size

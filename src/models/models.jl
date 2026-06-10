@@ -8,6 +8,13 @@ using ..Losses
 using Lux: Chain
 using NNlib
 
+"""
+    Architecture
+
+Abstract supertype for backbone configuration objects.
+
+Subtypes are functors: call with `(config)(; nfeats, outsize)` to build a `Lux.Chain`.
+"""
 abstract type Architecture end
 
 _broadcast_relu(x) = NNlib.relu.(x)

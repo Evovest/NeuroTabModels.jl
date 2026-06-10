@@ -2,12 +2,11 @@ module TabM
 
 export TabMConfig
 
-using Random
 using Lux
 using LuxCore
-using NNlib
+using LuxLib: batched_matmul
+using Random: AbstractRNG, rand, randn
 
-import ..Losses: get_loss_type, GaussianMLE
 import ..Models: Architecture, _broadcast_relu
 
 include("layers.jl")
@@ -60,21 +59,15 @@ end
 """
     TabMConfig(; kwargs...)
 
-Configuration for TabM ensemble architectures.
-
-The chain output is 3D: `(outsize, k, batch)`. Ensemble averaging is handled
-during training and at inference.
+Configuration for TabM ensemble backbones.
 
 # Arguments
-- `k::Int`: Number of ensemble members (default `32`).
+- `k::Int`: Ensemble size (default `32`).
 - `n_blocks::Int`: Number of MLP blocks (default `3`).
-- `d_block::Int`: Hidden dimension per block (default `512`).
+- `d_block::Int`: Hidden dimension (default `512`).
 - `dropout::Float64`: Dropout rate (default `0.1`).
 - `arch_type::Symbol`: `:tabm`, `:tabm_mini`, or `:tabm_packed` (default `:tabm`).
-- `scaling_init::Union{Nothing,Symbol}`: Init for ensemble scaling — `:random_signs`, `:normal`,
-  `:ones`, or `nothing` for auto-detection (default `nothing`).
-  When `nothing`, defaults to `:random_signs` without embeddings and `:normal` with embeddings.
-  Explicit values always take priority.
+- `scaling_init::Union{Nothing,Symbol}`: `:random_signs`, `:normal`, `:ones`, or `nothing` (default `nothing`).
 - `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
 """
 struct TabMConfig <: Architecture
@@ -120,6 +113,17 @@ function TabMConfig(; kwargs...)
     )
 end
 
+"""
+    (config::TabMConfig)(; nfeats, outsize, d_features=nothing, scaling_init_override=nothing)
+
+Build a `Lux.Chain` from `config`. Output shape is `(outsize, k, batch)`.
+
+# Arguments
+- `nfeats::Int`: Number of input features.
+- `outsize::Int`: Number of output units.
+- `d_features`: Per-feature sizes for grouped scaling init (default `ones(Int, nfeats)`).
+- `scaling_init_override`: Used when `config.scaling_init` is `nothing`.
+"""
 function (config::TabMConfig)(; nfeats, outsize, d_features=nothing, scaling_init_override=nothing)
     @assert config.k > 0 "k must be > 0, got $(config.k)"
     @assert nfeats > 0 "nfeats must be > 0, got $nfeats"
@@ -159,11 +163,12 @@ function (config::TabMConfig)(; nfeats, outsize, d_features=nothing, scaling_ini
         error("Unknown arch_type: $(config.arch_type)")
     end
 
-    head = if config.MLE_tree_split && outsize == 2
-        split_out = outsize ÷ 2
+    head = if config.MLE_tree_split
+        iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
+        head_outsize = outsize ÷ 2
         Parallel(vcat,
-            LinearEnsemble(d_block, split_out, k),
-            LinearEnsemble(d_block, split_out, k))
+            LinearEnsemble(d_block, head_outsize, k),
+            LinearEnsemble(d_block, head_outsize, k))
     else
         LinearEnsemble(d_block, outsize, k)
     end

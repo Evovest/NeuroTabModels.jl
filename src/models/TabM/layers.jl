@@ -1,66 +1,9 @@
-using Lux: AbstractLuxLayer, WrappedFunction
-using LuxCore
-using LuxLib: batched_matmul
-using Random: AbstractRNG
-
-"""
-    _init_rsqrt_uniform(rng, dims, d) → Array{Float32}
-
-Uniform init in `[-1/√d, 1/√d]`.
-"""
-function _init_rsqrt_uniform(rng::AbstractRNG, dims, d::Int)
-    s = Float32(1 / sqrt(d))
-    return s .* (2f0 .* rand(rng, Float32, dims...) .- 1f0)
-end
-
-"""
-    _init_scaling(rng, dims, init) → Array{Float32}
-
-Initialize scaling vectors for ensemble adapters.
-- `:ones` — deterministic ones
-- `:normal` — N(0,1)
-- `:random_signs` — ±1
-"""
-function _init_scaling(rng::AbstractRNG, dims, init::Symbol)
-    if init == :ones
-        return ones(Float32, dims...)
-    elseif init == :normal
-        return randn(rng, Float32, dims...)
-    elseif init == :random_signs
-        return Float32.(2 .* (rand(rng, Float32, dims...) .> 0.5f0) .- 1)
-    else
-        error("Unknown scaling init: $init")
-    end
-end
-
-"""
-    _init_scaling_with_chunks(rng, dims, init, chunks) → Array{Float32}
-
-Initialize scaling with grouped chunks. Each chunk shares the same random value
-per ensemble member, providing structured diversity for features with different
-representation sizes.
-"""
-function _init_scaling_with_chunks(rng::AbstractRNG, dims::Tuple{Int,Int},
-                                    init::Symbol, chunks::Vector{Int})
-    d, k = dims
-    @assert d == sum(chunks) "Chunks must sum to $d, got $(sum(chunks))"
-    weight = zeros(Float32, d, k)
-    row = 1
-    for chunk_size in chunks
-        val = _init_scaling(rng, (1, k), init)
-        weight[row:row+chunk_size-1, :] .= repeat(val, chunk_size, 1)
-        row += chunk_size
-    end
-    return weight
-end
-
 """
     EnsembleView(k)
 
-Broadcasts a `(D, B)` matrix to `(D, K, B)` by repeating along dim 2.
-Passes through `(D, K, B)` input unchanged.
+Repeat `(D, B)` input to `(D, K, B)`. Passes through `(D, K, B)` unchanged.
 """
-struct EnsembleView <: AbstractLuxLayer
+struct EnsembleView <: LuxCore.AbstractLuxLayer
     k::Int
 end
 
@@ -78,21 +21,16 @@ end
     LinearBatchEnsemble(in_f, out_f; k, scaling_init=:random_signs,
                         first_scaling_init_chunks=nothing, bias=true)
 
-Batch-ensemble linear: `y = S ⊙ (W(R ⊙ x)) + bias` with shared `W` and
-per-member `R`, `S`, `bias`.
-
-Equivalent to defining per-member weight matrices `Wᵢ = W ⊙ (sᵢrᵢᵀ)`.
+Batch-ensemble linear: `y = S ⊙ (W(R ⊙ x)) + bias`.
 
 # Arguments
-- `in_f::Int`: Input dimension.
-- `out_f::Int`: Output dimension.
-- `k::Int`: Number of ensemble members.
-- `scaling_init`: Init for R/S. A `Symbol` (applied to both) or
-  `Tuple{Symbol,Symbol}` for `(R, S)`. Options: `:ones`, `:normal`, `:random_signs`.
-- `first_scaling_init_chunks`: Chunk sizes for grouped R init.
-- `bias::Bool`: Include per-member bias (default `true`).
+- `in_f`, `out_f`: Input and output dimensions.
+- `k::Int`: Ensemble size.
+- `scaling_init`: `:ones`, `:normal`, or `:random_signs`; or `(R, S)` tuple.
+- `first_scaling_init_chunks`: Grouped init for input scaling `R`.
+- `bias::Bool`: Per-member bias (default `true`).
 """
-struct LinearBatchEnsemble <: AbstractLuxLayer
+struct LinearBatchEnsemble <: LuxCore.AbstractLuxLayer
     in_features::Int
     out_features::Int
     k::Int
@@ -143,15 +81,9 @@ end
 """
     LinearEnsemble(in_f, out_f, k; bias=true)
 
-`k` independent linear layers applied via `batched_matmul`.
-
-# Arguments
-- `in_f::Int`: Input dimension.
-- `out_f::Int`: Output dimension.
-- `k::Int`: Number of ensemble members.
-- `bias::Bool`: Include per-member bias (default `true`).
+`k` independent linear layers via `batched_matmul`. Input/output `(features, k, batch)`.
 """
-struct LinearEnsemble <: AbstractLuxLayer
+struct LinearEnsemble <: LuxCore.AbstractLuxLayer
     in_features::Int
     out_features::Int
     k::Int
@@ -182,16 +114,9 @@ end
 """
     ScaleEnsemble(k, d; init=:random_signs, init_chunks=nothing, bias=false)
 
-Per-member elementwise scaling (and optional bias).
-
-# Arguments
-- `k::Int`: Number of ensemble members.
-- `d::Int`: Feature dimension.
-- `init::Symbol`: Weight init — `:ones`, `:normal`, or `:random_signs`.
-- `init_chunks`: Chunk sizes for grouped init.
-- `bias::Bool`: Include per-member additive bias (default `false`).
+Per-member elementwise scaling on `(d, k, batch)` input.
 """
-struct ScaleEnsemble <: AbstractLuxLayer
+struct ScaleEnsemble <: LuxCore.AbstractLuxLayer
     k::Int
     d::Int
     init::Symbol
@@ -226,4 +151,35 @@ function (m::ScaleEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
     else
         return x .* w, st
     end
+end
+
+function _init_rsqrt_uniform(rng::AbstractRNG, dims, d::Int)
+    s = Float32(1 / sqrt(d))
+    return s .* (2f0 .* rand(rng, Float32, dims...) .- 1f0)
+end
+
+function _init_scaling(rng::AbstractRNG, dims, init::Symbol)
+    if init == :ones
+        return ones(Float32, dims...)
+    elseif init == :normal
+        return randn(rng, Float32, dims...)
+    elseif init == :random_signs
+        return Float32.(2 .* (rand(rng, Float32, dims...) .> 0.5f0) .- 1)
+    else
+        error("Unknown scaling init: $init")
+    end
+end
+
+function _init_scaling_with_chunks(rng::AbstractRNG, dims::Tuple{Int,Int},
+                                    init::Symbol, chunks::Vector{Int})
+    d, k = dims
+    @assert d == sum(chunks) "Chunks must sum to $d, got $(sum(chunks))"
+    weight = zeros(Float32, d, k)
+    row = 1
+    for chunk_size in chunks
+        val = _init_scaling(rng, (1, k), init)
+        weight[row:row+chunk_size-1, :] .= repeat(val, chunk_size, 1)
+        row += chunk_size
+    end
+    return weight
 end

@@ -1,12 +1,11 @@
 module Embeddings
 
 using Lux
-using Lux: Chain, FlattenLayer
+using Lux: BatchNorm, Chain, Dense, FlattenLayer
 using LuxCore
-using Random
 using NNlib
-using LuxLib: batched_matmul
-import Statistics: quantile
+using Random: AbstractRNG, rand, randn
+using Statistics: quantile
 
 export NLinear, LinearEmbeddings
 export Periodic, PeriodicEmbeddings

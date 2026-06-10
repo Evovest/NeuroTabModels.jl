@@ -1,5 +1,3 @@
-using NNlib: relu, tanh, softplus, hardtanh, tanhshrink
-
 const act_dict = Dict(
     :identity => identity,
     :relu => relu,
@@ -12,22 +10,16 @@ const act_dict = Dict(
 """
     EmbeddingConfig(; kwargs...)
 
-Architecture-agnostic configuration for numerical feature embeddings.
-Constructed by the user and passed as `embedding_config` to `NeuroTabRegressor`/`NeuroTabClassifier`.
+Configuration for numerical feature embeddings.
+Pass as `embedding_config` to `NeuroTabRegressor` / `NeuroTabClassifier`.
 
 # Arguments
-- `embedding_type::Symbol`: `:periodic`, `:linear`, or `:piecewise` (default `:periodic`).
-- `d_embedding::Int`: Embedding dimension per feature (default `24`).
-- `activation::Symbol`: activation function symbol (default `:relu` for periodic/linear,
-  `:identity` for piecewise).
-- `bins::Union{Int, Vector{Int}}`: Number of bins for piecewise embeddings (default `48`).
-- `frequencies::Int`: Frequency components for periodic embeddings (default `48`).
-- `frequencies_init_scale::Float32`: σ for periodic frequencies init (default `0.01f0`).
-
-# Callable
-    config(; nfeats, X_train=nothing)-Lux.Chain
-
-Returns a `Chain(embedding_layer, FlattenLayer())` ready to prepend to any backbone.
+- `embedding_type::Symbol`: `:periodic`, `:linear`, `:piecewise`, or `:batchnorm` (default `:periodic`).
+- `d_embedding::Int`: Embedding dimension per feature (default `16`; forced to `1` for `:batchnorm`).
+- `activation::Symbol`: `:identity`, `:relu`, `:tanh`, etc. (default `:relu`, or `:identity` for `:piecewise`).
+- `bins::Union{Int, Vector{Int}}`: Bin count for `:piecewise` (default `32`).
+- `frequencies::Int`: Sinusoidal components for `:periodic` (default `32`).
+- `frequencies_init_scale::Float32`: σ for periodic frequency init (default `0.01f0`).
 """
 struct EmbeddingConfig
     embedding_type::Symbol
@@ -48,13 +40,11 @@ function EmbeddingConfig(;
 )
 
     embedding_type = Symbol(embedding_type)
-    # Default activation depends on embedding type
     if isnothing(activation)
         activation = embedding_type == :piecewise ? :identity : :relu
     end
     activation = Symbol(activation)
 
-    # Override d_embedding for batchnorm to 1 (for proper derivation of the number of input feature to core model block)
     if embedding_type == :batchnorm
         d_embedding = 1
     end
@@ -62,6 +52,15 @@ function EmbeddingConfig(;
     return EmbeddingConfig(embedding_type, d_embedding, activation, bins, frequencies, frequencies_init_scale)
 end
 
+"""
+    (config::EmbeddingConfig)(; nfeats, x_train=nothing)
+
+Build `Chain(embedding, FlattenLayer())` from `config`.
+
+# Arguments
+- `nfeats::Int`: Number of input features.
+- `x_train`: Training matrix `(n_samples, n_features)`; required for `:piecewise`.
+"""
 function (config::EmbeddingConfig)(; nfeats::Int, x_train=nothing)
     emb = if config.embedding_type == :periodic
         PeriodicEmbeddings(nfeats, config.d_embedding;
