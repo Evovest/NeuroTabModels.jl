@@ -54,6 +54,7 @@ end
     df[!, :class] = y
     target_name = "class"
     feature_names = setdiff(names(df), [target_name])
+    transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_indices = randperm(nrow(df))[1:Int(0.8 * nrow(df))]
     dtrain = df[train_indices, :]
@@ -61,19 +62,22 @@ end
 
     @testset "$embedding_type" for embedding_type in [:periodic, :linear, :piecewise]
 
-        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
+        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 16)
         if embedding_type == :piecewise
             embedding_config[:bins] = 16
         elseif embedding_type == :periodic
-            embedding_config[:frequencies] = 8
+            embedding_config[:frequencies] = 16
         end
 
-        arch = NeuroTabModels.TabMConfig(; k=2, n_blocks=2, d_block=16, dropout=0.0, scaling_init=:random_signs)
+        arch = NeuroTabModels.TabMConfig(; k=1, n_blocks=1, d_block=32, dropout=0.0)
         learner = NeuroTabClassifier(arch;
-            nrounds=500, batchsize=32, early_stopping_rounds=100, lr=1e-2,
+            nrounds=500,
+            batchsize=32,
+            lr=1e-2,
+            early_stopping_rounds=5,
             embedding_config)
 
-        m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names)
+        m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5)
 
         ptrain = [argmax(x) for x in eachrow(m(dtrain))]
         peval = [argmax(x) for x in eachrow(m(deval))]

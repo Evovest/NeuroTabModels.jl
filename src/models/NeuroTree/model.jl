@@ -2,7 +2,8 @@
     NeuroTree(feats => outs; tree_type=:binary, actA=identity, scaler=true,
               depth, trees, k, init_scale=0.1)
 
-Differentiable oblivious or binary tree ensemble layer.
+Differentiable tree ensemble layer.
+Outpout dims: `[outs, k, batch_size]`.
 
 # Arguments
 - `feats::Int`: Number of input features.
@@ -12,7 +13,7 @@ Differentiable oblivious or binary tree ensemble layer.
 - `scaler::Bool`: Scale logits with a learned softplus factor.
 - `depth::Int`: Tree depth.
 - `trees::Int`: Number of trees in the ensemble.
-- `k::Int`: Output width multiplier averaged over trees.
+- `k::Int`: Ensemble size.
 - `init_scale::Float32`: Standard deviation for leaf weight initialization.
 """
 struct NeuroTree{F} <: AbstractLuxLayer
@@ -29,13 +30,13 @@ struct NeuroTree{F} <: AbstractLuxLayer
     init_scale::Float32
 end
 
-function NeuroTree(; feats, outs, tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
+function NeuroTree(; feats, outs, tree_type=:binary, actA=identity, scaler=true, depth, trees, k=1, init_scale=0.1)
     @assert tree_type ∈ [:binary, :oblivious]
     nodes = tree_type == :binary ? 2^depth - 1 : depth
     leaves = 2^depth
     return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
 end
-function NeuroTree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
+function NeuroTree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k=1, init_scale=0.1)
     @assert tree_type ∈ [:binary, :oblivious]
     nodes = tree_type == :binary ? 2^depth - 1 : depth
     leaves = 2^depth

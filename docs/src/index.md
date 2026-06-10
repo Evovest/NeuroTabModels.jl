@@ -4,7 +4,7 @@ layout: home
 
 hero:
   text: "NeuroTabModels.jl"
-  tagline: Differentiable tree-based models for tabular data
+  tagline: Differentiable models for tabular data
   image:
     src: /logo.png
     alt: Evovest

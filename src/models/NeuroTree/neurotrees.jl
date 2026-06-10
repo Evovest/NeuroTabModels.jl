@@ -39,10 +39,10 @@ Configuration for differentiable neuro-tree ensembles.
 
 # Arguments
 - `tree_type::Symbol`: `:binary` or `:oblivious` (default `:binary`).
-- `actA::Symbol`: Feature activation — `:identity`, `:tanh`, `:hardtanh`, or `:tanhshrink` (default `:identity`).
+- `actA::Symbol`: Feature activation. One of `:identity`, `:tanh`, `:hardtanh`, or `:tanhshrink` (default `:identity`).
 - `depth::Int`: Tree depth (default `4`).
 - `ntrees::Int`: Number of trees per layer (default `32`).
-- `k::Int`: Output width multiplier (default `1`).
+- `k::Int`: Ensemble size.
 - `hidden_size::Int`: Hidden dimension for stacked trees (default `1`).
 - `stack_size::Int`: Number of stacked tree layers (default `1`).
 - `scaler::Bool`: Apply softplus scaling on tree logits (default `true`).

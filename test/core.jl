@@ -138,6 +138,7 @@ end
     df[!, :class] = y
     target_name = "class"
     feature_names = setdiff(names(df), [target_name])
+    transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
     train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
@@ -178,6 +179,7 @@ end
     df[!, :class] = y
     target_name = "class"
     feature_names = setdiff(names(df), [target_name])
+    transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
     train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
@@ -185,7 +187,7 @@ end
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
 
-    arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=2, d_block=16, dropout=0.0, arch_type)
+    arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=32, dropout=0.1, arch_type)
     learner = NeuroTabClassifier(arch;
         embedding_config=Dict(:embedding_type => :batchnorm),
         nrounds=200,
@@ -201,7 +203,7 @@ end
         target_name,
         feature_names,
         print_every_n=5
-    )
+    );
 
     ptrain = [argmax(x) for x in eachrow(m(dtrain))]
     peval = [argmax(x) for x in eachrow(m(deval))]
@@ -211,8 +213,8 @@ end
 end
 
 @testset "Classification - $arch_name" for (arch_name, arch) in [
-    ("MLP", NeuroTabModels.MLPConfig(; hidden_size=32, stack_size=1)),
-    ("ResNet", NeuroTabModels.ResNetConfig(; hidden_size=32, stack_size=1)),
+    ("MLP", NeuroTabModels.MLPConfig(; hidden_size=32, stack_size=1, dropout=0.5)),
+    ("ResNet", NeuroTabModels.ResNetConfig(; hidden_size=32, stack_size=1, dropout=0.5)),
 ]
 
     Random.seed!(123)
@@ -221,6 +223,7 @@ end
     df[!, :class] = y
     target_name = "class"
     feature_names = setdiff(names(df), [target_name])
+    transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
     train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
@@ -233,7 +236,7 @@ end
         nrounds=200,
         batchsize=32,
         early_stopping_rounds=5,
-        lr=1e-2,
+        lr=2e-3,
     )
 
     m = NeuroTabModels.fit(
@@ -315,6 +318,7 @@ end
     df[!, :class] = y
     target_name = "class"
     feature_names = setdiff(names(df), [target_name])
+    transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
     train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
