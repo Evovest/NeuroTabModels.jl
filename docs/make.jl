@@ -2,7 +2,6 @@
 using Documenter
 using DocumenterVitepress
 using NeuroTabModels
-using DataFrames
 
 pages = [
     "Quick start" => "quick-start.md",

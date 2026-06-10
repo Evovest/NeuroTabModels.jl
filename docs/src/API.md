@@ -10,5 +10,4 @@ NeuroTabModels.Fit.fit
 
 ```@docs
 NeuroTabModels.infer
-NeuroTabModels.NeuroTabModel(::AbstractDataFrame)
 ```
