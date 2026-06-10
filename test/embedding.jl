@@ -62,19 +62,19 @@ end
 
     @testset "$embedding_type" for embedding_type in [:periodic, :linear, :piecewise]
 
-        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 16)
+        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
         if embedding_type == :piecewise
             embedding_config[:bins] = 16
         elseif embedding_type == :periodic
             embedding_config[:frequencies] = 16
         end
 
-        arch = NeuroTabModels.TabMConfig(; k=1, n_blocks=1, d_block=32, dropout=0.0)
+        arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=128, dropout=0.0)
         learner = NeuroTabClassifier(arch;
             nrounds=500,
-            batchsize=32,
+            batchsize=64,
             lr=1e-2,
-            early_stopping_rounds=5,
+            early_stopping_rounds=20,
             embedding_config)
 
         m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5)
