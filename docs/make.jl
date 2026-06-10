@@ -8,6 +8,8 @@ pages = [
     "Design" => "design.md",
     "Models" => [
         "Interface" => "models/models.md",
+        "MLP" => "models/mlp.md",
+        "ResNet" => "models/resnet.md",
         "NeuroTrees" => "models/neurotrees.md",
         "TabM" => "models/tabM.md",
     ],

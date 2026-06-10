@@ -1,5 +1,5 @@
 # NeuroTrees
 
-```@docs
-NeuroTreeConfig
+```@autodocs
+Modules = [NeuroTabModels.Models.NeuroTrees]
 ```
