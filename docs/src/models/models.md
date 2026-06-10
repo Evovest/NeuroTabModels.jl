@@ -15,5 +15,5 @@ NeuroTabClassifier
 ## NeuroTabModel
 
 ```@docs
-NeuroTabModel
+NeuroTabModels.NeuroTabModel
 ```
