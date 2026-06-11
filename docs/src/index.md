@@ -18,7 +18,7 @@ hero:
       link: /design
     - theme: alt
       text: Models
-      link: /models
+      link: /models/models
     - theme: alt
       text: Tutorials
       link: /tutorials/regression-boston.md
