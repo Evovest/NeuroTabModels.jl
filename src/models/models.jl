@@ -120,4 +120,7 @@ using .MLP
 include("ResNet/resnet.jl")
 using .ResNet
 
+include("ModernNCA/modernnca.jl")
+using .ModernNCA
+
 end

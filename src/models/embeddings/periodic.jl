@@ -1,8 +1,8 @@
 """
     Periodic(nfeats, n_frequencies, sigma)
 
-Maps each feature to `2 * n_frequencies` sinusoidal components: `[cos(2π w x), sin(2π w x)]`.
-Output shape `(2 * n_frequencies, nfeats, batch)`.
+Maps each feature to `2 * n_frequencies` sinusoidal components
+`[cos(2π w x), sin(2π w x)]`. Output shape `(2 * n_frequencies, nfeats, batch)`.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
@@ -31,20 +31,20 @@ function (l::Periodic)(x::AbstractMatrix, ps, st)
 end
 
 """
-    _PeriodicEmbeddings(nfeats, d_embedding=24; n_frequencies=48,
-                       frequencies_init_scale=0.01f0, activation=relu, lite=false)
+    _PeriodicEmbeddings(nfeats, d_embedding=24; frequencies=48,
+                        frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
-Periodic sinusoidal encoding followed by a learned linear projection.
-Applies `Periodic`, then `NLinear` (or `Dense` if `lite`), then activation.
+Periodic sinusoidal encoding followed by a learned linear projection: applies
+`Periodic`, then `NLinear` (or a shared `Dense` if `lite`), then `activation`.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
 - `d_embedding::Int`: Output embedding dimension per feature (default `24`).
-- `n_frequencies::Int`: Sinusoidal frequency components per feature (default `48`).
+- `frequencies::Int`: Sinusoidal frequency components per feature (default `48`).
 - `frequencies_init_scale::Float32`: σ for frequency weight init (default `0.01f0`).
-- `activation`: Activation function applied after projection (default `relu`). E.g. `relu`, `tanh`, `identity`.
-- `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear` (default `false`).
-  Only valid when `activation` is not `identity`.
+- `activation`: Activation applied after projection (default `relu`).
+- `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear`
+  (default `false`). Requires a non-identity `activation`.
 """
 struct _PeriodicEmbeddings{P,L,F} <: LuxCore.AbstractLuxContainerLayer{(:periodic, :linear)}
     periodic::P

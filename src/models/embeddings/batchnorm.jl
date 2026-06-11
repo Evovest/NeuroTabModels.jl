@@ -1,24 +1,14 @@
 """
-    _BatchNormEmbeddings(n_features)
+    _BatchNormEmbeddings(nfeats)
 
-Embeds each continuous feature via a learned affine transformation followed by
-an activation: `activation(w_j * x_j + b_j)`.
-Produces a `(d_embedding, n_features, batch)` tensor.
-
-# Arguments
-- `n_features::Int`: Number of input features.
+Feature-wise `BatchNorm` on `(nfeats, batch)` input. Output shape matches input.
 """
 struct _BatchNormEmbeddings{L} <: LuxCore.AbstractLuxWrapperLayer{:layer}
     layer::L
 end
 
-function _BatchNormEmbeddings(n_features::Int)
-    return _BatchNormEmbeddings(BatchNorm(n_features))
-end
+_BatchNormEmbeddings(nfeats::Int) = _BatchNormEmbeddings(BatchNorm(nfeats))
 
-function (l::_BatchNormEmbeddings)(x::AbstractMatrix, ps, st)
-    x_bn, st = l.layer(x, ps, st)
-    return x_bn, st
-end
+(l::_BatchNormEmbeddings)(x::AbstractMatrix, ps, st) = l.layer(x, ps, st)
 
 LuxCore.outputsize(l::_BatchNormEmbeddings, x, ::AbstractRNG) = (size(x, 1),)
