@@ -336,11 +336,8 @@ function build_embedding_chain(e::EmbeddingLayer, nfeats::Int; x_train=nothing)
         idx = e.temp.index
         1 <= idx <= nfeats ||
             throw(ArgumentError("temporal index=$idx out of range for nfeats=$nfeats"))
-        if nfeats == 1
-            idx == 1 ||
-                throw(ArgumentError("temporal-only with nfeats==1: temp.index must be 1 (got $idx)"))
+        nfeats == 1 &&
             return _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, 1])
-        end
         core = WrappedFunction(identity)
         temp = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, idx])
         return TemporalAugmentedEmbeddings(core, temp, idx, nfeats)
@@ -359,18 +356,21 @@ end
 """
     embedding_width(chain, x, rng) -> Int
 
-Flattened output width of an embedding `chain`, computed analytically with
-`LuxCore.outputsize` without tracing a forward pass. A trailing `FlattenLayer`
-collapses all non-batch dimensions, so the width is their product.
+Flattened output width of an embedding `chain`, via `LuxCore.outputsize`, with
+specialized methods for pass-through layers and flattening chains. A trailing
+`FlattenLayer` collapses all non-batch dimensions, so the width is their product.
 """
 embedding_width(layer, x, rng::AbstractRNG) = prod(LuxCore.outputsize(layer, x, rng))
 embedding_width(::WrappedFunction, x, ::AbstractRNG) = size(x, 1)
+# assumes (embed, Flatten); flatten preserves total width
 embedding_width(c::Chain, x, rng::AbstractRNG) = prod(LuxCore.outputsize(first(c.layers), x, rng))
 
 """
     has_real_embedding(spec) -> Bool
 
-Whether `spec` applies a non-identity embedding.
+Whether `spec` applies a non-identity embedding. A temporal branch alone counts
+as real (the time column is nonlinearly embedded even when other features pass
+through raw).
 """
 has_real_embedding(::IdentityEmbedding) = false
 has_real_embedding(e::EmbeddingLayer) = e.num !== nothing || e.temp !== nothing
@@ -378,18 +378,21 @@ has_real_embedding(e::EmbeddingLayer) = e.num !== nothing || e.temp !== nothing
 """
     per_feature_widths(spec, nfeats) -> Vector{Int}
 
-Output width contributed by each input feature, summing to the total embedding
-width. Consumers such as TabM's grouped scaling init use it to keep a feature's
-output columns together; the value itself carries no architecture-specific meaning.
+Per-chunk output widths for grouped initializers (e.g. TabM's `d_features`),
+summing to the total embedding width.
+
+The vector is ordered to match the chain's output columns: when a temporal
+branch is set, non-time features come first (in original order) and the time
+column's widths last. It is **not** aligned with input-feature index `1:nfeats`;
+with `temp.index == 1` and `nfeats == 3` the input order is `[time, f2, f3]` but
+the widths are `[1, 1, temporal_out_dim]`.
 """
 per_feature_widths(::IdentityEmbedding, nfeats::Int) = fill(1, nfeats)
 function per_feature_widths(e::EmbeddingLayer, nfeats::Int)
     isnothing(e.num) && isnothing(e.temp) && return fill(1, nfeats)
     isnothing(e.temp) && return e.num isa BatchNormEmbeddings ?
         fill(1, nfeats) : fill(_num_d_embedding(e.num), nfeats)
-    isnothing(e.num) && return nfeats == 1 ?
-        Int[temporal_out_dim(e.temp)] :
-        vcat(fill(1, nfeats - 1), Int[temporal_out_dim(e.temp)])
+    isnothing(e.num) && return vcat(fill(1, nfeats - 1), Int[temporal_out_dim(e.temp)])
     d_emb = e.num isa BatchNormEmbeddings ? 1 : _num_d_embedding(e.num)
     return vcat(fill(d_emb, nfeats - 1), Int[temporal_out_dim(e.temp)])
 end
