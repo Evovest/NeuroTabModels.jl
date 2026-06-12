@@ -310,9 +310,10 @@ Build the embedding chain for `spec`, returning a chain that emits a flat
 rather than returned here.
 
 `IdentityEmbedding` and an empty `EmbeddingLayer` pass the features through
-unchanged. A numerical-only spec embeds every column; a temporal-only spec embeds a
-single time column on its own; a combined spec embeds the non-time columns numerically
-and concatenates the temporal branch as a parallel `TemporalAugmentedEmbeddings`.
+unchanged. A numerical-only spec embeds every column; a temporal-only spec
+(`num=nothing`) embeds the time column and passes the non-time features through
+unchanged; a combined spec embeds the non-time columns numerically and concatenates
+the temporal branch as a parallel `TemporalAugmentedEmbeddings`.
 
 # Arguments
 
@@ -328,13 +329,21 @@ function build_embedding_chain(e::EmbeddingLayer, nfeats::Int; x_train=nothing)
     # numerical only: the core chain
     isnothing(e.temp) && return _build_num(e.num, nfeats, x_train)
 
-    # temporal only: the single time column embedded alone
+    # temporal only (no numerical embedding): embed the time column, pass the
+    # remaining columns through unchanged. With a single column this reduces to the
+    # bare temporal embedding.
     if isnothing(e.num)
-        nfeats == 1 ||
-            throw(ArgumentError("temporal-only embedding requires nfeats == 1 (got $nfeats)"))
-        e.temp.index == 1 ||
-            throw(ArgumentError("temporal-only: temp.index must be 1 (got $(e.temp.index))"))
-        return _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, 1])
+        idx = e.temp.index
+        1 <= idx <= nfeats ||
+            throw(ArgumentError("temporal index=$idx out of range for nfeats=$nfeats"))
+        if nfeats == 1
+            idx == 1 ||
+                throw(ArgumentError("temporal-only with nfeats==1: temp.index must be 1 (got $idx)"))
+            return _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, 1])
+        end
+        core = WrappedFunction(identity)
+        temp = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, idx])
+        return TemporalAugmentedEmbeddings(core, temp, idx, nfeats)
     end
 
     # numerical + temporal: core over the other columns, temporal branch concatenated
@@ -378,7 +387,9 @@ function per_feature_widths(e::EmbeddingLayer, nfeats::Int)
     isnothing(e.num) && isnothing(e.temp) && return fill(1, nfeats)
     isnothing(e.temp) && return e.num isa BatchNormEmbeddings ?
         fill(1, nfeats) : fill(_num_d_embedding(e.num), nfeats)
-    isnothing(e.num) && return Int[temporal_out_dim(e.temp)]
+    isnothing(e.num) && return nfeats == 1 ?
+        Int[temporal_out_dim(e.temp)] :
+        vcat(fill(1, nfeats - 1), Int[temporal_out_dim(e.temp)])
     d_emb = e.num isa BatchNormEmbeddings ? 1 : _num_d_embedding(e.num)
     return vcat(fill(d_emb, nfeats - 1), Int[temporal_out_dim(e.temp)])
 end
