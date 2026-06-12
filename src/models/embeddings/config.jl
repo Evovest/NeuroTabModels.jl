@@ -178,7 +178,9 @@ the remaining columns by `num`, and the outputs are concatenated.
 
 The `AbstractDict` form mirrors the `arch_name` / `arch_config` mechanism: the
 numerical type is selected by `:embedding_type` and built from the remaining keys.
-Unknown or `nothing`-valued keys are ignored, so a superset hyperparameter `Dict` is
+`:embedding_type => :none` (or omitting it when `:temporal` is set) yields a
+temporal-only embedding; non-time features pass through unchanged. Unknown or
+`nothing`-valued keys are ignored, so a superset hyperparameter `Dict` is
 accepted. An optional `:temporal` key holds a `Dict` of [`TemporalEmbeddings`](@ref)
 keyword arguments.
 
@@ -199,6 +201,9 @@ EmbeddingLayer(; num=LinearEmbeddings(), temp=TemporalEmbeddings(; index=1))
 # From a (possibly superset) hyperparameter Dict
 EmbeddingLayer(Dict(:embedding_type => :periodic, :d_embedding => 24,
                     :temporal => Dict(:index => 1)))
+
+# Temporal-only: time column embedded, other features raw
+EmbeddingLayer(Dict(:temporal => Dict(:index => 1)))
 ```
 """
 struct EmbeddingLayer{
@@ -211,7 +216,8 @@ end
 EmbeddingLayer(; num=nothing, temp=nothing) = EmbeddingLayer(num, temp)
 EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing) = EmbeddingLayer(num, temp)
 
-const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
+const _NUM_EMBEDDING_TYPES = Dict{Symbol,Union{Type,Nothing}}(
+    :none      => nothing,
     :linear    => LinearEmbeddings,
     :periodic  => PeriodicEmbeddings,
     :piecewise => PiecewiseLinearEmbeddings,
@@ -229,6 +235,7 @@ function _pick(d, keys)
     return ps
 end
 
+_num_from_dict(::Nothing, d) = nothing
 _num_from_dict(::Type{LinearEmbeddings}, d) =
     LinearEmbeddings(; _pick(d, (:d_embedding, :activation))...)
 _num_from_dict(::Type{PeriodicEmbeddings}, d) =
@@ -239,11 +246,12 @@ _num_from_dict(::Type{BatchNormEmbeddings}, d) = BatchNormEmbeddings()
 
 function EmbeddingLayer(d::AbstractDict)
     d = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
-    haskey(d, :embedding_type) ||
-        throw(ArgumentError("embedding Dict requires `:embedding_type`"))
-    etype = Symbol(d[:embedding_type])
+    etype = haskey(d, :embedding_type) ? Symbol(d[:embedding_type]) :
+            haskey(d, :temporal) ? :none :
+            throw(ArgumentError("embedding Dict requires `:embedding_type` (or a `:temporal` key)"))
     T = get(_NUM_EMBEDDING_TYPES, etype) do
-        throw(ArgumentError("unknown :embedding_type $(repr(etype)); valid: $(collect(keys(_NUM_EMBEDDING_TYPES)))"))
+        throw(ArgumentError(
+            "unknown :embedding_type $(repr(etype)); valid: $(collect(keys(_NUM_EMBEDDING_TYPES)))"))
     end
     num = _num_from_dict(T, d)
     temp = if haskey(d, :temporal)
