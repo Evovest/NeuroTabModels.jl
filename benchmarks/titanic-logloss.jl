@@ -85,6 +85,12 @@ learner = NeuroTabRegressor(
     device=:cpu,
     backend=:reactant
 )
+learner.embedding_config
+# main / lux-new
+# NeuroTabModels.Models.Embeddings.EmbeddingConfig(:batchnorm, 1, :relu, 32, 32, 0.01f0)
+# mnca/temporal
+# NeuroTabModels.Models.Embeddings.EmbeddingLayer{NeuroTabModels.Models.Embeddings.BatchNormEmbeddings, Nothing}(NeuroTabModels.Models.Embeddings.BatchNormEmbeddings(), nothing)
+# NeuroTabModels.Models.Embeddings.EmbeddingLayer{NeuroTabModels.Models.Embeddings.PiecewiseLinearEmbeddings, Nothing}(NeuroTabModels.Models.Embeddings.PiecewiseLinearEmbeddings(8, 16, :identity, :B), nothing)
 
 @time m = NeuroTabModels.fit(
     learner,
