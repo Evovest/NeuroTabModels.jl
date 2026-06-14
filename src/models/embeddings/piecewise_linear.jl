@@ -62,7 +62,7 @@ function (l::PiecewiseLinearEncoding)(x::AbstractMatrix, ps, st)
 end
 
 """
-    _PiecewiseLinearEmbeddings(bins, d_embedding; activation=identity, version=:B)
+    _PiecewiseLinearEmbeddings(; bins, d_embedding, activation=identity, version=:B)
 
 Learnable embeddings on top of `PiecewiseLinearEncoding`.
 Version `:A`: PLE -> NLinear (with bias).
@@ -83,9 +83,9 @@ struct _PiecewiseLinearEmbeddings{L0,I,L,F} <: LuxCore.AbstractLuxContainerLayer
     version::Symbol
 end
 
-function _PiecewiseLinearEmbeddings(
+function _PiecewiseLinearEmbeddings(;
     bins::Vector{<:AbstractVector},
-    d_embedding::Int;
+    d_embedding::Int,
     activation=identity,
     version::Symbol=:B,
 )
@@ -95,7 +95,7 @@ function _PiecewiseLinearEmbeddings(
 
     encoding = PiecewiseLinearEncoding(bins)
     # Residual path uses raw affine output (no activation)
-    linear0 = (version == :B) ? _LinearEmbeddings(nfeats, d_embedding; activation=identity) : nothing
+    linear0 = (version == :B) ? _LinearEmbeddings(; nfeats, d_embedding, activation=identity) : nothing
     linear = NLinear(nfeats, max_n_bins, d_embedding; bias=(version == :A))
 
     return _PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)

@@ -31,7 +31,7 @@ function (l::Periodic)(x::AbstractMatrix, ps, st)
 end
 
 """
-    _PeriodicEmbeddings(nfeats, d_embedding=24; frequencies=48,
+    _PeriodicEmbeddings(; nfeats, d_embedding=24, frequencies=48,
                         frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
 Periodic sinusoidal encoding followed by a learned linear projection: applies
@@ -53,9 +53,9 @@ struct _PeriodicEmbeddings{P,L,F} <: LuxCore.AbstractLuxContainerLayer{(:periodi
     lite::Bool
 end
 
-function _PeriodicEmbeddings(
+function _PeriodicEmbeddings(;
     nfeats::Int,
-    d_embedding::Int=24;
+    d_embedding::Int=24,
     frequencies::Int=48,
     frequencies_init_scale::Float32=0.01f0,
     activation=NNlib.relu,

@@ -73,34 +73,5 @@ function (m::_TemporalEmbeddings{P,D,false})(x::AbstractMatrix, ps, st) where {P
     return out, (periodic=st_p, dense=st_d)
 end
 
-"""Composes a numerical embedding over `nfeats-1` columns with a temporal embedding
-on column `temporal_index`. Output is flattened-numerical concatenated with temporal."""
-struct TemporalAugmentedEmbeddings{F,T} <: LuxCore.AbstractLuxContainerLayer{(:features, :temporal)}
-    features::F
-    temporal::T
-    temporal_index::Int
-    nfeats::Int
-end
-
-function (l::TemporalAugmentedEmbeddings)(x::AbstractMatrix, ps, st)
-    idx, n = l.temporal_index, l.nfeats
-    x_time = x[idx:idx, :]
-    x_feats = if idx == 1
-        x[2:n, :]
-    elseif idx == n
-        x[1:n-1, :]
-    else
-        vcat(x[1:idx-1, :], x[idx+1:n, :])
-    end
-    h_feats, st_f = l.features(x_feats, ps.features, st.features)
-    h_time, st_t = l.temporal(x_time, ps.temporal, st.temporal)
-    return vcat(h_feats, h_time), (features=st_f, temporal=st_t)
-end
-
 LuxCore.outputsize(m::_TemporalEmbeddings{P,D,true},  x, ::AbstractRNG) where {P,D} = (m.dense.out_dims + 1,)
 LuxCore.outputsize(m::_TemporalEmbeddings{P,D,false}, x, ::AbstractRNG) where {P,D} = (m.dense.out_dims,)
-function LuxCore.outputsize(l::TemporalAugmentedEmbeddings, x, rng::AbstractRNG)
-    fw = embedding_width(l.features, x[1:(l.nfeats - 1), :], rng)
-    tw = embedding_width(l.temporal, x[1:1, :], rng)
-    return (fw + tw,)
-end

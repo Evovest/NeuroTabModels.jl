@@ -7,44 +7,31 @@ const act_dict = Dict(
     :tanhshrink => tanhshrink,
 )
 
-"""
-    AbstractNumericalEmbedding
-
-Supertype for column-wise numerical-feature embeddings.
-"""
-abstract type AbstractNumericalEmbedding end
-
-"""
-    AbstractTemporalEmbedding
-
-Supertype for time-column embeddings.
-"""
-abstract type AbstractTemporalEmbedding end
-
-"""
-    AbstractEmbedding
-
-Supertype for the top-level embedding spec held by the learner.
-"""
+# Supertype for embedding specs the learner can hold (`EmbeddingLayer`, numerical embeddings).
 abstract type AbstractEmbedding end
+
+# Column-wise numerical-feature embeddings; also the type of an `EmbeddingLayer`'s `num`.
+abstract type AbstractNumericalEmbedding <: AbstractEmbedding end
+
+# Time-column embeddings.
+abstract type AbstractTemporalEmbedding end
 
 """
     IdentityEmbedding()
 
-No-op embedding: passes the raw features through unchanged.
+No-op numerical embedding that passes features through unchanged; the default `num` for
+an [`EmbeddingLayer`](@ref).
 """
-struct IdentityEmbedding <: AbstractEmbedding end
+struct IdentityEmbedding <: AbstractNumericalEmbedding end
 
 """
     LinearEmbeddings(; d_embedding=16, activation=:relu)
 
-Per-feature linear embedding. Each numerical feature is projected to a
-`d_embedding`-dimensional vector by its own affine map, followed by `activation`.
+Per-feature linear embedding: each feature is projected to `d_embedding` by its own affine map, followed by `activation`.
 
 # Arguments
-
-- `d_embedding=16`: Output dimension per feature.
-- `activation=:relu`: Pointwise activation applied after the projection.
+- `d_embedding::Int`: Output dimension per feature (default `16`).
+- `activation::Symbol`: Activation applied after the projection (default `:relu`).
 """
 struct LinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
@@ -59,16 +46,14 @@ end
     PeriodicEmbeddings(; d_embedding=16, frequencies=32, frequencies_init_scale=0.01f0,
                        activation=:relu, lite=false)
 
-Per-feature periodic embedding. Each feature is expanded with `frequencies` learned
-sine/cosine components, then projected to `d_embedding` and passed through `activation`.
+Per-feature periodic embedding: each feature is expanded with learned sine/cosine components, then projected to `d_embedding` and passed through `activation`.
 
 # Arguments
-
-- `d_embedding=16`: Output dimension per feature.
-- `frequencies=32`: Number of sinusoidal components per feature.
-- `frequencies_init_scale=0.01f0`: Std. dev. of the Gaussian initializing the frequencies.
-- `activation=:relu`: Pointwise activation applied after the projection.
-- `lite=false`: When `true`, share the projection across features to cut parameters.
+- `d_embedding::Int`: Output dimension per feature (default `16`).
+- `frequencies::Int`: Number of sinusoidal components per feature (default `32`).
+- `frequencies_init_scale::Float32`: Std. dev. initializing the frequencies (default `0.01f0`).
+- `activation::Symbol`: Activation applied after the projection (default `:relu`).
+- `lite::Bool`: Share the projection across features to cut parameters (default `false`).
 """
 struct PeriodicEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
@@ -89,16 +74,13 @@ end
 """
     PiecewiseLinearEmbeddings(; d_embedding=16, bins=32, activation=:identity, version=:B)
 
-Per-feature piecewise-linear embedding. Each feature is encoded against bin edges
-computed from the training data, then projected to `d_embedding`. Because the bin
-edges are derived at fit time, this embedding requires `x_train`.
+Per-feature piecewise-linear embedding against bin edges computed from the training data, then projected to `d_embedding`. The bin edges are derived at fit time, so this embedding requires `x_train`.
 
 # Arguments
-
-- `d_embedding=16`: Output dimension per feature.
-- `bins=32`: Number of bins, or a per-feature `Vector{Int}` of bin counts.
-- `activation=:identity`: Pointwise activation applied after the projection.
-- `version=:B`: Encoding variant, `:A` or `:B`.
+- `d_embedding::Int`: Output dimension per feature (default `16`).
+- `bins::Union{Int,Vector{Int}}`: Number of bins, or per-feature bin counts (default `32`).
+- `activation::Symbol`: Activation applied after the projection (default `:identity`).
+- `version::Symbol`: Encoding variant, `:A` or `:B` (default `:B`).
 """
 struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
@@ -117,8 +99,7 @@ end
 """
     BatchNormEmbeddings()
 
-Batch-normalize the raw features without expanding their dimension. Each feature
-maps to a single output (`d_embedding == 1`).
+Batch-normalize the raw features without expanding their dimension (one output per feature).
 """
 struct BatchNormEmbeddings <: AbstractNumericalEmbedding end
 
@@ -126,20 +107,14 @@ struct BatchNormEmbeddings <: AbstractNumericalEmbedding end
     TemporalEmbeddings(; index, order=[4, 1, 7, 0], periods=_DEFAULT_TEMPORAL_PERIODS,
                        trend=true, d_embedding=16)
 
-Fourier embedding of a single time column. The column at `index` is expanded into
-multi-scale sine/cosine features at the given `periods`, projected to `d_embedding`,
-and optionally augmented with a linear trend term.
-
-`order` and `periods` must have equal length: `order[i]` is the number of harmonics
-used for `periods[i]`.
+Fourier embedding of a single time column: the column at `index` is expanded into multi-scale sine/cosine features at `periods`, projected to `d_embedding`, and optionally augmented with a linear trend. `order` and `periods` align per band  `order[i]` is the harmonic count for `periods[i]`.
 
 # Arguments
-
-- `index`: Required. 1-based position of the time column in `feature_names`.
-- `order=[4, 1, 7, 0]`: Harmonics per period; non-negative with at least one positive entry.
-- `periods=_DEFAULT_TEMPORAL_PERIODS`: Base periods (in column units) expanded by `order`.
-- `trend=true`: When `true`, append a linear trend term to the embedding.
-- `d_embedding=16`: Projection dimension of the periodic features.
+- `index::Int`: Required. 1-based position of the time column in `feature_names`.
+- `order::Vector{Int}`: Harmonics per period; nonnegative with at least one positive entry (default `[4, 1, 7, 0]`).
+- `periods::Vector{Float32}`: Base periods in column units (default `_DEFAULT_TEMPORAL_PERIODS`).
+- `trend::Bool`: Append a linear trend term to the embedding (default `true`).
+- `d_embedding::Int`: Projection dimension of the periodic features (default `16`).
 """
 struct TemporalEmbeddings <: AbstractTemporalEmbedding
     index::Int
@@ -168,56 +143,40 @@ function TemporalEmbeddings(;
 end
 
 """
-    EmbeddingLayer(; num=nothing, temp=nothing)
+    EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing)
     EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing)
     EmbeddingLayer(d::AbstractDict)
 
-Input embedding combining an optional numerical embedding with an optional temporal
-embedding. When both are set, the time column at `temp.index` is embedded by `temp`,
-the remaining columns by `num`, and the outputs are concatenated.
+Numerical embedding over the non-time columns, optionally combined with a temporal
+embedding on the column at `temp.index`. `num` always exists (defaults to
+[`IdentityEmbedding`](@ref), raw pass-through); `nothing` normalizes to it. When `temp`
+is set the branches are concatenated features-first, temporal-last.
 
-The `AbstractDict` form mirrors the `arch_name` / `arch_config` mechanism: the
-numerical type is selected by `:embedding_type` and built from the remaining keys.
-`:embedding_type => :none` (or omitting it when `:temporal` is set) yields a
-temporal-only embedding; non-time features pass through unchanged. Unknown or
-`nothing`-valued keys are ignored, so a superset hyperparameter `Dict` is
-accepted. An optional `:temporal` key holds a `Dict` of [`TemporalEmbeddings`](@ref)
-keyword arguments.
-
-# Arguments
-
-- `num=nothing`: Numerical embedding, an [`AbstractNumericalEmbedding`](@ref) or `nothing`.
-- `temp=nothing`: A [`TemporalEmbeddings`](@ref), or `nothing` for no temporal branch.
-
-# Examples
+The `Dict` form is for the hyperparameter harness: `:embedding_type` (`:linear`,
+`:periodic`, `:piecewise`, `:batchnorm`, `:identity`) selects the numerical type, an
+optional `:temporal` Dict gives [`TemporalEmbeddings`](@ref) kwargs, and unknown or
+`nothing` keys are ignored (so a superset Dict works; missing `:embedding_type` → identity).
 
 ```julia
-# Periodic numerical embedding only
 EmbeddingLayer(PeriodicEmbeddings(; d_embedding=24))
-
-# Numerical and temporal, with the time column at position 1
-EmbeddingLayer(; num=LinearEmbeddings(), temp=TemporalEmbeddings(; index=1))
-
-# From a (possibly superset) hyperparameter Dict
-EmbeddingLayer(Dict(:embedding_type => :periodic, :d_embedding => 24,
-                    :temporal => Dict(:index => 1)))
-
-# Temporal-only: time column embedded, other features raw
-EmbeddingLayer(Dict(:temporal => Dict(:index => 1)))
+EmbeddingLayer(; temp=TemporalEmbeddings(; index=1))            # temporal only
+EmbeddingLayer(Dict(:embedding_type => :periodic, :temporal => Dict(:index => 1)))
 ```
 """
 struct EmbeddingLayer{
-    N<:Union{Nothing,AbstractNumericalEmbedding},
+    N<:AbstractNumericalEmbedding,
     T<:Union{Nothing,AbstractTemporalEmbedding},
 } <: AbstractEmbedding
     num::N
     temp::T
 end
-EmbeddingLayer(; num=nothing, temp=nothing) = EmbeddingLayer(num, temp)
+_as_num(::Nothing) = IdentityEmbedding()
+_as_num(n::AbstractNumericalEmbedding) = n
+EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing) = EmbeddingLayer(_as_num(num), temp)
 EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing) = EmbeddingLayer(num, temp)
 
-const _NUM_EMBEDDING_TYPES = Dict{Symbol,Union{Type,Nothing}}(
-    :none      => nothing,
+const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
+    :identity  => IdentityEmbedding,
     :linear    => LinearEmbeddings,
     :periodic  => PeriodicEmbeddings,
     :piecewise => PiecewiseLinearEmbeddings,
@@ -235,7 +194,7 @@ function _pick(d, keys)
     return ps
 end
 
-_num_from_dict(::Nothing, d) = nothing
+_num_from_dict(::Type{IdentityEmbedding}, d) = IdentityEmbedding()
 _num_from_dict(::Type{LinearEmbeddings}, d) =
     LinearEmbeddings(; _pick(d, (:d_embedding, :activation))...)
 _num_from_dict(::Type{PeriodicEmbeddings}, d) =
@@ -246,14 +205,15 @@ _num_from_dict(::Type{BatchNormEmbeddings}, d) = BatchNormEmbeddings()
 
 function EmbeddingLayer(d::AbstractDict)
     d = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
-    etype = haskey(d, :embedding_type) ? Symbol(d[:embedding_type]) :
-            haskey(d, :temporal) ? :none :
-            throw(ArgumentError("embedding Dict requires `:embedding_type` (or a `:temporal` key)"))
-    T = get(_NUM_EMBEDDING_TYPES, etype) do
-        throw(ArgumentError(
-            "unknown :embedding_type $(repr(etype)); valid: $(collect(keys(_NUM_EMBEDDING_TYPES)))"))
+    num = if haskey(d, :embedding_type) && d[:embedding_type] !== nothing
+        etype = Symbol(d[:embedding_type])
+        T = get(_NUM_EMBEDDING_TYPES, etype) do
+            throw(ArgumentError("unknown :embedding_type $(repr(etype)); valid: $(collect(keys(_NUM_EMBEDDING_TYPES)))"))
+        end
+        _num_from_dict(T, d)
+    else
+        IdentityEmbedding()
     end
-    num = _num_from_dict(T, d)
     temp = if haskey(d, :temporal)
         td = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d[:temporal])
         TemporalEmbeddings(; td...)
@@ -263,19 +223,25 @@ function EmbeddingLayer(d::AbstractDict)
     return EmbeddingLayer(num, temp)
 end
 
-"""
-    temporal_out_dim(t::TemporalEmbeddings) -> Int
-
-Output width of a temporal embedding: `d_embedding`, plus one when `trend` is set.
-"""
+# Output width of a temporal embedding: d_embedding, +1 when trend is appended.
 temporal_out_dim(t::TemporalEmbeddings) = t.d_embedding + (t.trend ? 1 : 0)
+
+# Per-feature output width of a numerical embedding. Identity and BatchNorm keep each
+# feature at width 1; the expanding embeddings emit `d_embedding` columns per feature.
+_num_d_embedding(::IdentityEmbedding) = 1
+_num_d_embedding(::BatchNormEmbeddings) = 1
 _num_d_embedding(s::Union{LinearEmbeddings,PeriodicEmbeddings,PiecewiseLinearEmbeddings}) = s.d_embedding
 
 """
     needs_x_train(spec) -> Bool
 
-Whether building `spec` requires the training matrix, as for piecewise-linear bin
-edges or temporal normalization statistics.
+Whether building `spec` requires the training matrix.
+
+# Arguments
+- `spec::AbstractEmbedding`: The embedding spec to inspect.
+
+# Returns
+`true` when `spec` needs `x_train` (e.g. piecewise-linear bin edges or temporal normalization statistics), `false` otherwise.
 """
 needs_x_train(::Nothing) = false
 needs_x_train(::IdentityEmbedding) = false
@@ -285,22 +251,29 @@ needs_x_train(::AbstractTemporalEmbedding) = true
 needs_x_train(e::EmbeddingLayer) = needs_x_train(e.num) || needs_x_train(e.temp)
 
 # Numerical embeddings: each builds its own chain emitting a flat (width, batch)
-# output. Expanding types append their own FlattenLayer; BatchNorm is already 2D.
-# The builder never inspects the type to decide how to flatten; adding a new
-# numerical embedding (e.g. categorical) means adding one method here.
-_build_num(s::LinearEmbeddings, nfeats::Int, _x) =
-    Chain(_LinearEmbeddings(nfeats, s.d_embedding; activation=act_dict[s.activation]), FlattenLayer())
-_build_num(s::PeriodicEmbeddings, nfeats::Int, _x) =
-    Chain(_PeriodicEmbeddings(nfeats, s.d_embedding;
+# output. Expanding types append their own FlattenLayer; BatchNorm is already 2D and
+# Identity is a no-op. The builder never inspects the type to decide how to flatten;
+# adding a new numerical embedding means adding one method here.
+# Row (feature-column) selector used by the temporal `Parallel` branches. Named (not a
+# closure) so the resulting `WrappedFunction` is concretely typed via `Base.Fix2`.
+_select_rows(x::AbstractMatrix, rows) = x[rows, :]
+
+_build_num(::IdentityEmbedding; nfeats::Int, x_train=nothing) = NoOpLayer()
+_build_num(s::LinearEmbeddings; nfeats::Int, x_train=nothing) =
+    Chain(_LinearEmbeddings(; nfeats, d_embedding=s.d_embedding, activation=act_dict[s.activation]),
+        FlattenLayer())
+_build_num(s::PeriodicEmbeddings; nfeats::Int, x_train=nothing) =
+    Chain(_PeriodicEmbeddings(; nfeats, d_embedding=s.d_embedding,
         frequencies=s.frequencies, frequencies_init_scale=s.frequencies_init_scale,
         activation=act_dict[s.activation], lite=s.lite), FlattenLayer())
-function _build_num(s::PiecewiseLinearEmbeddings, nfeats::Int, x_train)
+function _build_num(s::PiecewiseLinearEmbeddings; nfeats::Int, x_train=nothing)
     x_train === nothing &&
         error("PiecewiseLinearEmbeddings requires x_train to compute bin edges")
-    Chain(_PiecewiseLinearEmbeddings(compute_bins(x_train; bins=s.bins), s.d_embedding;
-        activation=act_dict[s.activation], version=s.version), FlattenLayer())
+    Chain(_PiecewiseLinearEmbeddings(; bins=compute_bins(x_train; bins=s.bins),
+        d_embedding=s.d_embedding, activation=act_dict[s.activation], version=s.version),
+        FlattenLayer())
 end
-_build_num(::BatchNormEmbeddings, nfeats::Int, _x) = _BatchNormEmbeddings(nfeats)
+_build_num(s::BatchNormEmbeddings; nfeats::Int, x_train=nothing) = _BatchNormEmbeddings(; nfeats)
 
 function _build_temp(t::TemporalEmbeddings, x_col)
     x_col === nothing &&
@@ -313,94 +286,92 @@ end
 """
     build_embedding_chain(spec, nfeats; x_train=nothing)
 
-Build the embedding chain for `spec`, returning a chain that emits a flat
-`(width, batch)` output. The width is recovered with [`embedding_width`](@ref)
-rather than returned here.
-
-`IdentityEmbedding` and an empty `EmbeddingLayer` pass the features through
-unchanged. A numerical-only spec embeds every column; a temporal-only spec
-(`num=nothing`) embeds the time column and passes the non-time features through
-unchanged; a combined spec embeds the non-time columns numerically and concatenates
-the temporal branch as a parallel `TemporalAugmentedEmbeddings`.
+Build the embedding chain for `spec`. A numerical-only spec embeds every column; with a
+temporal branch the input is routed through a `Lux.Parallel`, applying `num` to the non-time
+columns and `temp` to the time column, concatenated features-first then temporal.
 
 # Arguments
+- `spec::AbstractEmbedding`: The embedding spec to build.
+- `nfeats::Int`: Number of input features.
+- `x_train`: Training matrix `(n_samples, nfeats)`, required when `needs_x_train(spec)` (default `nothing`).
 
-- `spec`: An [`AbstractEmbedding`](@ref).
-- `nfeats`: Number of input features.
-- `x_train=nothing`: Training matrix `(n_samples, nfeats)`, needed if `needs_x_train(spec)`.
+# Returns
+A `Lux` layer emitting a flat `(width, batch)` output; recover the width with [`embedding_width`](@ref).
 """
-build_embedding_chain(::IdentityEmbedding, nfeats::Int; x_train=nothing) = WrappedFunction(identity)
+build_embedding_chain(s::AbstractNumericalEmbedding, nfeats::Int; x_train=nothing) =
+    _build_num(s; nfeats, x_train)
 function build_embedding_chain(e::EmbeddingLayer, nfeats::Int; x_train=nothing)
-    # no embedding set: pass-through
-    isnothing(e.num) && isnothing(e.temp) && return WrappedFunction(identity)
+    # numerical branch only
+    isnothing(e.temp) && return _build_num(e.num; nfeats, x_train)
 
-    # numerical only: the core chain
-    isnothing(e.temp) && return _build_num(e.num, nfeats, x_train)
-
-    # temporal only (no numerical embedding): embed the time column, pass the
-    # remaining columns through unchanged. With a single column this reduces to the
-    # bare temporal embedding.
-    if isnothing(e.num)
-        idx = e.temp.index
-        1 <= idx <= nfeats ||
-            throw(ArgumentError("temporal index=$idx out of range for nfeats=$nfeats"))
-        nfeats == 1 &&
-            return _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, 1])
-        core = WrappedFunction(identity)
-        temp = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, idx])
-        return TemporalAugmentedEmbeddings(core, temp, idx, nfeats)
-    end
-
-    # numerical + temporal: core over the other columns, temporal branch concatenated
+    # numerical + temporal: route the non-time columns through `num` and the time
+    # column through `temp`, concatenating features-first / temporal-last. When `num`
+    # is IdentityEmbedding this is the temporal-only case (features pass through).
     idx = e.temp.index
     1 <= idx <= nfeats ||
         throw(ArgumentError("temporal index=$idx out of range for nfeats=$nfeats"))
     keep = setdiff(1:nfeats, idx)
-    core = _build_num(e.num, nfeats - 1, x_train === nothing ? nothing : x_train[:, keep])
+    core = _build_num(e.num; nfeats=nfeats - 1, x_train=x_train === nothing ? nothing : x_train[:, keep])
     temp = _build_temp(e.temp, x_train === nothing ? nothing : @view x_train[:, idx])
-    return TemporalAugmentedEmbeddings(core, temp, idx, nfeats)
+    return Parallel(vcat,
+        Chain(WrappedFunction(Base.Fix2(_select_rows, keep)), core),
+        Chain(WrappedFunction(Base.Fix2(_select_rows, idx:idx)), temp))
 end
 
 """
-    embedding_width(chain, x, rng) -> Int
+    embedding_width(layer, x, rng) -> Int
 
-Flattened output width of an embedding `chain`, via `LuxCore.outputsize`, with
-specialized methods for pass-through layers and flattening chains. A trailing
-`FlattenLayer` collapses all non-batch dimensions, so the width is their product.
+Output width of `layer`, measured by a single forward pass on the probe `x`. A forward pass
+is robust to the layer's internal structure, unlike analytic `outputsize` which cannot see
+through a `vcat` connection.
+
+# Arguments
+- `layer`: The embedding layer to measure.
+- `x::AbstractMatrix`: Probe input of shape `(nfeats, batch)` (`init` passes `(nfeats, 2)`).
+- `rng::AbstractRNG`: RNG used for parameter setup.
+
+# Returns
+The flattened output width as an `Int`.
 """
-embedding_width(layer, x, rng::AbstractRNG) = prod(LuxCore.outputsize(layer, x, rng))
-embedding_width(::WrappedFunction, x, ::AbstractRNG) = size(x, 1)
-# assumes (embed, Flatten); flatten preserves total width
-embedding_width(c::Chain, x, rng::AbstractRNG) = prod(LuxCore.outputsize(first(c.layers), x, rng))
+function embedding_width(layer, x, rng::AbstractRNG)
+    ps, st = LuxCore.setup(rng, layer)
+    y, _ = layer(x, ps, st)
+    return size(y, 1)
+end
 
 """
     has_real_embedding(spec) -> Bool
 
-Whether `spec` applies a non-identity embedding. A temporal branch alone counts
-as real (the time column is nonlinearly embedded even when other features pass
-through raw).
+Whether `spec` applies a non-identity embedding.
+
+# Arguments
+- `spec::AbstractEmbedding`: The embedding spec to inspect.
+
+# Returns
+`true` when `spec` has a non-identity `num` or a temporal branch; `false` for a bare `IdentityEmbedding` or an empty `EmbeddingLayer`.
 """
 has_real_embedding(::IdentityEmbedding) = false
-has_real_embedding(e::EmbeddingLayer) = e.num !== nothing || e.temp !== nothing
+has_real_embedding(::AbstractNumericalEmbedding) = true
+has_real_embedding(e::EmbeddingLayer) = !(e.num isa IdentityEmbedding) || e.temp !== nothing
 
 """
     per_feature_widths(spec, nfeats) -> Vector{Int}
 
-Per-chunk output widths for grouped initializers (e.g. TabM's `d_features`),
-summing to the total embedding width.
+Output width contributed by each input feature, summing to the total embedding width. Used by
+TabM's grouped scaling init to keep a feature's columns together. Ordering matches the concat
+layout: non-time features first (numerical per-feature width), temporal column last.
 
-The vector is ordered to match the chain's output columns: when a temporal
-branch is set, non-time features come first (in original order) and the time
-column's widths last. It is **not** aligned with input-feature index `1:nfeats`;
-with `temp.index == 1` and `nfeats == 3` the input order is `[time, f2, f3]` but
-the widths are `[1, 1, temporal_out_dim]`.
+# Arguments
+- `spec::AbstractEmbedding`: The embedding spec.
+- `nfeats::Int`: Number of input features.
+
+# Returns
+A `Vector{Int}` of per-feature widths summing to the total embedding width.
 """
 per_feature_widths(::IdentityEmbedding, nfeats::Int) = fill(1, nfeats)
+per_feature_widths(s::AbstractNumericalEmbedding, nfeats::Int) = fill(_num_d_embedding(s), nfeats)
 function per_feature_widths(e::EmbeddingLayer, nfeats::Int)
-    isnothing(e.num) && isnothing(e.temp) && return fill(1, nfeats)
-    isnothing(e.temp) && return e.num isa BatchNormEmbeddings ?
-        fill(1, nfeats) : fill(_num_d_embedding(e.num), nfeats)
-    isnothing(e.num) && return vcat(fill(1, nfeats - 1), Int[temporal_out_dim(e.temp)])
-    d_emb = e.num isa BatchNormEmbeddings ? 1 : _num_d_embedding(e.num)
+    d_emb = _num_d_embedding(e.num)
+    isnothing(e.temp) && return fill(d_emb, nfeats)
     return vcat(fill(d_emb, nfeats - 1), Int[temporal_out_dim(e.temp)])
 end
