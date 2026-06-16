@@ -335,6 +335,7 @@ The flattened output width as an `Int`.
 """
 function embedding_width(layer, x, rng::AbstractRNG)
     ps, st = LuxCore.setup(rng, layer)
+    st = LuxCore.testmode(st)
     y, _ = layer(x, ps, st)
     return size(y, 1)
 end

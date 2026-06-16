@@ -101,7 +101,11 @@ loss = :mse # :mse :gaussian_mle :tweedie
 #     :d_embedding => 8,
 #     :activation => nothing,
 #     :bins => 16,
-#     :frequencies => 16,
+# )
+# embedding_config = Dict(
+#     :embedding_type => :linear,
+#     :d_embedding => 1,
+#     :activation => :identity,
 # )
 embedding_config = Dict(:embedding_type => :batchnorm)
 
@@ -117,6 +121,7 @@ learner = NeuroTabRegressor(
     device,
     backend
 )
+learner.embedding_config
 
 @time m = NeuroTabModels.fit(
     learner,
