@@ -1,5 +1,5 @@
 """
-    _LinearEmbeddings(nfeats, d_embedding; activation=relu)
+    _LinearEmbeddings(; nfeats, d_embedding, activation=relu)
 
 Embeds each continuous feature via a learned affine transformation followed by
 an activation: `activation(w_j * x_j + b_j)`.
@@ -17,7 +17,7 @@ struct _LinearEmbeddings{F} <: LuxCore.AbstractLuxLayer
     activation::F
 end
 
-function _LinearEmbeddings(nfeats::Int, d_embedding::Int; activation=NNlib.relu)
+function _LinearEmbeddings(; nfeats::Int, d_embedding::Int, activation=NNlib.relu)
     return _LinearEmbeddings(nfeats, d_embedding, activation)
 end
 
