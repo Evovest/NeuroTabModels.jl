@@ -37,7 +37,13 @@ function compute_bins(X::AbstractMatrix; bins::Union{Int,Vector{Int}}=48)
         quantile_probs = range(0f0, 1f0, length=n_bins_vec[j] + 1)
         edges = Float32[quantile(col_buf, p; sorted=true) for p in quantile_probs]
         unique!(edges)
-        @assert length(edges) >= 2 "Feature $j has fewer than 2 unique bin edges"
+        if length(edges) < 2
+            # Constant features collapse all quantile edges to one value.
+            # Give the encoder a tiny nonzero-width bin instead of failing.
+            v = edges[1]
+            delta = max(abs(v) * 1f-3, 1f-3)
+            edges = Float32[v - delta, v + delta]
+        end
         bins[j] = edges
     end
     return bins
