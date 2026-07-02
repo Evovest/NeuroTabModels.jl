@@ -1,7 +1,7 @@
 """
     PiecewiseLinearEncoding(bins)
 
-Non-trainable piecewise-linear encoding from precomputed bin edges.
+Non-trainable piecewise-linear encoding using precomputed bin edges.
 Output shape `(max_n_bins, nfeats, batch)`.
 
 # Arguments
@@ -36,6 +36,9 @@ function LuxCore.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
         b = -bin_edges[1:end-1] ./ bin_width
         nb = length(bin_edges) - 1
 
+        # Place the last bin's weight/bias at the end row;
+        # remaining bins fill rows 1:nb-1. Unused rows stay zero
+        # and are clamped to [0, 1] harmlessly.
         weight[end, i] = w[end]
         bias[end, i] = b[end]
         if nb > 1
@@ -44,6 +47,7 @@ function LuxCore.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
         end
     end
 
+    # Pre-reshape to 3D to avoid per-call reshape in forward pass
     return (
         weight=reshape(weight, M, N, 1),
         bias=reshape(bias, M, N, 1),
@@ -51,25 +55,27 @@ function LuxCore.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
 end
 
 function (l::PiecewiseLinearEncoding)(x::AbstractMatrix, ps, st)
+    # For each feature j and bin b: h[b,j,:] = clamp(w[b,j]*x[j,:] + bias[b,j], 0, 1)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
     h = clamp.(muladd.(st.weight, x_r, st.bias), 0f0, 1f0)
     return h, st
 end
 
 """
-    PiecewiseLinearEmbeddings(bins, d_embedding; activation=identity, version=:B)
+    _PiecewiseLinearEmbeddings(; bins, d_embedding, activation=identity, version=:B)
 
-Learnable projection on top of [`PiecewiseLinearEncoding`](@ref).
-Version `:A`: encoding → `NLinear` (with bias).
-Version `:B`: encoding → zero-init `NLinear` + [`LinearEmbeddings`](@ref) residual.
+Learnable embeddings on top of `PiecewiseLinearEncoding`.
+Version `:A`: PLE -> NLinear (with bias).
+Version `:B`: PLE -> NLinear (zero-init, no bias) + per-feature linear residual.
+Output shape `(d_embedding, nfeats, batch)`.
 
 # Arguments
-- `bins::Vector{<:AbstractVector}`: Bin edges from [`compute_bins`](@ref).
-- `d_embedding::Int`: Output dimension per feature.
-- `activation`: Post-projection activation (default `identity`).
+- `bins::Vector{<:AbstractVector}`: Bin edges per feature from [`compute_bins`](@ref).
+- `d_embedding::Int`: Embedding dimension per feature.
+- `activation`: Activation function applied after projection (default `identity`). E.g. `relu`, `tanh`.
 - `version::Symbol`: `:A` or `:B` (default `:B`).
 """
-struct PiecewiseLinearEmbeddings{L0,I,L,F} <: LuxCore.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
+struct _PiecewiseLinearEmbeddings{L0,I,L,F} <: LuxCore.AbstractLuxContainerLayer{(:linear0, :encoding, :linear)}
     linear0::L0
     encoding::I
     linear::L
@@ -77,9 +83,9 @@ struct PiecewiseLinearEmbeddings{L0,I,L,F} <: LuxCore.AbstractLuxContainerLayer{
     version::Symbol
 end
 
-function PiecewiseLinearEmbeddings(
+function _PiecewiseLinearEmbeddings(;
     bins::Vector{<:AbstractVector},
-    d_embedding::Int;
+    d_embedding::Int,
     activation=identity,
     version::Symbol=:B,
 )
@@ -88,13 +94,14 @@ function PiecewiseLinearEmbeddings(
     max_n_bins = maximum(length(b) - 1 for b in bins)
 
     encoding = PiecewiseLinearEncoding(bins)
-    linear0 = (version == :B) ? LinearEmbeddings(nfeats, d_embedding; activation=identity) : nothing
+    # Residual path uses raw affine output (no activation)
+    linear0 = (version == :B) ? _LinearEmbeddings(; nfeats, d_embedding, activation=identity) : nothing
     linear = NLinear(nfeats, max_n_bins, d_embedding; bias=(version == :A))
 
-    return PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)
+    return _PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)
 end
 
-function LuxCore.initialparameters(rng::AbstractRNG, m::PiecewiseLinearEmbeddings)
+function LuxCore.initialparameters(rng::AbstractRNG, m::_PiecewiseLinearEmbeddings)
     ps_l0 = m.linear0 === nothing ? nothing : LuxCore.initialparameters(rng, m.linear0)
     ps_enc = LuxCore.initialparameters(rng, m.encoding)
 
@@ -108,7 +115,7 @@ function LuxCore.initialparameters(rng::AbstractRNG, m::PiecewiseLinearEmbedding
     return (linear0=ps_l0, encoding=ps_enc, linear=ps_lin)
 end
 
-function (m::PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
+function (m::_PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
     val_linear0 = nothing
     st_l0 = st.linear0
 
@@ -124,3 +131,5 @@ function (m::PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
 
     return h_final, (linear0=st_l0, encoding=st_enc, linear=st_lin)
 end
+
+LuxCore.outputsize(m::_PiecewiseLinearEmbeddings, x, ::AbstractRNG) = (m.linear.out_features, size(x, 1))

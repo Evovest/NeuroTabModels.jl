@@ -7,6 +7,7 @@ pages = [
     "Quick start" => "quick-start.md",
     "API" => "API.md",
     "Design" => "design.md",
+    "Embeddings" => "embeddings.md",
     "Models" => [
         "Interface" => "models/models.md",
         "MLP" => "models/mlp.md",
