@@ -63,12 +63,12 @@ struct PeriodicEmbeddings <: AbstractNumericalEmbedding
     lite::Bool
 end
 function PeriodicEmbeddings(; d_embedding::Int=16, frequencies::Int=32,
-                            frequencies_init_scale::Real=0.01f0, activation::Symbol=:relu,
-                            lite::Bool=false)
+    frequencies_init_scale::Real=0.01f0, activation::Symbol=:relu,
+    lite::Bool=false)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     frequencies > 0 || throw(ArgumentError("frequencies must be > 0, got $frequencies"))
     PeriodicEmbeddings(d_embedding, frequencies, Float32(frequencies_init_scale),
-                       activation, lite)
+        activation, lite)
 end
 
 """
@@ -78,22 +78,22 @@ Per-feature piecewise-linear embedding against bin edges computed from the train
 
 # Arguments
 - `d_embedding::Int`: Output dimension per feature (default `16`).
-- `bins::Union{Int,Vector{Int}}`: Number of bins, or per-feature bin counts (default `32`).
+- `bins::Int`: Number of bins, or per-feature bin counts (default `32`).
 - `activation::Symbol`: Activation applied after the projection (default `:identity`).
 - `version::Symbol`: Encoding variant, `:A` or `:B` (default `:B`).
 """
 struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
-    bins::Union{Int,Vector{Int}}
+    nbins::Int
     activation::Symbol
     version::Symbol
 end
-function PiecewiseLinearEmbeddings(; d_embedding::Int=16, bins::Union{Int,Vector{Int}}=32,
-                                   activation::Symbol=:identity, version::Symbol=:B)
+function PiecewiseLinearEmbeddings(; d_embedding::Int=16, nbins::Int=32,
+    activation::Symbol=:identity, version::Symbol=:B)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     version in (:A, :B) ||
         throw(ArgumentError("version must be :A or :B, got :$version"))
-    PiecewiseLinearEmbeddings(d_embedding, bins, activation, version)
+    PiecewiseLinearEmbeddings(d_embedding, nbins, activation, version)
 end
 
 """
@@ -139,7 +139,7 @@ function TemporalEmbeddings(;
     d_embedding > 0 ||
         throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     TemporalEmbeddings(index, Vector{Int}(order), Vector{Float32}(periods),
-                       trend, d_embedding)
+        trend, d_embedding)
 end
 
 """
@@ -176,9 +176,9 @@ EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing) = EmbeddingLayer(_as_num
 EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing) = EmbeddingLayer(num, temp)
 
 const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
-    :identity  => IdentityEmbedding,
-    :linear    => LinearEmbeddings,
-    :periodic  => PeriodicEmbeddings,
+    :identity => IdentityEmbedding,
+    :linear => LinearEmbeddings,
+    :periodic => PeriodicEmbeddings,
     :piecewise => PiecewiseLinearEmbeddings,
     :batchnorm => BatchNormEmbeddings,
 )
@@ -264,13 +264,13 @@ _build_num(s::LinearEmbeddings; nfeats::Int, x_train=nothing) =
         FlattenLayer())
 _build_num(s::PeriodicEmbeddings; nfeats::Int, x_train=nothing) =
     Chain(_PeriodicEmbeddings(; nfeats, d_embedding=s.d_embedding,
-        frequencies=s.frequencies, frequencies_init_scale=s.frequencies_init_scale,
-        activation=act_dict[s.activation], lite=s.lite), FlattenLayer())
+            frequencies=s.frequencies, frequencies_init_scale=s.frequencies_init_scale,
+            activation=act_dict[s.activation], lite=s.lite), FlattenLayer())
 function _build_num(s::PiecewiseLinearEmbeddings; nfeats::Int, x_train=nothing)
     x_train === nothing &&
         error("PiecewiseLinearEmbeddings requires x_train to compute bin edges")
-    Chain(_PiecewiseLinearEmbeddings(; bins=compute_bins(x_train; bins=s.bins),
-        d_embedding=s.d_embedding, activation=act_dict[s.activation], version=s.version),
+    Chain(_PiecewiseLinearEmbeddings(; bins=compute_bins(x_train; nbins=s.nbins),
+            d_embedding=s.d_embedding, activation=act_dict[s.activation], version=s.version),
         FlattenLayer())
 end
 _build_num(s::BatchNormEmbeddings; nfeats::Int, x_train=nothing) = _BatchNormEmbeddings(; nfeats)
@@ -340,39 +340,24 @@ function embedding_width(layer, x, rng::AbstractRNG)
     return size(y, 1)
 end
 
-"""
-    has_real_embedding(spec) -> Bool
+# """
+#     per_feature_widths(spec, nfeats) -> Vector{Int}
 
-Whether `spec` applies a non-identity embedding.
+# Output width contributed by each input feature, summing to the total embedding width. Used by
+# TabM's grouped scaling init to keep a feature's columns together. Ordering matches the concat
+# layout: non-time features first (numerical per-feature width), temporal column last.
 
-# Arguments
-- `spec::AbstractEmbedding`: The embedding spec to inspect.
+# # Arguments
+# - `spec::AbstractEmbedding`: The embedding spec.
+# - `nfeats::Int`: Number of input features.
 
-# Returns
-`true` when `spec` has a non-identity `num` or a temporal branch; `false` for a bare `IdentityEmbedding` or an empty `EmbeddingLayer`.
-"""
-has_real_embedding(::IdentityEmbedding) = false
-has_real_embedding(::AbstractNumericalEmbedding) = true
-has_real_embedding(e::EmbeddingLayer) = !(e.num isa IdentityEmbedding) || e.temp !== nothing
-
-"""
-    per_feature_widths(spec, nfeats) -> Vector{Int}
-
-Output width contributed by each input feature, summing to the total embedding width. Used by
-TabM's grouped scaling init to keep a feature's columns together. Ordering matches the concat
-layout: non-time features first (numerical per-feature width), temporal column last.
-
-# Arguments
-- `spec::AbstractEmbedding`: The embedding spec.
-- `nfeats::Int`: Number of input features.
-
-# Returns
-A `Vector{Int}` of per-feature widths summing to the total embedding width.
-"""
-per_feature_widths(::IdentityEmbedding, nfeats::Int) = fill(1, nfeats)
-per_feature_widths(s::AbstractNumericalEmbedding, nfeats::Int) = fill(_num_d_embedding(s), nfeats)
-function per_feature_widths(e::EmbeddingLayer, nfeats::Int)
-    d_emb = _num_d_embedding(e.num)
-    isnothing(e.temp) && return fill(d_emb, nfeats)
-    return vcat(fill(d_emb, nfeats - 1), Int[temporal_out_dim(e.temp)])
-end
+# # Returns
+# A `Vector{Int}` of per-feature widths summing to the total embedding width.
+# """
+# per_feature_widths(::IdentityEmbedding, nfeats::Int) = fill(1, nfeats)
+# per_feature_widths(s::AbstractNumericalEmbedding, nfeats::Int) = fill(_num_d_embedding(s), nfeats)
+# function per_feature_widths(e::EmbeddingLayer, nfeats::Int)
+#     d_emb = _num_d_embedding(e.num)
+#     isnothing(e.temp) && return fill(d_emb, nfeats)
+#     return vcat(fill(d_emb, nfeats - 1), Int[temporal_out_dim(e.temp)])
+# end

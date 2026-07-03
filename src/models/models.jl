@@ -44,18 +44,15 @@ their own iterator (e.g. with a candidate corpus attached).
 
 Overrides may write into `m.info` (e.g. to stash a corpus for inference).
 """
-train_dataloader(::Architecture, ::Any, data, ::Any; kw...) = data
+train_dataloader(::Architecture, ::Any, data, ::Any; kwargs...) = data
 
 """
-    build_chain(arch, embed_chain; nfeats, outsize, d_in, kw...)
+    build_chain(arch, embed_chain; ins, outsize)
 
-Per-architecture hook for assembling the Lux chain that `fit` will train.
-The embedding chain always exists (identity is `WrappedFunction(identity)`);
-`d_in` is supplied by the caller. Default wires `embed_chain` in front of the
-architecture's backbone via `Chain(embed_chain, arch(...))`.
+Utility fucntion for assembling the Lux chain that `fit` will train.
 """
-build_chain(arch::Architecture, embed_chain; nfeats, outsize, d_in, kw...) =
-    Chain(embed_chain, arch(; nfeats=d_in, outsize))
+build_chain(arch::Architecture, embed_chain; ins, outsize, kwargs...) =
+    Chain(embed_chain, arch(; ins, outsize, kwargs...))
 
 """
     infer_dataloader(chain, info, data, dev, ps, st)
@@ -107,12 +104,6 @@ using .MOETrees
 
 include("TabM/TabM.jl")
 using .TabM
-
-function build_chain(arch::TabMConfig, embed_chain; nfeats, outsize, d_in, embedding_config, kw...)
-    d_features = per_feature_widths(embedding_config, nfeats)
-    scaling_init_override = has_real_embedding(embedding_config) ? :normal : nothing
-    return Chain(embed_chain, arch(; nfeats=d_in, outsize, d_features, scaling_init_override))
-end
 
 include("MLP/mlp.jl")
 using .MLP

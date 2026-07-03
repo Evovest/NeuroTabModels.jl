@@ -33,7 +33,7 @@ function LuxCore.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
     for (i, bin_edges) in enumerate(l.bins)
         bin_width = diff(bin_edges)
         w = 1f0 ./ bin_width
-        b = -bin_edges[1:end-1] ./ bin_width
+        b = -bin_edges[1:(end-1)] ./ bin_width
         nb = length(bin_edges) - 1
 
         # Place the last bin's weight/bias at the end row;
@@ -42,8 +42,8 @@ function LuxCore.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
         weight[end, i] = w[end]
         bias[end, i] = b[end]
         if nb > 1
-            weight[1:nb-1, i] = w[1:end-1]
-            bias[1:nb-1, i] = b[1:end-1]
+            weight[1:(nb-1), i] = w[1:(end-1)]
+            bias[1:(nb-1), i] = b[1:(end-1)]
         end
     end
 

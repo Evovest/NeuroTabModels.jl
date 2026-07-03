@@ -63,7 +63,6 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     d_block=32,
 #     n_blocks=3,
 #     dropout=0.1,
-#     scaling_init=:normal,
 # )
 
 # embedding_config = Dict(

@@ -115,18 +115,18 @@ function _tree_kwargs(config::MOETreeConfig)
 end
 
 """
-    (config::MOETreeConfig)(; nfeats, outsize)
+    (config::MOETreeConfig)(; ins, outsize)
 
 Build a `Lux.Chain` from `config`.
 
 # Arguments
-- `nfeats::Int`: Number of input features.
+- `ins::Int`: Number of input features.
 - `outsize::Int`: Number of output units.
 
 # Returns
 A `Lux.Chain` of stacked mixture-of-experts tree layers.
 """
-function (config::MOETreeConfig)(; nfeats, outsize, kwargs...)
+function (config::MOETreeConfig)(; ins, outsize, kwargs...)
     kwargs = _tree_kwargs(config)
 
     if config.MLE_tree_split
@@ -135,13 +135,13 @@ function (config::MOETreeConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                StackedMOETree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
-                StackedMOETree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedMOETree(ins => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedMOETree(ins => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
             ),
         )
     else
         chain = Chain(
-            StackedMOETree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+            StackedMOETree(ins => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
         )
     end
 

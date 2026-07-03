@@ -75,7 +75,6 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     d_block=64,
 #     n_blocks=3,
 #     dropout=0.1,
-#     # scaling_init=:normal,
 # )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
