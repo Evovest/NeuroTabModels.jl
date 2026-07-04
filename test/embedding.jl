@@ -26,7 +26,7 @@
 
         embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
         if embedding_type == :piecewise
-            embedding_config[:bins] = 16
+            embedding_config[:nbins] = 16
         elseif embedding_type == :periodic
             embedding_config[:frequencies] = 8
         end
@@ -64,7 +64,7 @@ end
 
         embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
         if embedding_type == :piecewise
-            embedding_config[:bins] = 16
+            embedding_config[:nbins] = 16
         elseif embedding_type == :periodic
             embedding_config[:frequencies] = 16
         end
