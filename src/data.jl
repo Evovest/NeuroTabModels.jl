@@ -63,8 +63,8 @@ function get_df_loader_train(
     offset_name=nothing,
     batchsize,
     scalers=nothing,
-    shuffle=true)
-
+    shuffle=true,
+)
     feature_names = Symbol.(feature_names)
     x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
 
@@ -83,7 +83,11 @@ function get_df_loader_train(
     offset = if isnothing(offset_name)
         nothing
     else
-        isa(offset_name, String) ? Float32.(df[!, offset_name]) : Matrix{Float32}(Matrix{Float32}(df[!, offset_name])')
+        if isa(offset_name, String)
+            Float32.(df[!, offset_name])
+        else
+            Matrix{Float32}(Matrix{Float32}(df[!, offset_name])')
+        end
     end
 
     container = ContainerTrain(x, y, w, offset)
@@ -100,11 +104,12 @@ function get_df_loader_train(
     offset_name=nothing,
     batchsize=0,
     scalers=nothing,
-    shuffle=true)
-
+    shuffle=true,
+)
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
+    @info "group train bs: $bs"
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     y = [zeros(Float32, bs) for _ in 1:n]
@@ -127,7 +132,6 @@ function get_df_loader_train(
     return dtrain
 end
 
-
 """
     ContainerInfer
 """
@@ -141,11 +145,7 @@ function getindex(data::ContainerInfer, idx::AbstractVector)
     return x
 end
 
-function get_df_loader_infer(
-    df::AbstractDataFrame;
-    feature_names,
-    batchsize
-)
+function get_df_loader_infer(df::AbstractDataFrame; feature_names, batchsize)
     feature_names = Symbol.(feature_names)
     x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
 
@@ -171,14 +171,11 @@ function getindex(data::ContainerInferGrp, idx::Int)
     return (x, mask)
 end
 
-function get_df_loader_infer(
-    dfg::GroupedDataFrame;
-    feature_names,
-    batchsize=0
-)
+function get_df_loader_infer(dfg::GroupedDataFrame; feature_names, batchsize=0)
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
+    @info "group infer bs: $bs"
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     mask = [zeros(Bool, bs) for _ in 1:n]
