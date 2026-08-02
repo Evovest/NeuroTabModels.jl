@@ -115,18 +115,18 @@ function _tree_kwargs(config::NeuroTreeConfig)
 end
 
 """
-    (config::NeuroTreeConfig)(; nfeats, outsize)
+    (config::NeuroTreeConfig)(; ins, outsize)
 
 Build a `Lux.Chain` from `config`.
 
 # Arguments
-- `nfeats::Int`: Number of input features.
+- `ins::Int`: Number of input features.
 - `outsize::Int`: Number of output units.
 
 # Returns
 A `Lux.Chain` of stacked neuro-tree layers.
 """
-function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
+function (config::NeuroTreeConfig)(; ins, outsize, kwargs...)
     kwargs = _tree_kwargs(config)
 
     if config.MLE_tree_split
@@ -135,13 +135,13 @@ function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
-                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedNeuroTree(ins => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedNeuroTree(ins => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
             ),
         )
     else
         chain = Chain(
-            StackedNeuroTree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+            StackedNeuroTree(ins => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
         )
     end
 

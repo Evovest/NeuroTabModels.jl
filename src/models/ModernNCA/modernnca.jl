@@ -89,13 +89,12 @@ function ModernNCAConfig(;
 end
 
 """
-    _backbone(cfg, d_in, embedding_layer)
+    _backbone(cfg, ins, embedding_layer)
 
 Build the ModernNCA encoder: embedding, linear, then n_blocks times (BN, Dense(relu), Dropout, Dense), then BN.
 """
-function _backbone(cfg::ModernNCAConfig, d_in::Int, embedding_layer)
-    emb = isnothing(embedding_layer) ? WrappedFunction(identity) : embedding_layer
-    layers = Any[emb, Dense(d_in => cfg.d_embedding)]
+function _backbone(cfg::ModernNCAConfig, ins::Int)
+    layers = Any[Dense(ins => cfg.d_embedding)]
     for _ in 1:cfg.n_blocks
         push!(layers, BatchNorm(cfg.d_embedding))
         push!(layers, Dense(cfg.d_embedding => cfg.d_block, relu))
@@ -106,10 +105,8 @@ function _backbone(cfg::ModernNCAConfig, d_in::Int, embedding_layer)
     return Chain(layers...)
 end
 
-function (cfg::ModernNCAConfig)(; nfeats, outsize,
-                                 loss_type::Type{<:LossType}=MSE,
-                                 embedding_layer=nothing)
-    return ModernNCAModel(_backbone(cfg, nfeats, embedding_layer), cfg, Int(outsize), loss_type)
+function (cfg::ModernNCAConfig)(; ins, outsize, loss_type::Type{<:LossType}=MSE)
+    return ModernNCAModel(_backbone(cfg, ins), cfg, Int(outsize), loss_type)
 end
 
 Base.length(l::ModernNCALoader) = fld(size(l.full_x, 2), l.batchsize)
@@ -167,7 +164,7 @@ end
 """
     _encode_corpus(m, cx, ps, st; chunk=2048) -> Matrix
 
-Encode raw corpus `cx` `(d_in, N)` in chunks of `chunk` rows to bound peak
+Encode raw corpus `cx` `(d_ins, N)` in chunks of `chunk` rows to bound peak
 memory and stay within BatchNorm shape limits. Returns `zk` `(d_embedding, N)`.
 """
 function _encode_corpus(m::ModernNCAModel, cx, ps, st; chunk::Int=2048)
@@ -197,8 +194,8 @@ the candidate embeddings before NCA attention, then self-neighbors are masked.
 function (m::ModernNCAModel)((x, cand_x, cand_y, y)::Tuple{Any,Any,Any,Any}, ps, st)
     zq, st_bb = m.backbone(x, ps, st)
     zc, st_bb = size(cand_x, 2) == 0 ?
-        (similar(zq, size(zq, 1), 0), st_bb) :
-        m.backbone(cand_x, ps, st_bb)
+                (similar(zq, size(zq, 1), 0), st_bb) :
+                m.backbone(cand_x, ps, st_bb)
     z_all = hcat(zq, zc)
     cy = vcat(vec(y), vec(cand_y))
     return _nca_logits(m, zq, z_all, cy; mask_self=true), st_bb
@@ -257,11 +254,11 @@ end
 """
     build_corpus(df, feature_names, target_name, loss_type, scalers)
 
-Return `(full_x, full_y)`: the corpus feature matrix `(d_in, N)` as `Float32`
+Return `(full_x, full_y)`: the corpus feature matrix `(ins, N)` as `Float32`
 and the encoded target vector, ready for `ModernNCALoader`.
 """
 function build_corpus(df::AbstractDataFrame, feature_names, target_name,
-                      loss_type::Type{<:LossType}, scalers)
+    loss_type::Type{<:LossType}, scalers)
     full_x = permutedims(Matrix{Float32}(select(df, collect(feature_names))))
     full_y = _encode_targets(df, target_name, loss_type, scalers)
     return full_x, full_y
@@ -298,14 +295,14 @@ function _encode_targets(df, target_name, ::Type{<:Union{MSE,MAE,GaussianMLE}}, 
     return y
 end
 
-"""
-    Models.build_chain(cfg::ModernNCAConfig, embed_chain; outsize, d_in, loss_type, kw...)
+# """
+#     Models.build_chain(cfg::ModernNCAConfig; ins, outsize, loss_type, kwargs...)
 
-Pass the embedding layer into the backbone instead of wrapping it in an outer `Chain`.
-"""
-Models.build_chain(cfg::ModernNCAConfig, embed_chain;
-        outsize, d_in, loss_type, kw...) =
-    cfg(; nfeats=d_in, outsize, loss_type, embedding_layer=embed_chain)
+# Pass the embedding layer into the backbone instead of wrapping it in an outer `Chain`.
+# """
+# Models.build_chain(cfg::ModernNCAConfig;
+#     ins, outsize, loss_type, kwargs...) =
+#     cfg(; ins, outsize, loss_type)
 
 """
     Models.train_dataloader(cfg::ModernNCAConfig, ...)
@@ -319,20 +316,24 @@ before the cap; `batchsize == N` gives `n_cand = 0`.
 - `cfg`: ModernNCA config.
 - `m`: fitted model wrapper.
 - `df`: training data frame.
-- `feature_names`, `target_name`: data columns.
-- `loss_type`, `scalers`: target encoding metadata.
-- `batchsize`, `dev`, `rng`: loader settings.
+- `feature_names`
+- `target_name`
+- `loss_type` 
+- `scalers`
+- `batchsize`
+- `dev`: device
+- `rng`
 """
 function Models.train_dataloader(cfg::ModernNCAConfig, m::NeuroTabModel, ::Any, df;
-        feature_names, target_name, loss_type, scalers, batchsize, dev, rng, kw...)
+    feature_names, target_name, loss_type, scalers, batchsize, dev, rng, kwargs...)
     cx, cy = build_corpus(df, feature_names, target_name, loss_type, scalers)
     m.info[:nca_ref] = (cx=cx, cy=cy)
     n = size(cx, 2)
     batchsize = min(batchsize, n)
     pool = n - batchsize
     raw_n_cand = pool == 0 ? 0 :
-        cfg.sample_rate >= 1f0 ? pool :
-        max(Int(floor(cfg.sample_rate * pool)), 1)
+                 cfg.sample_rate >= 1f0 ? pool :
+                 max(Int(floor(cfg.sample_rate * pool)), 1)
     n_cand = cfg.max_candidates > 0 ? min(raw_n_cand, cfg.max_candidates) : raw_n_cand
     return ModernNCALoader(dev(cx), dev(cy), batchsize, n_cand, rng, dev)
 end

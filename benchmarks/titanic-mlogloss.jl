@@ -61,7 +61,6 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     embedding_type=:piecewise,
 #     n_bins=32,
 #     d_embedding=32,
-#     scaling_init=:normal,
 # )
 
 learner = NeuroTabClassifier(

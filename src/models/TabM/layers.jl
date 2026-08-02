@@ -13,13 +13,12 @@ function (m::EnsembleView)(x::AbstractMatrix, ps, st)
 end
 
 function (m::EnsembleView)(x::AbstractArray{T,3}, ps, st) where {T}
-    @assert size(x, 2) == m.k "Expected K=$(m.k), got $(size(x, 2))"
+    # @assert size(x, 2) == m.k "Expected K=$(m.k), got $(size(x, 2))"
     return x, st
 end
 
 """
-    LinearBatchEnsemble(in_f, out_f; k, scaling_init=:random_signs,
-                        first_scaling_init_chunks=nothing, bias=true)
+    LinearBatchEnsemble(in_f, out_f; k, scaling_init=:random_signs, bias=true)
 
 Batch-ensemble linear: `y = S ⊙ (W(R ⊙ x)) + bias`.
 
@@ -27,7 +26,6 @@ Batch-ensemble linear: `y = S ⊙ (W(R ⊙ x)) + bias`.
 - `in_f`, `out_f`: Input and output dimensions.
 - `k::Int`: Ensemble size.
 - `scaling_init`: `:ones`, `:normal`, or `:random_signs`; or `(R, S)` tuple.
-- `first_scaling_init_chunks`: Grouped init for input scaling `R`.
 - `bias::Bool`: Per-member bias (default `true`).
 """
 struct LinearBatchEnsemble <: LuxCore.AbstractLuxLayer
@@ -37,26 +35,20 @@ struct LinearBatchEnsemble <: LuxCore.AbstractLuxLayer
     use_bias::Bool
     r_init::Symbol
     s_init::Symbol
-    r_init_chunks::Union{Nothing, Vector{Int}}
 end
 
 function LinearBatchEnsemble(in_f::Int, out_f::Int;
-        k::Int,
-        scaling_init::Union{Symbol, Tuple{Symbol,Symbol}} = :random_signs,
-        first_scaling_init_chunks::Union{Nothing, Vector{Int}} = nothing,
-        bias::Bool = true)
+    k::Int,
+    scaling_init::Union{Symbol,Tuple{Symbol,Symbol}}=:ones,
+    bias::Bool=true)
     r_init, s_init = scaling_init isa Tuple ? scaling_init : (scaling_init, scaling_init)
-    return LinearBatchEnsemble(in_f, out_f, k, bias, r_init, s_init, first_scaling_init_chunks)
+    return LinearBatchEnsemble(in_f, out_f, k, bias, r_init, s_init)
 end
 
 function LuxCore.initialparameters(rng::AbstractRNG, m::LinearBatchEnsemble)
     weight = _init_rsqrt_uniform(rng, (m.out_features, m.in_features), m.in_features)
 
-    r = if m.r_init_chunks !== nothing
-        _init_scaling_with_chunks(rng, (m.in_features, m.k), m.r_init, m.r_init_chunks)
-    else
-        _init_scaling(rng, (m.in_features, m.k), m.r_init)
-    end
+    r = _init_scaling(rng, (m.in_features, m.k), m.r_init)
     s = _init_scaling(rng, (m.out_features, m.k), m.s_init)
 
     d = (; weight, r, s)
@@ -90,13 +82,13 @@ struct LinearEnsemble <: LuxCore.AbstractLuxLayer
     use_bias::Bool
 end
 
-LinearEnsemble(in_f::Int, out_f::Int, k::Int; bias::Bool = true) =
+LinearEnsemble(in_f::Int, out_f::Int, k::Int; bias::Bool=true) =
     LinearEnsemble(in_f, out_f, k, bias)
 
 function LuxCore.initialparameters(rng::AbstractRNG, m::LinearEnsemble)
-    d = (; weight = _init_rsqrt_uniform(rng, (m.out_features, m.in_features, m.k), m.in_features))
+    d = (; weight=_init_rsqrt_uniform(rng, (m.out_features, m.in_features, m.k), m.in_features))
     if m.use_bias
-        d = merge(d, (; bias = _init_rsqrt_uniform(rng, (m.out_features, m.k), m.in_features)))
+        d = merge(d, (; bias=_init_rsqrt_uniform(rng, (m.out_features, m.k), m.in_features)))
     end
     return d
 end
@@ -112,7 +104,7 @@ function (m::LinearEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
 end
 
 """
-    ScaleEnsemble(k, d; init=:random_signs, init_chunks=nothing, bias=false)
+    ScaleEnsemble(k, d; init=:random_signs, bias=false)
 
 Per-member elementwise scaling on `(d, k, batch)` input.
 """
@@ -120,26 +112,20 @@ struct ScaleEnsemble <: LuxCore.AbstractLuxLayer
     k::Int
     d::Int
     init::Symbol
-    init_chunks::Union{Nothing, Vector{Int}}
     use_bias::Bool
 end
 
 function ScaleEnsemble(k::Int, d::Int;
-        init::Symbol = :random_signs,
-        init_chunks::Union{Nothing, Vector{Int}} = nothing,
-        bias::Bool = false)
-    return ScaleEnsemble(k, d, init, init_chunks, bias)
+    init::Symbol=:random_signs,
+    bias::Bool=false)
+    return ScaleEnsemble(k, d, init, bias)
 end
 
 function LuxCore.initialparameters(rng::AbstractRNG, m::ScaleEnsemble)
-    weight = if m.init_chunks !== nothing
-        _init_scaling_with_chunks(rng, (m.d, m.k), m.init, m.init_chunks)
-    else
-        _init_scaling(rng, (m.d, m.k), m.init)
-    end
+    weight = _init_scaling(rng, (m.d, m.k), m.init)
     d = (; weight)
     if m.use_bias
-        d = merge(d, (; bias = zeros(Float32, m.d, m.k)))
+        d = merge(d, (; bias=zeros(Float32, m.d, m.k)))
     end
     return d
 end
@@ -170,16 +156,16 @@ function _init_scaling(rng::AbstractRNG, dims, init::Symbol)
     end
 end
 
-function _init_scaling_with_chunks(rng::AbstractRNG, dims::Tuple{Int,Int},
-                                    init::Symbol, chunks::Vector{Int})
-    d, k = dims
-    @assert d == sum(chunks) "Chunks must sum to $d, got $(sum(chunks))"
-    weight = zeros(Float32, d, k)
-    row = 1
-    for chunk_size in chunks
-        val = _init_scaling(rng, (1, k), init)
-        weight[row:row+chunk_size-1, :] .= repeat(val, chunk_size, 1)
-        row += chunk_size
-    end
-    return weight
-end
+# function _init_scaling_with_chunks(rng::AbstractRNG, dims::Tuple{Int,Int},
+#     init::Symbol, chunks::Vector{Int})
+#     d, k = dims
+#     @assert d == sum(chunks) "Chunks must sum to $d, got $(sum(chunks))"
+#     weight = zeros(Float32, d, k)
+#     row = 1
+#     for chunk_size in chunks
+#         val = _init_scaling(rng, (1, k), init)
+#         weight[row:(row+chunk_size-1), :] .= repeat(val, chunk_size, 1)
+#         row += chunk_size
+#     end
+#     return weight
+# end

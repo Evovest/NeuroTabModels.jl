@@ -41,7 +41,6 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     use_embeddings=false,
 #     embedding_type=:periodic,
 #     d_embedding=16,
-#     scaling_init=:random_signs,
 # )
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,

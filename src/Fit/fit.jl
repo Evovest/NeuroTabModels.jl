@@ -75,10 +75,10 @@ function init(
     embed_config = config.embedding_config
     x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
     embed_chain = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
-    d_in = Models.Embeddings.embedding_width(embed_chain, randn(Float32, nfeats, 2), default_rng())
-    chain = Models.build_chain(config.arch, embed_chain;
-        nfeats, outsize, d_in, embedding_config=embed_config, loss_type=L)
-
+    ins = Models.Embeddings.embedding_width(embed_chain, randn(Float32, nfeats, 2), default_rng())
+    core_chain = config.arch(; ins, outsize, loss_type=L)
+    chain = Chain(embed_chain, core_chain)
+    # chain = Models.build_chain(config.arch, embed_chain; ins, outsize, loss_type=L)
 
     info = Dict(
         :nrounds => 0,

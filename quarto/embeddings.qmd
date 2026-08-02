@@ -1,0 +1,203 @@
+---
+title: "Embeddings"
+author: "Evovest"
+format:
+  commonmark:
+    theme: "cosmo"
+    fontsize: 0.8em
+    toc: true
+    toc-depth: 3
+engine: julia
+---
+
+## Setup
+
+```{julia}
+using NeuroTabModels
+using NeuroTabModels.Models: PiecewiseLinearEmbeddings, LinearEmbeddings, PeriodicEmbeddings, BatchNormEmbeddings, IdentityEmbedding
+using Random
+using CairoMakie
+using Statistics
+using StatsBase: sample
+using DataFrames
+```
+
+We track one scalar feature `x1` and inspect how each numerical embedding maps it over a range.
+
+```{julia}
+
+xgrid = range(-1f0, 1f0; length=100)
+x1 = 0.35f0
+seed = 123
+
+function make_projector(spec; x_train=nothing)
+    rng = Xoshiro(seed)
+    layer = NeuroTabModels.Models.Embeddings.build_embedding_chain(spec, 1; x_train)
+    ps, st = NeuroTabModels.Models.Embeddings.LuxCore.setup(rng, layer)
+    st = NeuroTabModels.Models.Embeddings.LuxCore.trainmode(st)
+
+    return xvals -> begin
+        x = reshape(Float32.(collect(xvals)), 1, :)
+        y, _ = layer(x, ps, st)
+        return y
+    end
+end
+
+function plot_embedding_dims(y, title_prefix; color=:steelblue)
+    fig = Figure(size=(1200, 280))
+    for k in 1:size(y, 1)
+        ax = Axis(fig[1, k], title="$(title_prefix) dim $k", xlabel="x1", ylabel="value")
+        lines!(ax, xgrid, vec(y[k, :]), linewidth=2, color=color)
+    end
+    return fig
+end
+
+function plot_scalar_curve(xvals, yvals, title; color=:black)
+    fig = Figure(size=(450, 280))
+    ax = Axis(fig[1, 1], title=title, xlabel="x1", ylabel="value")
+    lines!(ax, xvals, yvals, color=color, linewidth=2)
+    return fig
+end
+
+function plot_piecewise_blocks(xvals, h; color=:forestgreen)
+    fig = Figure(size=(1200, 280))
+    for b in 1:size(h, 1)
+        ax = Axis(fig[1, b], title="raw block h_$b", xlabel="x1", ylabel="value")
+        lines!(ax, xvals, vec(h[b, :]), linewidth=2, color=color)
+        ylims!(ax, -0.05, 1.05)
+    end
+    return fig
+end
+```
+
+All comparisons below use the same raw feature path (`x1` over `xgrid`) and the same initialization seed.
+
+## PiecewiseLinearEmbeddings
+
+For one feature `x1`, piecewise embedding is:
+
+$$h_b(x_1)=\mathrm{clamp}(w_b x_1 + c_b, 0, 1), \quad b=1,\dots,B$$
+
+$$e(x_1)=\phi\big(W h(x_1)+r(x_1)\big)$$
+
+Version `:B` adds the residual linear path $r(x_1)$.
+
+To make the intuition explicit, we visualize two stages separately:
+
+- raw piecewise blocks $h_b(x_1)$ from bins
+- projected embedding $e(x_1)$ after the learnable linear map
+
+```{julia}
+x_train = reshape(collect(xgrid), 100, 1)
+batch = x_train'
+bins = NeuroTabModels.Models.Embeddings.compute_bins(x_train; nbins=3)[1]
+bins
+```
+
+### Piecewise Raw Blocks
+
+```{julia}
+function piecewise_blocks(xvals, edges)
+    nb = length(edges) - 1
+    h = zeros(Float32, nb, length(xvals))
+    for b in 1:nb
+        left = edges[b]
+        right = edges[b+1]
+        width = right - left
+        @assert width > 0 "Bin edges must be strictly increasing"
+        h[b, :] .= clamp.((Float32.(xvals) .- left) ./ width, 0f0, 1f0)
+    end
+    return h
+end
+
+h_piecewise = piecewise_blocks(xgrid, bins)
+
+# Use :A so projected piecewise behavior is visible directly.
+# At init, :B includes a residual linear path and the piecewise branch is zero-initialized.
+config = PiecewiseLinearEmbeddings(d_embedding=4, nbins=3, activation=:relu, version=:A)
+
+# layer = NeuroTabModels.Models.Embeddings.build_embedding_chain(config, 1; x_train)
+# rng = Xoshiro(seed)
+# ps, st = NeuroTabModels.Models.Embeddings.LuxCore.setup(rng, layer)
+# st = NeuroTabModels.Models.Embeddings.LuxCore.trainmode(st)
+# layer(batch, ps, st)
+
+proj_piecewise = make_projector(config; x_train)
+y_piecewise = proj_piecewise(xgrid)
+vec(proj_piecewise([x1])[:, 1])
+```
+
+```{julia}
+fig_blocks = plot_piecewise_blocks(xgrid, h_piecewise; color=:forestgreen)
+fig_blocks
+```
+
+### Piecewise Projected Embedding
+
+```{julia}
+fig_piecewise = plot_embedding_dims(y_piecewise, "Piecewise"; color=:seagreen)
+fig_piecewise
+```
+
+## LinearEmbeddings
+
+For one feature `x1`, linear embedding is:
+$$e(x_1)=\phi(w x_1 + b), \quad e(x_1)\in\mathbb{R}^{d_{emb}}$$
+
+```{julia}
+spec_linear = LinearEmbeddings(d_embedding=4, activation=:relu)
+proj_linear = make_projector(spec_linear)
+y_linear = proj_linear(xgrid)
+```
+
+```{julia}
+fig_linear = plot_embedding_dims(y_linear, "Linear"; color=:dodgerblue)
+fig_linear
+```
+
+## PeriodicEmbeddings
+
+Periodic embedding first makes sinusoidal features, then projects:
+
+```{julia}
+spec_periodic = PeriodicEmbeddings(d_embedding=4, frequencies=16, activation=:identity, lite=false)
+proj_periodic = make_projector(spec_periodic)
+y_periodic = proj_periodic(xgrid)
+```
+
+```{julia}
+fig_periodic = plot_embedding_dims(y_periodic, "Periodic"; color=:mediumpurple)
+fig_periodic
+```
+
+## BatchNormEmbeddings
+
+BatchNorm embedding keeps width 1 per feature and normalizes:
+$$e(x_1)=\gamma\frac{x_1-\mu}{\sqrt{\sigma^2+\varepsilon}}+\beta$$
+
+```{julia}
+spec_batchnorm = BatchNormEmbeddings()
+proj_batchnorm = make_projector(spec_batchnorm)
+y_batchnorm = proj_batchnorm(xgrid)
+```
+
+```{julia}
+fig_batchnorm = plot_scalar_curve(xgrid, vec(y_batchnorm[1, :]), "BatchNorm output"; color=:darkorange)
+fig_batchnorm
+```
+
+## IdentityEmbedding
+
+Identity embedding is unchanged input:
+$$e(x_1)=x_1$$
+
+```{julia}
+spec_identity = IdentityEmbedding()
+proj_identity = make_projector(spec_identity)
+y_identity = proj_identity(xgrid)
+```
+
+```{julia}
+fig_identity = plot_scalar_curve(xgrid, vec(y_identity[1, :]), "Identity output"; color=:royalblue)
+fig_identity
+```

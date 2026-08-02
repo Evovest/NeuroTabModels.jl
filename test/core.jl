@@ -27,7 +27,7 @@
     outsize = 1
     loss = NeuroTabModels.Losses.get_loss_fn(learner.loss)
     L = NeuroTabModels.Losses.get_loss_type(learner.loss)
-    chain = learner.arch(; nfeats, outsize)
+    chain = learner.arch(; ins=nfeats, outsize)
     info = Dict(
         :nrounds => 0,
         :feature_names => feature_names,
@@ -48,7 +48,7 @@ end
     feature_names = setdiff(names(df), [target_name])
 
     train_ratio = 0.8
-    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    train_indices = randperm(nrow(df))[1:Int(train_ratio*nrow(df))]
 
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
@@ -97,7 +97,7 @@ end
     feature_names = setdiff(names(df), [target_name])
 
     train_ratio = 0.8
-    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    train_indices = randperm(nrow(df))[1:Int(train_ratio*nrow(df))]
 
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
@@ -141,7 +141,7 @@ end
     transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
-    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    train_indices = randperm(nrow(df))[1:Int(train_ratio*nrow(df))]
 
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
@@ -182,7 +182,7 @@ end
     transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
-    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    train_indices = randperm(nrow(df))[1:Int(train_ratio*nrow(df))]
 
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
@@ -226,7 +226,7 @@ end
     transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
-    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    train_indices = randperm(nrow(df))[1:Int(train_ratio*nrow(df))]
 
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
@@ -275,7 +275,7 @@ end
     feature_names = setdiff(names(df), [target_name])
 
     train_ratio = 0.8
-    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    train_indices = randperm(nrow(df))[1:Int(train_ratio*nrow(df))]
 
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
@@ -321,7 +321,7 @@ end
     transform!(df, feature_names .=> (x -> (x .- mean(x)) ./ std(x)); renamecols=false)
 
     train_ratio = 0.8
-    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    train_indices = randperm(nrow(df))[1:Int(train_ratio*nrow(df))]
 
     dtrain = df[train_indices, :]
     deval = df[setdiff(1:nrow(df), train_indices), :]
