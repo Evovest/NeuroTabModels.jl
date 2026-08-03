@@ -50,9 +50,7 @@ function CallBack(
     ps, st = ts.parameters, testmode(ts.states)
     deval = Models.eval_dataloader(m.chain, m.info, deval, dev, ps, st)
     d0 = first(deval)
-    @warn "_build_eval_step - begins"
     eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.backend == :reactant)
-    @warn "_build_eval_step - completed"
 
     return CallBack(deval, eval_compiled)
 end
