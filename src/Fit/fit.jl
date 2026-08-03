@@ -21,10 +21,12 @@ using CategoricalArrays
 
 get_ad_backend(backend::Symbol) = get_ad_backend(Val(backend))
 get_ad_backend(::Val{:reactant}) = get_ad_backend(Val(:enzyme))
-get_ad_backend(::Val{b}) where {b} = error(
-    "Unsupported or unloaded `backend=:$b`. Supported: [:enzyme, :zygote, :reactant]. " *
-    "`:enzyme` and `:reactant` require `using Enzyme`, `:zygote` requires `using Zygote`."
-)
+function get_ad_backend(::Val{b}) where {b}
+    error(
+        "Unsupported or unloaded `backend=:$b`. Supported: [:enzyme, :zygote, :reactant]. " *
+        "`:enzyme` and `:reactant` require `using Enzyme`, `:zygote` requires `using Zygote`.",
+    )
+end
 
 include("callback.jl")
 using .CallBacks
@@ -36,9 +38,8 @@ function init(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing
+    group_key=nothing,
 )
-
     feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
     weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
     offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
@@ -92,18 +93,26 @@ function init(
         :scalers => scalers,
         :backend => config.backend,
         :device => config.device,
-        :gpuID => config.gpuID
+        :gpuID => config.gpuID,
     )
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
     ps, st = Lux.setup(rng, m.chain) |> dev
-    data = Models.train_dataloader(config.arch, m, data, df;
-        feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng)
+    data = Models.train_dataloader(
+        config.arch, m, data, df; feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng
+    )
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 
-    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts, :scalers => scalers, :ad_backend => get_ad_backend(config.backend))
+    return m,
+    Dict(
+        :data => data,
+        :lux_loss => lux_loss,
+        :train_state => ts,
+        :scalers => scalers,
+        :ad_backend => get_ad_backend(config.backend),
+    )
 end
 
 """
@@ -152,9 +161,8 @@ function fit(
     group_key=nothing,
     deval=nothing,
     print_every_n=9999,
-    verbosity=1
+    verbosity=1,
 )
-
     m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
 
     logger = nothing
@@ -169,10 +177,13 @@ function fit(
 
     while m.info[:nrounds] < config.nrounds
         fit_iter!(m, cache)
+        @warn "fit_iter! - completed"
         iter = m.info[:nrounds]
 
         if !isnothing(logger)
+            @warn "cb - begins"
             cb(logger, iter, cache[:train_state])
+            @warn "cb - completed"
             if verbosity > 0 && iter % print_every_n == 0
                 @info "iter $iter" metric = logger[:metrics][:metric][end]
             end
@@ -182,6 +193,7 @@ function fit(
         end
     end
 
+    @warn "_sync_params_to_model! - begins"
     _sync_params_to_model!(m, cache)
     m.info[:logger] = logger
     return m
@@ -194,8 +206,12 @@ function _sync_params_to_model!(m, cache)
     m.info[:st] = cdev(Lux.testmode(ts.states))
 end
 
-_single_train_step!(device::Symbol, ad_backend, lux_loss, d, ts) = _single_train_step!(Val(device), ad_backend, lux_loss, d, ts)
-_single_train_step!(::Val{D}, ad_backend, lux_loss, d, ts) where {D} = Training.single_train_step!(ad_backend, lux_loss, d, ts)
+function _single_train_step!(device::Symbol, ad_backend, lux_loss, d, ts)
+    _single_train_step!(Val(device), ad_backend, lux_loss, d, ts)
+end
+function _single_train_step!(::Val{D}, ad_backend, lux_loss, d, ts) where {D}
+    Training.single_train_step!(ad_backend, lux_loss, d, ts)
+end
 
 function fit_iter!(m, cache)
     ts, lux_loss = cache[:train_state], cache[:lux_loss]

@@ -33,7 +33,7 @@ function CallBack(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing
+    group_key=nothing,
 )
     dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     ts = cache[:train_state]
@@ -42,12 +42,17 @@ function CallBack(
     feval = metric_dict[config.metric]
 
     dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
-    deval = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
+    deval =
+        get_df_loader_train(
+            dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false
+        ) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
     deval = Models.eval_dataloader(m.chain, m.info, deval, dev, ps, st)
     d0 = first(deval)
+    @warn "_build_eval_step - begins"
     eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.backend == :reactant)
+    @warn "_build_eval_step - completed"
 
     return CallBack(deval, eval_compiled)
 end
@@ -97,13 +102,12 @@ function update_logger!(logger; iter, metric)
     if iter == 0
         logger[:best_metric] = metric
     else
-        if (logger[:maximise] && metric > logger[:best_metric]) ||
-           (!logger[:maximise] && metric < logger[:best_metric])
+        if (logger[:maximise] && metric > logger[:best_metric]) || (!logger[:maximise] && metric < logger[:best_metric])
             logger[:best_metric] = metric
             logger[:best_iter] = iter
             logger[:iter_since_best] = 0
         else
-            logger[:iter_since_best] += logger[:metrics][:iter][end] - logger[:metrics][:iter][end-1]
+            logger[:iter_since_best] += logger[:metrics][:iter][end] - logger[:metrics][:iter][end - 1]
         end
     end
 end
