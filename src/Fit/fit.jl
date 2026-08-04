@@ -176,14 +176,10 @@ function fit(
     end
 
     while m.info[:nrounds] < config.nrounds
-        @info "m.info[:nrounds]" m.info[:nrounds]
         fit_iter!(m, cache)
-        @warn "fit_iter! - completed"
         iter = m.info[:nrounds]
-
         if !isnothing(logger)
             cb(logger, iter, cache[:train_state])
-            @warn "cb - completed"
             if verbosity > 0 && iter % print_every_n == 0
                 @info "iter $iter" metric = logger[:metrics][:metric][end]
             end
@@ -192,9 +188,7 @@ function fit(
             (verbosity > 0 && iter % print_every_n == 0) && @info "iter $iter"
         end
     end
-    @info "train loop completed"
     _sync_params_to_model!(m, cache)
-    @info "_sync_params_to_model! completed"
     m.info[:logger] = logger
     return m
 end

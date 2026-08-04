@@ -48,7 +48,7 @@ function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B
 end
 
 # for GroupedDataFrame
-function getindex(data::ContainerTrain{A,B,C,D}, idx::Int) where {A<:Vector,B,C<:Vector,D<:Nothing}
+function getindex(data::ContainerTrain{A,B,C,D}, idx::Int) where {A<:Vector,B<:Vector,C<:Vector,D<:Nothing}
     x = data.x[idx]
     y = data.y[idx]
     w = data.w[idx]
@@ -109,6 +109,7 @@ function get_df_loader_train(
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
+    # bs=1024
     @info "group train bs: $bs"
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]

@@ -110,7 +110,7 @@ embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activati
 # embedding_config = Dict(:embedding_type => "batchnorm")
 
 learner = NeuroTabRegressor(
-    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-3, batchsize=1024, device, backend
+    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-3, batchsize=0, device, backend
 )
 
 group_key = "grp" #"grp" # nothing
