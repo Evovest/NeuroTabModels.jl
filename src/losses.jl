@@ -1,9 +1,9 @@
 module Losses
 
 export get_loss_fn, get_loss_type
-export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie
+export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie, Correlation
 
-import Statistics: mean
+import Statistics: mean, std
 import NNlib: logsigmoid, logsoftmax
 
 abstract type LossType end
@@ -13,6 +13,7 @@ abstract type LogLoss <: LossType end
 abstract type MLogLoss <: LossType end
 abstract type GaussianMLE <: LossType end
 abstract type Tweedie <: LossType end
+abstract type Correlation <: LossType end
 
 _reshape_3d(x::AbstractVector) = reshape(x, 1, 1, :)
 _reshape_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
@@ -54,8 +55,7 @@ end
 function _tweedie_core(pred, y)
     rho = eltype(pred)(1.5)
     ep = exp.(pred)
-    2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+
-          ep .^ (2 - rho) / (2 - rho))
+    2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+ ep .^ (2 - rho) / (2 - rho))
 end
 
 mse_loss(m, ps, st, d) = _apply_loss(_mse_core, m, ps, st, d)
@@ -74,12 +74,34 @@ function gaussian_mle(model, ps, st, data::Tuple{Any,Any})
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
-    return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
+    return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])),
+    st_,
+    NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any,Any})
     pred, st_ = _forward(model, ps, st, data[1])
     pred = pred .+ _reshape_3d(data[4])
-    return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
+    return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])),
+    st_,
+    NamedTuple()
+end
+
+function correlation(m, ps, st, d)
+    p, _st = m(d[1], ps, st)
+    p = vec(p[1, 1, :])
+    y = vec(d[2])
+    w = vec(d[3])
+
+    # rank-normalize targets only (targets are constants, no gradient needed)
+    y = sortperm(sortperm(y)) ./ length(y)
+
+    p_mean = w' * p / sum(w)
+    p_var = w' * (p .^ 2) / sum(w) - p_mean^2
+    y_mean = w' * y / sum(w)
+    y_var = w' * (y .^ 2) / sum(w) - y_mean^2
+    py_mean = w' * (p .* y) / sum(w)
+    val = (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
+    return -val, _st, NamedTuple()
 end
 
 get_loss_fn(::Type{<:MSE}) = mse_loss
@@ -88,10 +110,16 @@ get_loss_fn(::Type{<:LogLoss}) = logloss
 get_loss_fn(::Type{<:MLogLoss}) = mlogloss
 get_loss_fn(::Type{<:GaussianMLE}) = gaussian_mle
 get_loss_fn(::Type{<:Tweedie}) = tweedie
+get_loss_fn(::Type{<:Correlation}) = correlation
 
 const loss_type_dict = Dict(
-    :mse => MSE, :mae => MAE, :logloss => LogLoss,
-    :mlogloss => MLogLoss, :gaussian_mle => GaussianMLE, :tweedie => Tweedie,
+    :mse => MSE,
+    :mae => MAE,
+    :logloss => LogLoss,
+    :mlogloss => MLogLoss,
+    :gaussian_mle => GaussianMLE,
+    :tweedie => Tweedie,
+    :correlation => Correlation,
 )
 
 get_loss_type(loss::Symbol) = loss_type_dict[loss]

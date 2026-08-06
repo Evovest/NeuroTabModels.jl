@@ -180,7 +180,7 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
   end
 
   loss = Symbol(args[:loss])
-  loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle] && error("The provided kwarg `loss`: $loss is not supported.")
+  loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation] && error("The provided kwarg `loss`: $loss is not supported.")
 
   _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation]
   if isnothing(args[:metric])

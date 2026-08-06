@@ -163,7 +163,7 @@ end
     correlation(m, x, y, w, offset; agg=mean)
 """
 function correlation(m, x, y; agg=mean)
-    p = view(m(x), 1, :)
+    p = vec(m(x))
     y = vec(y)
     p_mean = mean(p)
     p_var = mean(p .^ 2) - p_mean^2
@@ -173,7 +173,7 @@ function correlation(m, x, y; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * length(y)
 end
 function correlation(m, x, y, w; agg=mean)
-    p = view(m(x), 1, :)
+    p = vec(m(x))
     y = vec(y)
     w = vec(w)
     p_mean = w' * p / sum(w)
@@ -184,7 +184,7 @@ function correlation(m, x, y, w; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
 function correlation(m, x, y, w, offset; agg=mean)
-    p = view(m(x), 1, :) .+ view(offset, 1, :)
+    p = vec(m(x)) .+ vec(offset)
     y = vec(y)
     w = vec(w)
     p_mean = w' * p / sum(w)

@@ -97,7 +97,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 
 device = :gpu
 backend = :zygote
-loss = :gaussian_mle # :mse :gaussian_mle :tweedie
+loss = :correlation # :mse :gaussian_mle :tweedie
 metric = :correlation # :mse :gaussian_mle :tweedie
 
 # embedding_config = Dict(

@@ -36,7 +36,16 @@ function NeuroTree(; feats, outs, tree_type=:binary, actA=identity, scaler=true,
     leaves = 2^depth
     return NeuroTree(tree_type, actA, scaler, feats, outs, depth, trees, nodes, leaves, k, Float32(init_scale))
 end
-function NeuroTree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k=1, init_scale=0.1)
+function NeuroTree(
+    (feats, outs)::Pair{<:Integer,<:Integer};
+    tree_type=:binary,
+    actA=identity,
+    scaler=true,
+    depth,
+    trees,
+    k=1,
+    init_scale=0.1,
+)
     @assert tree_type ∈ [:binary, :oblivious]
     nodes = tree_type == :binary ? 2^depth - 1 : depth
     leaves = 2^depth
@@ -71,6 +80,7 @@ function (l::NeuroTree)(x, ps, st)
     lw = reshape(lw, 1, l.leaves, l.trees, l.k, size(x, 2)) # [L,TKB] => [1,L,T,K,B]
     y1 = dropdims(sum(ps.p .* lw; dims=2); dims=2) # [P,L,T,K] * [1,L,T,K,B] => [P,T,K,B]
     y = dropdims(mean(y1; dims=2); dims=2) # [P,T,K,B] => [P,K,B]
+    # y = (y .- mean(y)) ./ std(y)
     return y, st
 end
 
@@ -86,7 +96,7 @@ function get_logits_mask(::Val{:binary}, depth::Integer)
         k = 2^(depth - d)
         stride = 2 * k
         for b in 1:blocks
-            view(mask, (b-1)*stride+1:(b-1)*stride+k, 2^(d - 1) + b - 1) .= 1
+            view(mask, ((b - 1) * stride + 1):((b - 1) * stride + k), 2^(d - 1) + b - 1) .= 1
         end
     end
     return mask
@@ -99,7 +109,7 @@ function get_logits_mask(::Val{:oblivious}, depth::Integer)
         k = 2^(depth - d)
         stride = 2 * k
         for b in 1:blocks
-            view(mask, (b-1)*stride+1:(b-1)*stride+k, d) .= 1
+            view(mask, ((b - 1) * stride + 1):((b - 1) * stride + k), d) .= 1
         end
     end
     return mask
@@ -117,7 +127,7 @@ function get_softplus_mask(::Val{:binary}, depth::Integer)
         k = 2^(depth - d + 1)
         stride = k
         for b in 1:blocks
-            view(mask, (b-1)*stride+1:(b-1)*stride+k, 2^(d - 1) + b - 1) .= 1
+            view(mask, ((b - 1) * stride + 1):((b - 1) * stride + k), 2^(d - 1) + b - 1) .= 1
         end
     end
     return mask

@@ -5,7 +5,7 @@ export NeuroTreeConfig
 using Lux
 using LuxCore
 using Random: AbstractRNG
-using Statistics: mean
+using Statistics: mean, std
 using NNlib: tanh_fast, hardtanh, tanhshrink
 
 import ..Models: Architecture

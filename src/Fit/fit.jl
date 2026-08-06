@@ -65,7 +65,7 @@ function init(
     end
 
     scalers = nothing
-    if hasproperty(config, :scale_target) && config.scale_target && L <: Union{MSE,MAE,GaussianMLE}
+    if hasproperty(config, :scale_target) && config.scale_target && L <: Union{MSE,MAE,GaussianMLE,Correlation}
         scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
     end
 
