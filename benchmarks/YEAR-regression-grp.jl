@@ -33,6 +33,7 @@ target_name = "y"
 rename!(df_tot, "Column1" => target_name)
 feature_names = setdiff(names(df_tot), ["y", "w"])
 df_tot.w .= 1.0
+weight_name = "w"
 
 df_tot.grp = rand(1:round(Int, nrow(df_tot) / 800), nrow(df_tot))
 
@@ -95,7 +96,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-backend = :reactant
+backend = :zygote
 loss = :gaussian_mle # :mse :gaussian_mle :tweedie
 metric = :correlation # :mse :gaussian_mle :tweedie
 
@@ -110,11 +111,14 @@ embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activati
 # embedding_config = Dict(:embedding_type => "batchnorm")
 
 learner = NeuroTabRegressor(
-    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-3, batchsize=0, device, backend
+    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-3, batchsize=1024, device, backend
 )
 
 group_key = "grp" #"grp" # nothing
+# group_key = nothing #"grp" # nothing
 @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, weight_name, group_key, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, group_key, print_every_n=5);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]

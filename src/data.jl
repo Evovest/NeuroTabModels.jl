@@ -47,14 +47,6 @@ function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B
     return (x, y, w, offset)
 end
 
-# for GroupedDataFrame
-function getindex(data::ContainerTrain{A,B,C,D}, idx::Int) where {A<:Vector,B<:Vector,C<:Vector,D<:Nothing}
-    x = data.x[idx]
-    y = data.y[idx]
-    w = data.w[idx]
-    return (x, y, w)
-end
-
 function get_df_loader_train(
     df::AbstractDataFrame;
     feature_names,
@@ -96,6 +88,14 @@ function get_df_loader_train(
     return dtrain
 end
 
+# for GroupedDataFrame
+function getindex(data::ContainerTrain{A,B,C,D}, idx::Integer) where {A<:Vector,B<:Vector,C<:Vector,D<:Nothing}
+    x = data.x[idx]
+    y = data.y[idx]
+    w = data.w[idx]
+    return (x, y, w)
+end
+
 function get_df_loader_train(
     dfg::GroupedDataFrame;
     feature_names,
@@ -109,22 +109,22 @@ function get_df_loader_train(
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
-    # bs=1024
+    # bs=2048 # FIXME: stress test for reactant memory issue
     @info "group train bs: $bs"
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
-    y = [zeros(Float32, bs) for _ in 1:n]
-    w = [zeros(Float32, bs) for _ in 1:n]
+    y = [zeros(Float32, 1, 1, bs) for _ in 1:n]
+    w = [zeros(Float32, 1, 1, bs) for _ in 1:n]
 
     for i in 1:n
         df = dfg[i]
-        x[i][:, 1:nrow(df)] .= Matrix(df[!, feature_names])'
+        x[i][:, 1:nrow(df)] .= Matrix(df[:, feature_names])'
         if isnothing(scalers)
-            y[i][1:nrow(df)] .= df[!, target_name]
+            y[i][1, 1, 1:nrow(df)] .= df[:, target_name]
         else
-            y[i][1:nrow(df)] .= (df[!, target_name] .- scalers[:mu]) ./ scalers[:sigma]
+            y[i][1, 1, 1:nrow(df)] .= (df[:, target_name] .- scalers[:mu]) ./ scalers[:sigma]
         end
-        w[i][1:nrow(df)] .= 1.0
+        w[i][1, 1, 1:nrow(df)] .= 1.0
     end
     offset = nothing
 
@@ -171,6 +171,11 @@ function getindex(data::ContainerInferGrp, idx::Int)
     mask = data.mask[idx]
     return (x, mask)
 end
+# function getindex(data::ContainerInferGrp, idx::AbstractVector)
+#     x = data.x[first(idx)]
+#     mask = data.mask[first(idx)]
+#     return (x, mask)
+# end
 
 function get_df_loader_infer(dfg::GroupedDataFrame; feature_names, batchsize=0)
     n = length(dfg)

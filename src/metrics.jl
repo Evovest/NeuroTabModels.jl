@@ -3,8 +3,22 @@ module Metrics
 export metric_dict, is_maximise, get_metric
 
 import Statistics: mean, std
+import StatsBase: tiedrank, denserank
 import NNlib: logsigmoid, logsoftmax, softmax, relu, hardsigmoid
 using Lux
+
+"""
+    percent_rank(x::AbstractVector)
+
+Transform input into percentile (uniformly distributed between 0-1)
+"""
+function percent_rank(x::AbstractVector)
+    result = fill(NaN, length(x))
+    idx = findall(!isnan, x)
+    isempty(idx) && return result
+    @views result[idx] .= tiedrank(view(x, idx)) ./ (length(idx) + 1)
+    return result
+end
 
 """
     mse(m, x, y; agg=mean)
@@ -179,6 +193,29 @@ function correlation(m, x, y, w, offset; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
 
+
+"""
+    s_corr(m, x, y; agg=mean)
+    s_corr(m, x, y, w; agg=mean)
+    s_corr(m, x, y, w, offset; agg=mean)
+"""
+function s_corr(m, x, y, w; agg=mean)
+    p = vec(view(m(x), 1, :))
+    y = vec(y)
+    w = vec(w)
+    
+    p = p |> sortperm |> sortperm
+    y = y |> sortperm |> sortperm
+    
+    p_mean = w' * p / sum(w)
+    p_var = w' * (p .^ 2) / sum(w) - p_mean^2
+    y_mean = w' * y / sum(w)
+    y_var = w' * (y .^ 2) / sum(w) - y_mean^2
+    py_mean = w' * (p .* y) / sum(w)
+    return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
+end
+
+
 function get_metric(ts, data, eval_compiled)
     metric = 0.0f0
     ws = 0.0f0
@@ -204,7 +241,7 @@ const metric_dict = Dict(
     :mlogloss => mlogloss,
     :gaussian_mle => gaussian_mle,
     :tweedie => tweedie,
-    :correlation => correlation,
+    :correlation => s_corr,
 )
 
 is_maximise(::typeof(mse)) = false
@@ -213,6 +250,6 @@ is_maximise(::typeof(logloss)) = false
 is_maximise(::typeof(mlogloss)) = false
 is_maximise(::typeof(gaussian_mle)) = true
 is_maximise(::typeof(tweedie)) = false
-is_maximise(::typeof(correlation)) = true
+is_maximise(::typeof(s_corr)) = true
 
 end
