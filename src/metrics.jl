@@ -80,24 +80,29 @@ function tweedie(m, x, y; agg=mean)
     rho = eltype(x)(1.5)
     p = exp.(vec(m(x)))
     y = vec(y)
-    return agg(2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
-                     p .^ (2 - rho) / (2 - rho)))
+    return agg(
+        2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho))
+    )
 end
 function tweedie(m, x, y, w; agg=mean)
     rho = eltype(x)(1.5)
     p = exp.(vec(m(x)))
     y = vec(y)
     w = vec(w)
-    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
-                          p .^ (2 - rho) / (2 - rho)))
+    return agg(
+        w .* 2 .*
+        (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
+    )
 end
 function tweedie(m, x, y, w, offset; agg=mean)
     rho = eltype(x)(1.5)
     p = exp.(vec(m(x)) .+ vec(offset))
     y = vec(y)
     w = vec(w)
-    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
-                          p .^ (2 - rho) / (2 - rho)))
+    return agg(
+        w .* 2 .*
+        (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
+    )
 end
 
 """
@@ -132,11 +137,9 @@ end
     gaussian_mle(m, x, y, w; agg=mean)
     gaussian_mle(m, x, y, w, offset; agg=mean)
 """
-_gaussian_mle_elt(μ, σ, y) =
-    -σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))
+_gaussian_mle_elt(μ, σ, y) = -σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))
 
-_gaussian_mle_elt(μ, σ, y, w) =
-    (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))) * w
+_gaussian_mle_elt(μ, σ, y, w) = (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))) * w
 
 function gaussian_mle(m, x, y; agg=mean)
     p = m(x)
@@ -153,7 +156,6 @@ function gaussian_mle(m, x, y, w, offset; agg=mean)
     metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
     return metric
 end
-
 
 """
     correlation(m, x, y; agg=mean)
@@ -193,7 +195,6 @@ function correlation(m, x, y, w, offset; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
 
-
 """
     s_corr(m, x, y; agg=mean)
     s_corr(m, x, y, w; agg=mean)
@@ -203,10 +204,10 @@ function s_corr(m, x, y, w; agg=mean)
     p = vec(view(m(x), 1, :))
     y = vec(y)
     w = vec(w)
-    
-    p = p |> sortperm |> sortperm
-    y = y |> sortperm |> sortperm
-    
+
+    p = sortperm(sortperm(p)) ./ length(p)
+    y = sortperm(sortperm(y)) ./ length(y)
+
     p_mean = w' * p / sum(w)
     p_var = w' * (p .^ 2) / sum(w) - p_mean^2
     y_mean = w' * y / sum(w)
@@ -214,7 +215,6 @@ function s_corr(m, x, y, w; agg=mean)
     py_mean = w' * (p .* y) / sum(w)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
-
 
 function get_metric(ts, data, eval_compiled)
     metric = 0.0f0

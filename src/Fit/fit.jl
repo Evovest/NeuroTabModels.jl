@@ -103,7 +103,6 @@ function init(
     # ) # FIXME: wrapper only needed bacause of ModernNCA
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
-    @info "typeof(data)" typeof(data)
 
     return m,
     Dict(
