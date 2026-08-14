@@ -78,8 +78,8 @@ Per-feature piecewise-linear embedding against bin edges computed from the train
 # Arguments
 - `d_embedding::Int`: Output dimension per feature (default `16`).
 - `bins::Int`: Number of bins, or per-feature bin counts (default `32`).
-- `activation::Symbol`: Activation applied after the projection (default `:identity`).
-- `version::Symbol`: Encoding variant, `:A` or `:B` (default `:B`).
+- `activation`: Activation applied after the projection (default `:identity`).
+- `version`: Encoding variant, `:A` or `:B` (default `:B`).
 """
 struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
@@ -87,10 +87,10 @@ struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
     activation::Symbol
     version::Symbol
 end
-function PiecewiseLinearEmbeddings(; d_embedding::Int=16, nbins::Int=32, activation=:identity, version::Symbol=:B)
+function PiecewiseLinearEmbeddings(; d_embedding::Int=16, nbins::Int=32, activation=:identity, version=:B)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     version in (:A, :B) || throw(ArgumentError("version must be :A or :B, got :$version"))
-    PiecewiseLinearEmbeddings(d_embedding, nbins, Symbol(activation), version)
+    PiecewiseLinearEmbeddings(d_embedding, nbins, Symbol(activation), Symbol(version))
 end
 
 """
