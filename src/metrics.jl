@@ -3,8 +3,22 @@ module Metrics
 export metric_dict, is_maximise, get_metric
 
 import Statistics: mean, std
+import StatsBase: tiedrank, denserank
 import NNlib: logsigmoid, logsoftmax, softmax, relu, hardsigmoid
 using Lux
+
+"""
+    percent_rank(x::AbstractVector)
+
+Transform input into percentile (uniformly distributed between 0-1)
+"""
+function percent_rank(x::AbstractVector)
+    result = fill(NaN, length(x))
+    idx = findall(!isnan, x)
+    isempty(idx) && return result
+    @views result[idx] .= tiedrank(view(x, idx)) ./ (length(idx) + 1)
+    return result
+end
 
 """
     mse(m, x, y; agg=mean)
@@ -66,24 +80,29 @@ function tweedie(m, x, y; agg=mean)
     rho = eltype(x)(1.5)
     p = exp.(vec(m(x)))
     y = vec(y)
-    return agg(2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
-                     p .^ (2 - rho) / (2 - rho)))
+    return agg(
+        2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho))
+    )
 end
 function tweedie(m, x, y, w; agg=mean)
     rho = eltype(x)(1.5)
     p = exp.(vec(m(x)))
     y = vec(y)
     w = vec(w)
-    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
-                          p .^ (2 - rho) / (2 - rho)))
+    return agg(
+        w .* 2 .*
+        (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
+    )
 end
 function tweedie(m, x, y, w, offset; agg=mean)
     rho = eltype(x)(1.5)
     p = exp.(vec(m(x)) .+ vec(offset))
     y = vec(y)
     w = vec(w)
-    return agg(w .* 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+
-                          p .^ (2 - rho) / (2 - rho)))
+    return agg(
+        w .* 2 .*
+        (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
+    )
 end
 
 """
@@ -118,11 +137,9 @@ end
     gaussian_mle(m, x, y, w; agg=mean)
     gaussian_mle(m, x, y, w, offset; agg=mean)
 """
-_gaussian_mle_elt(μ, σ, y) =
-    -σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))
+_gaussian_mle_elt(μ, σ, y) = -σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))
 
-_gaussian_mle_elt(μ, σ, y, w) =
-    (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))) * w
+_gaussian_mle_elt(μ, σ, y, w) = (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))) * w
 
 function gaussian_mle(m, x, y; agg=mean)
     p = m(x)
@@ -140,14 +157,13 @@ function gaussian_mle(m, x, y, w, offset; agg=mean)
     return metric
 end
 
-
 """
     correlation(m, x, y; agg=mean)
     correlation(m, x, y, w; agg=mean)
     correlation(m, x, y, w, offset; agg=mean)
 """
 function correlation(m, x, y; agg=mean)
-    p = view(m(x), 1, :)
+    p = vec(m(x))
     y = vec(y)
     p_mean = mean(p)
     p_var = mean(p .^ 2) - p_mean^2
@@ -157,7 +173,7 @@ function correlation(m, x, y; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * length(y)
 end
 function correlation(m, x, y, w; agg=mean)
-    p = view(m(x), 1, :)
+    p = vec(m(x))
     y = vec(y)
     w = vec(w)
     p_mean = w' * p / sum(w)
@@ -168,9 +184,30 @@ function correlation(m, x, y, w; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
 function correlation(m, x, y, w, offset; agg=mean)
-    p = view(m(x), 1, :) .+ view(offset, 1, :)
+    p = vec(m(x)) .+ vec(offset)
     y = vec(y)
     w = vec(w)
+    p_mean = w' * p / sum(w)
+    p_var = w' * (p .^ 2) / sum(w) - p_mean^2
+    y_mean = w' * y / sum(w)
+    y_var = w' * (y .^ 2) / sum(w) - y_mean^2
+    py_mean = w' * (p .* y) / sum(w)
+    return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
+end
+
+"""
+    s_corr(m, x, y; agg=mean)
+    s_corr(m, x, y, w; agg=mean)
+    s_corr(m, x, y, w, offset; agg=mean)
+"""
+function s_corr(m, x, y, w; agg=mean)
+    p = vec(view(m(x), 1, :))
+    y = vec(y)
+    w = vec(w)
+
+    p = sortperm(sortperm(p)) ./ length(p)
+    y = sortperm(sortperm(y)) ./ length(y)
+
     p_mean = w' * p / sum(w)
     p_var = w' * (p .^ 2) / sum(w) - p_mean^2
     y_mean = w' * y / sum(w)
@@ -204,7 +241,7 @@ const metric_dict = Dict(
     :mlogloss => mlogloss,
     :gaussian_mle => gaussian_mle,
     :tweedie => tweedie,
-    :correlation => correlation,
+    :correlation => s_corr,
 )
 
 is_maximise(::typeof(mse)) = false
@@ -213,6 +250,6 @@ is_maximise(::typeof(logloss)) = false
 is_maximise(::typeof(mlogloss)) = false
 is_maximise(::typeof(gaussian_mle)) = true
 is_maximise(::typeof(tweedie)) = false
-is_maximise(::typeof(correlation)) = true
+is_maximise(::typeof(s_corr)) = true
 
 end

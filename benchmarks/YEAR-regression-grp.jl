@@ -3,6 +3,12 @@ using CSV
 using DataFrames
 using Statistics: mean, std
 using StatsBase: tiedrank
+
+using CUDA, cuDNN
+using Enzyme
+using Reactant
+using Zygote
+
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
 @service S3
@@ -12,21 +18,22 @@ aws_config = AWSConfig(; creds=aws_creds, region="ca-central-1")
 
 path = "share/data/year/year.csv"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
-df = DataFrame(CSV.File(raw, header=false))
+df = DataFrame(CSV.File(raw; header=false))
 df_tot = copy(df)
 
 path = "share/data/year/year-train-idx.txt"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
-train_idx = DataFrame(CSV.File(raw, header=false))[:, 1] .+ 1
+train_idx = DataFrame(CSV.File(raw; header=false))[:, 1] .+ 1
 
 path = "share/data/year/year-eval-idx.txt"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
-eval_idx = DataFrame(CSV.File(raw, header=false))[:, 1] .+ 1
+eval_idx = DataFrame(CSV.File(raw; header=false))[:, 1] .+ 1
 
 target_name = "y"
 rename!(df_tot, "Column1" => target_name)
 feature_names = setdiff(names(df_tot), ["y", "w"])
 df_tot.w .= 1.0
+weight_name = "w"
 
 df_tot.grp = rand(1:round(Int, nrow(df_tot) / 800), nrow(df_tot))
 
@@ -42,8 +49,7 @@ transform!(df_tot, feature_names .=> norm .=> feature_names)
 
 dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
-dtest = df_tot[(end-51630+1):end, :];
-
+dtest = df_tot[(end - 51630 + 1):end, :];
 
 sort!(dtrain, :grp)
 sort!(deval, :grp)
@@ -90,7 +96,9 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 # )
 
 device = :gpu
-loss = :mse # :mse :gaussian_mle :tweedie
+backend = :zygote
+loss = :correlation # :mse :gaussian_mle :tweedie
+metric = :correlation # :mse :gaussian_mle :tweedie
 
 # embedding_config = Dict(
 #     :embedding_type => :piecewise,
@@ -99,30 +107,18 @@ loss = :mse # :mse :gaussian_mle :tweedie
 #     :bins => 16,
 #     :frequencies => 16,
 # )
-embedding_config = Dict(:embedding_type => :batchnorm)
+embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => "identity")
+# embedding_config = Dict(:embedding_type => "batchnorm")
 
 learner = NeuroTabRegressor(
-    arch;
-    embedding_config,
-    loss,
-    nrounds=200,
-    early_stopping_rounds=2,
-    lr=1e-3,
-    batchsize=512,
-    device
+    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-3, batchsize=1024, device, backend
 )
 
 group_key = "grp" #"grp" # nothing
-
-@time m = NeuroTabModels.fit(
-    learner,
-    dtrain;
-    deval,
-    target_name,
-    feature_names,
-    group_key,
-    print_every_n=5,
-);
+# group_key = nothing #"grp" # nothing
+@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, weight_name, group_key, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, group_key, print_every_n=5);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]
