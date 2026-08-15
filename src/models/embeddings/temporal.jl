@@ -34,7 +34,7 @@ end
 """
     _TemporalEmbeddings(t_mean, t_std, order, trend, d_embedding; periods)
 
-Realize a `_TemporalEmbeddings` layer from spec.
+Realize a `_TemporalEmbeddings` layer from config.
 
 `order` and `periods` are aligned per-band: for each `(o_i, p_i)`, the Fourier
 basis contributes harmonics `k = 1:o_i` with angular frequency `ω = 2πk/p_i`.
