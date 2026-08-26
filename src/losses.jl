@@ -93,7 +93,7 @@ function correlation(m, ps, st, d)
     w = vec(d[3])
 
     # rank-normalize targets only (targets are constants, no gradient needed)
-    y = sortperm(sortperm(y)) ./ length(y)
+    # y = sortperm(sortperm(y)) ./ length(y)
 
     p_mean = w' * p / sum(w)
     p_var = w' * (p .^ 2) / sum(w) - p_mean^2

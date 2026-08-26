@@ -241,7 +241,7 @@ const metric_dict = Dict(
     :mlogloss => mlogloss,
     :gaussian_mle => gaussian_mle,
     :tweedie => tweedie,
-    :correlation => s_corr,
+    :correlation => correlation,
 )
 
 is_maximise(::typeof(mse)) = false
@@ -250,6 +250,6 @@ is_maximise(::typeof(logloss)) = false
 is_maximise(::typeof(mlogloss)) = false
 is_maximise(::typeof(gaussian_mle)) = true
 is_maximise(::typeof(tweedie)) = false
-is_maximise(::typeof(s_corr)) = true
+is_maximise(::typeof(correlation)) = true
 
 end
