@@ -37,15 +37,7 @@ target_name = "Survived"
 feature_names = setdiff(names(df), ["Survived"])
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    k=1,
-    depth=4,
-    ntrees=16,
-    stack_size=1,
-    hidden_size=1,
-    actA=:identity,
-    init_scale=1.0,
-    scaler=true,
+    tree_type=:binary, k=1, depth=4, ntrees=16, stack_size=1, hidden_size=1, actA=:identity, init_scale=1.0, scaler=true
 )
 
 # arch = NeuroTabModels.MOETreeConfig(;
@@ -75,14 +67,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 embedding_config = Dict(:embedding_type => :batchnorm)
 
 learner = NeuroTabRegressor(
-    arch;
-    embedding_config,
-    loss=:logloss,
-    nrounds=200,
-    early_stopping_rounds=2,
-    lr=1e-2,
-    device=:cpu,
-    backend=:reactant
+    arch; embedding_config, loss=:logloss, nrounds=200, early_stopping_rounds=2, lr=1e-2, device=:cpu, backend=:reactant
 )
 learner.embedding_config
 # main / lux-new
@@ -91,14 +76,7 @@ learner.embedding_config
 # NeuroTabModels.Models.Embeddings.EmbeddingLayer{NeuroTabModels.Models.Embeddings.BatchNormEmbeddings, Nothing}(NeuroTabModels.Models.Embeddings.BatchNormEmbeddings(), nothing)
 # NeuroTabModels.Models.Embeddings.EmbeddingLayer{NeuroTabModels.Models.Embeddings.PiecewiseLinearEmbeddings, Nothing}(NeuroTabModels.Models.Embeddings.PiecewiseLinearEmbeddings(8, 16, :identity, :B), nothing)
 
-@time m = NeuroTabModels.fit(
-    learner,
-    dtrain;
-    deval,
-    target_name,
-    feature_names,
-    print_every_n=10,
-);
+@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=10);
 
 p_train = m(dtrain)
 p_eval = m(deval)

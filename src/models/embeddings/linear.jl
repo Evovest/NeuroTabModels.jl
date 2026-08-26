@@ -23,10 +23,10 @@ end
 
 function LuxCore.initialparameters(rng::AbstractRNG, l::_LinearEmbeddings)
     limit = Float32(l.d_embedding)^(-0.5f0)
-    weight = reshape((rand(rng, Float32, l.d_embedding, l.nfeats) .* 2f0 .* limit) .- limit,
-        l.d_embedding, l.nfeats, 1)
-    bias = reshape((rand(rng, Float32, l.d_embedding, l.nfeats) .* 2f0 .* limit) .- limit,
-        l.d_embedding, l.nfeats, 1)
+    weight = reshape(
+        (rand(rng, Float32, l.d_embedding, l.nfeats) .* 2.0f0 .* limit) .- limit, l.d_embedding, l.nfeats, 1
+    )
+    bias = reshape((rand(rng, Float32, l.d_embedding, l.nfeats) .* 2.0f0 .* limit) .- limit, l.d_embedding, l.nfeats, 1)
     return (weight=weight, bias=bias)
 end
 

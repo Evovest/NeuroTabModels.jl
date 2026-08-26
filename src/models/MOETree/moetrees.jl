@@ -16,16 +16,18 @@ struct StackedMOETree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
     chain::L
 end
 
-function StackedMOETree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
+function StackedMOETree(
+    (ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...
+)
     if stack_size == 1
         return StackedMOETree(MOETree(ins => outs; k, tree_kwargs...))
     end
 
     layers = Any[MOETree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
-    for _ in 2:(stack_size-1)
-        push!(layers, SkipConnection(
-            Chain(MOETree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
-        ))
+    for _ in 2:(stack_size - 1)
+        push!(
+            layers, SkipConnection(Chain(MOETree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +)
+        )
     end
     push!(layers, MOETree(hidden_size => outs; k, tree_kwargs...))
 
@@ -140,28 +142,26 @@ function (config::MOETreeConfig)(; ins, outsize, kwargs...)
             ),
         )
     else
-        chain = Chain(
-            StackedMOETree(ins => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
-        )
+        chain = Chain(StackedMOETree(ins => outsize; config.hidden_size, config.stack_size, config.k, kwargs...))
     end
 
     return chain
 end
 
 function _identity_act(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 function _tanh_act(x)
     x = tanh_fast.(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 function _hardtanh_act(x)
     x = hardtanh.(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 function _tanhshrink_act(x)
     x = tanhshrink.(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 
 """
@@ -171,10 +171,7 @@ Dictionary mapping feature activation symbols to their functions.
 Supported keys: `:identity`, `:tanh`, `:hardtanh`, `:tanhshrink`.
 """
 const act_dict = Dict(
-    :identity => _identity_act,
-    :tanh => _tanh_act,
-    :hardtanh => _hardtanh_act,
-    :tanhshrink => _tanhshrink_act,
+    :identity => _identity_act, :tanh => _tanh_act, :hardtanh => _hardtanh_act, :tanhshrink => _tanhshrink_act
 )
 
 end

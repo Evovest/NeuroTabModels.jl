@@ -34,7 +34,7 @@ EmbeddingLayer(Dict(
 ```
 
 Piecewise-linear and temporal embeddings need training data when the embedding chain is
-built. Use `needs_x_train` to check that requirement for a spec.
+built. Use `needs_x_train` to check that requirement for a config.
 
 ## API
 

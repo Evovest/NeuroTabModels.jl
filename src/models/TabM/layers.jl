@@ -37,10 +37,9 @@ struct LinearBatchEnsemble <: LuxCore.AbstractLuxLayer
     s_init::Symbol
 end
 
-function LinearBatchEnsemble(in_f::Int, out_f::Int;
-    k::Int,
-    scaling_init::Union{Symbol,Tuple{Symbol,Symbol}}=:ones,
-    bias::Bool=true)
+function LinearBatchEnsemble(
+    in_f::Int, out_f::Int; k::Int, scaling_init::Union{Symbol,Tuple{Symbol,Symbol}}=:ones, bias::Bool=true
+)
     r_init, s_init = scaling_init isa Tuple ? scaling_init : (scaling_init, scaling_init)
     return LinearBatchEnsemble(in_f, out_f, k, bias, r_init, s_init)
 end
@@ -82,8 +81,7 @@ struct LinearEnsemble <: LuxCore.AbstractLuxLayer
     use_bias::Bool
 end
 
-LinearEnsemble(in_f::Int, out_f::Int, k::Int; bias::Bool=true) =
-    LinearEnsemble(in_f, out_f, k, bias)
+LinearEnsemble(in_f::Int, out_f::Int, k::Int; bias::Bool=true) = LinearEnsemble(in_f, out_f, k, bias)
 
 function LuxCore.initialparameters(rng::AbstractRNG, m::LinearEnsemble)
     d = (; weight=_init_rsqrt_uniform(rng, (m.out_features, m.in_features, m.k), m.in_features))
@@ -115,9 +113,7 @@ struct ScaleEnsemble <: LuxCore.AbstractLuxLayer
     use_bias::Bool
 end
 
-function ScaleEnsemble(k::Int, d::Int;
-    init::Symbol=:random_signs,
-    bias::Bool=false)
+function ScaleEnsemble(k::Int, d::Int; init::Symbol=:random_signs, bias::Bool=false)
     return ScaleEnsemble(k, d, init, bias)
 end
 
@@ -141,7 +137,7 @@ end
 
 function _init_rsqrt_uniform(rng::AbstractRNG, dims, d::Int)
     s = Float32(1 / sqrt(d))
-    return s .* (2f0 .* rand(rng, Float32, dims...) .- 1f0)
+    return s .* (2.0f0 .* rand(rng, Float32, dims...) .- 1.0f0)
 end
 
 function _init_scaling(rng::AbstractRNG, dims, init::Symbol)

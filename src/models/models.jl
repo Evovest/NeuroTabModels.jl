@@ -23,10 +23,7 @@ abstract type Architecture end
 _broadcast_relu(x) = NNlib.relu.(x)
 
 const activation_dict = Dict{Symbol,Function}(
-    :relu => NNlib.relu,
-    :gelu => NNlib.gelu,
-    :sigmoid => NNlib.sigmoid_fast,
-    :tanh => NNlib.tanh_fast,
+    :relu => NNlib.relu, :gelu => NNlib.gelu, :sigmoid => NNlib.sigmoid_fast, :tanh => NNlib.tanh_fast
 )
 
 function get_activation(act::Symbol)
@@ -51,8 +48,9 @@ train_dataloader(::Architecture, ::Any, data, ::Any; kwargs...) = data
 
 Utility fucntion for assembling the Lux chain that `fit` will train.
 """
-build_chain(arch::Architecture, embed_chain; ins, outsize, kwargs...) =
+function build_chain(arch::Architecture, embed_chain; ins, outsize, kwargs...)
     Chain(embed_chain, arch(; ins, outsize, kwargs...))
+end
 
 """
     infer_dataloader(chain, info, data, dev, ps, st)

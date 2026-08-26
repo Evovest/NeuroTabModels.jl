@@ -22,14 +22,7 @@ dtrain.y = Y
 target_name = "y"
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    actA=:identity,
-    init_scale=1.0,
-    depth=4,
-    ntrees=32,
-    stack_size=1,
-    hidden_size=1,
-    scaler=false,
+    tree_type=:binary, actA=:identity, init_scale=1.0, depth=4, ntrees=32, stack_size=1, hidden_size=1, scaler=false
 )
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,
@@ -53,17 +46,11 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     :d_embedding => 8,
 #     :activation => "identity",
 # )
-embedding_config = Dict(:embedding_type => :batchnorm)
+# embedding_config = Dict(:embedding_type => :batchnorm)
+embedding_config = nothing
 
 learner = NeuroTabRegressor(
-    arch;
-    embedding_config,
-    loss=:mse,
-    nrounds=10,
-    lr=1e-2,
-    batchsize=2048,
-    device=:gpu,
-    backend=:enzyme
+    arch; embedding_config, loss=:mse, nrounds=10, lr=1e-2, batchsize=2048, device=:gpu, backend=:reactant
 )
 
 # Reactant GPU: 5.970480 seconds (2.33 M allocations: 5.242 GiB, 3.80% gc time, 0.00% compilation time)

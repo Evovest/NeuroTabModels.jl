@@ -2,249 +2,320 @@
 Evovest
 
 - [Setup](#setup)
-- [PiecewiseLinearEmbeddings](#piecewiselinearembeddings)
-  - [Piecewise Raw Blocks](#piecewise-raw-blocks)
-  - [Piecewise Projected Embedding](#piecewise-projected-embedding)
-- [LinearEmbeddings](#linearembeddings)
-- [PeriodicEmbeddings](#periodicembeddings)
-- [BatchNormEmbeddings](#batchnormembeddings)
-- [IdentityEmbedding](#identityembedding)
+- [Numerical embeddings](#numerical-embeddings)
+  - [LinearEmbeddings](#linearembeddings)
+  - [PeriodicEmbeddings](#periodicembeddings)
+  - [PiecewiseLinearEmbeddings](#piecewiselinearembeddings)
+  - [BatchNormEmbeddings](#batchnormembeddings)
+  - [IdentityEmbedding](#identityembedding)
+- [Temporal embeddings](#temporal-embeddings)
+  - [TemporalEmbeddings](#temporalembeddings)
+  - [EmbeddingLayer](#embeddinglayer)
+
+Embeddings map each raw column into a representation the backbone
+consumes. Numerical embeddings act column-wise. A temporal embedding
+reserves one time column; `EmbeddingLayer` concatenates that branch
+last. Piecewise-linear and temporal embeddings need training data at
+build time (`needs_x_train`).
 
 ## Setup
 
-``` julia
-using NeuroTabModels
-using NeuroTabModels.Models: PiecewiseLinearEmbeddings, LinearEmbeddings, PeriodicEmbeddings, BatchNormEmbeddings, IdentityEmbedding
-using Random
-using CairoMakie
-using Statistics
-using DataFrames
-```
+Every block below uses the same scalar $x_1$ over $[-2, 2]$, the same
+mark $x_1=0.5$, and the same init seed. Figures are split by stage:
 
-We track one scalar feature `x1` and inspect how each numerical
-embedding maps it over a range.
+1.  **raw** — $x_1 \mapsto x_1$
+2.  **basis** — intermediate $h(x_1)$, when the map has one
+3.  **embedding** — coordinates $e_k(x_1)$
 
-``` julia
-function make_projector(spec; x_train=nothing)
-  rng = MersenneTwister(seed)
-  layer = NeuroTabModels.Models.Embeddings.build_embedding_chain(spec, 1; x_train)
-  ps, st = NeuroTabModels.Models.Embeddings.LuxCore.setup(rng, layer)
-  st = NeuroTabModels.Models.Embeddings.LuxCore.trainmode(st)
+Expanding embeddings use `d_embedding=4` and `activation=:identity` so
+the geometry is visible; Linear and Periodic default to `:relu` in the
+constructor.
 
-  return xvals -> begin
-    x = reshape(Float32.(collect(xvals)), 1, :)
-    y, _ = layer(x, ps, st)
-    Array(y)
-  end
-end
+    e_titles (generic function with 1 method)
 
-xgrid = range(-2f0, 2f0; length=1000)
-x1 = 0.35f0
-seed = 123
+![](embeddings-design_files/figure-commonmark/cell-4-output-1.png)
 
-function plot_embedding_dims(y, title_prefix; color=:steelblue)
-  fig = Figure(size=(1200, 280))
-  for k in 1:size(y, 1)
-    ax = Axis(fig[1, k], title="$(title_prefix) dim $k", xlabel="x1", ylabel="value")
-    lines!(ax, xgrid, vec(y[k, :]), linewidth=2, color=color)
-  end
-  return fig
-end
+## Numerical embeddings
 
-function plot_scalar_curve(xvals, yvals, title; color=:black)
-  fig = Figure(size=(450, 280))
-  ax = Axis(fig[1, 1], title=title, xlabel="x1", ylabel="value")
-  lines!(ax, xvals, yvals, color=color, linewidth=2)
-  return fig
-end
+Each numerical config is applied independently to every non-time column.
+Expanding types emit $d_{emb}=4$ coordinates; BatchNorm and Identity
+keep width 1.
 
-function plot_piecewise_blocks(xvals, h; color=:forestgreen)
-  fig = Figure(size=(1200, 280))
-  for b in 1:size(h, 1)
-    ax = Axis(fig[1, b], title="raw block h_$b", xlabel="x1", ylabel="value")
-    lines!(ax, xvals, vec(h[b, :]), linewidth=2, color=color)
-    ylims!(ax, -0.05, 1.05)
-  end
-  return fig
-end
-```
+### LinearEmbeddings
 
-    plot_piecewise_blocks (generic function with 1 method)
+The simplest expansion: each embedding coordinate is an independent
+affine map of the same scalar.
 
-All comparisons below use the same raw feature path (`x1` over `xgrid`)
-and the same initialization seed.
+$$e_k(x_1)=\phi(w_k x_1+b_k),\quad k=1,\ldots,d_{emb}$$
 
-## PiecewiseLinearEmbeddings
-
-For one feature `x1`, piecewise embedding is:
-
-*h*<sub>*b*</sub>(*x*<sub>1</sub>) = clamp(*w*<sub>*b*</sub>*x*<sub>1</sub> + *c*<sub>*b*</sub>, 0, 1),  *b* = 1, …, *B*
-
-*e*(*x*<sub>1</sub>) = *ϕ*(*W**h*(*x*<sub>1</sub>) + *r*(*x*<sub>1</sub>))
-
-Version `:B` adds the residual linear path *r*(*x*<sub>1</sub>).
-
-To make the intuition explicit, we visualize two stages separately:
-
-- raw piecewise blocks *h*<sub>*b*</sub>(*x*<sub>1</sub>) from bins
-- projected embedding *e*(*x*<sub>1</sub>) after the learnable linear
-  map
+One number $x_1$ becomes a vector whose coordinates are lines with
+different slopes $w_k$ and intercepts $b_k$. There is no intermediate
+basis. With $\phi=\mathrm{id}$ (as plotted), the grid is those lines;
+the default `:relu` would zero the negative half of each coordinate.
 
 ``` julia
-x_train = reshape(Float32[-2, -1, -0.5, 0, 0.5, 1, 2], :, 1)  # (n_samples, n_features)
-bins = NeuroTabModels.Models.Embeddings.compute_bins(x_train; bins=4)[1]
-bins
-```
-
-    5-element Vector{Float32}:
-     -2.0
-     -0.75
-      0.0
-      0.75
-      2.0
-
-### Piecewise Raw Blocks
-
-``` julia
-function piecewise_blocks(xvals, edges)
-  nb = length(edges) - 1
-  h = zeros(Float32, nb, length(xvals))
-  for b in 1:nb
-    left = edges[b]
-    right = edges[b + 1]
-    width = right - left
-    @assert width > 0 "Bin edges must be strictly increasing"
-    h[b, :] .= clamp.((Float32.(xvals) .- left) ./ width, 0f0, 1f0)
-  end
-  return h
-end
-
-h_piecewise = piecewise_blocks(xgrid, bins)
-
-# Use :A so projected piecewise behavior is visible directly.
-# At init, :B includes a residual linear path and the piecewise branch is zero-initialized.
-spec_piecewise = PiecewiseLinearEmbeddings(d_embedding=4, bins=4, activation=:identity, version=:A)
-proj_piecewise = make_projector(spec_piecewise; x_train=x_train)
-y_piecewise = proj_piecewise(xgrid)
-vec(proj_piecewise([x1])[:, 1])
+conf_linear = LinearEmbeddings(; d_embedding, activation=:identity)
+layer_linear, ps_linear, st_linear = setup_embedding(conf_linear)
+y_linear = embed_grid(layer_linear, ps_linear, st_linear, xgrid)
+embed_point(layer_linear, ps_linear, st_linear, x1)
 ```
 
     4-element Vector{Float32}:
-     -0.018992329
-     -0.27601132
-     -0.16706881
-     -0.19363779
+     -0.7141968
+      0.40148556
+      0.3199348
+     -0.26569
+
+![](embeddings-design_files/figure-commonmark/cell-6-output-1.png)
+
+### PeriodicEmbeddings
+
+Periodic embedding first lifts $x_1$ into $2K$ learned sinusoids, then
+projects that basis to $d_{emb}$:
+
+$$z_k(x_1)=2\pi w_k x_1$$
+
+$$h(x_1)=[\cos z(x_1),\ \sin z(x_1)]\in\mathbb{R}^{2K}$$
+
+$$e(x_1)=\phi(W h(x_1)+b)$$
+
+The frequencies $w_k$ are learned (Gaussian init, here scaled up so the
+waves are visible on $[-2,2]$). Each $e_k$ is a linear mixture of those
+sinusoids. `lite=true` shares $W$ across features; the figures use the
+default per-feature map.
 
 ``` julia
-fig_blocks = plot_piecewise_blocks(xgrid, h_piecewise; color=:forestgreen)
-fig_blocks
+K = 2
+conf_periodic = PeriodicEmbeddings(;
+    d_embedding, frequencies=K, frequencies_init_scale=0.4f0, activation=:identity, lite=false
+)
+layer_periodic, ps_periodic, st_periodic = setup_embedding(conf_periodic)
+h_periodic = basis_grid(layer_periodic, ps_periodic, st_periodic, xgrid, :periodic)
+y_periodic = embed_grid(layer_periodic, ps_periodic, st_periodic, xgrid)
+embed_point(layer_periodic, ps_periodic, st_periodic, x1)
 ```
 
-<img src="embeddings_files/figure-commonmark/cell-6-output-1.png"
-width="1200" height="280" />
+    4-element Vector{Float32}:
+      0.68084216
+      0.6917712
+     -0.07447859
+      0.2205313
 
-### Piecewise Projected Embedding
+**Basis** — $\cos z_k$ then $\sin z_k$:
+
+![](embeddings-design_files/figure-commonmark/cell-8-output-1.png)
+
+**Projected embedding:**
+
+![](embeddings-design_files/figure-commonmark/cell-9-output-1.png)
+
+### PiecewiseLinearEmbeddings
+
+Bin edges come from training quantiles. Each bin $b=[l_b,r_b]$
+contributes a saturating ramp, and a learned map sends that encoding to
+$d_{emb}$:
+
+$$h_b(x_1)=clamp((x_1-l_b)/(r_b-l_b), 0, 1),\quad b=1,\ldots,B$$
+
+$$e(x_1)=\phi(W h(x_1)+b)$$
+
+$h_b$ is $0$ left of $l_b$, linear inside the bin, and $1$ right of
+$r_b$, so each $e_k$ is piecewise linear with kinks at the edges.
+Version `:A` (plotted) is that map. Version `:B` adds a residual linear
+path $r(x_1)$ and zero-initializes $W$, so at init `:B` looks like
+`LinearEmbeddings`. This config requires `x_train`.
 
 ``` julia
-fig_piecewise = plot_embedding_dims(y_piecewise, "Piecewise"; color=:seagreen)
-fig_piecewise
+conf_piecewise = PiecewiseLinearEmbeddings(; d_embedding, bins=4, activation=:identity, version=:A)
+bins = Embeddings.compute_bins(x_train; bins=4)[1]
+layer_piecewise, ps_piecewise, st_piecewise = setup_embedding(conf_piecewise; x_train)
+h_piecewise = basis_grid(layer_piecewise, ps_piecewise, st_piecewise, xgrid, :encoding)
+y_piecewise = embed_grid(layer_piecewise, ps_piecewise, st_piecewise, xgrid)
+(; bins, e_x1=embed_point(layer_piecewise, ps_piecewise, st_piecewise, x1))
 ```
 
-<img src="embeddings_files/figure-commonmark/cell-7-output-1.png"
-width="1200" height="280" />
+    (bins = Float32[-2.0, -1.0, 0.0, 1.0, 2.0], e_x1 = Float32[-0.6851754, 0.52889746, 0.77274066, -0.12734753])
 
-## LinearEmbeddings
+**Basis** — one ramp per bin:
 
-For one feature `x1`, linear embedding is:
-*e*(*x*<sub>1</sub>) = *ϕ*(*w**x*<sub>1</sub> + *b*),  *e*(*x*<sub>1</sub>) ∈ ℝ<sup>*d*<sub>*e**m**b*</sub></sup>
+![](embeddings-design_files/figure-commonmark/cell-11-output-1.png)
+
+**Projected embedding:**
+
+![](embeddings-design_files/figure-commonmark/cell-12-output-1.png)
+
+### BatchNormEmbeddings
+
+Width stays 1: the feature is standardized, then optionally rescaled.
+
+$$e(x_1)=\gamma\frac{x_1-\mu}{\sqrt{\sigma^2+\epsilon}}+\beta$$
+
+On this figure $\mu$ and $\sigma$ are the mean and variance of the
+displayed grid (as if that grid were one batch) and
+$(\gamma,\beta)=(1,0)$ at init, so $e$ is a centered, unit-scale copy of
+the raw line. During training those statistics come from each minibatch;
+at inference they are running averages.
 
 ``` julia
-spec_linear = LinearEmbeddings(d_embedding=4, activation=:identity)
-proj_linear = make_projector(spec_linear)
-y_linear = proj_linear(xgrid)
+conf_batchnorm = BatchNormEmbeddings()
+layer_batchnorm, ps_batchnorm, st_batchnorm = setup_embedding(conf_batchnorm)
+y_batchnorm = embed_grid(layer_batchnorm, ps_batchnorm, st_batchnorm, xgrid)
+embed_point(layer_batchnorm, ps_batchnorm, st_batchnorm, x1)
 ```
 
-    4×1000 Matrix{Float32}:
-      0.268967   0.268421   0.267876  …  -0.275073  -0.275619  -0.276165
-     -0.329523  -0.329672  -0.32982      -0.47716   -0.477308  -0.477456
-      0.803674   0.80258    0.801485     -0.287593  -0.288688  -0.289783
-     -0.388851  -0.388336  -0.387822      0.124117   0.124632   0.125146
+    1-element Vector{Float32}:
+     0.0
+
+![](embeddings-design_files/figure-commonmark/cell-14-output-1.png)
+
+### IdentityEmbedding
+
+The default numerical embedding: the backbone sees the raw column.
+
+$$e(x_1)=x_1$$
+
+The curve matches the raw figure above; only the series color (embedding
+purple) changes.
 
 ``` julia
-fig_linear = plot_embedding_dims(y_linear, "Linear"; color=:dodgerblue)
-fig_linear
+conf_identity = IdentityEmbedding()
+layer_identity, ps_identity, st_identity = setup_embedding(conf_identity)
+y_identity = embed_grid(layer_identity, ps_identity, st_identity, xgrid)
+embed_point(layer_identity, ps_identity, st_identity, x1)
 ```
 
-<img src="embeddings_files/figure-commonmark/cell-9-output-1.png"
-width="1200" height="280" />
+    1-element Vector{Float32}:
+     0.5
 
-## PeriodicEmbeddings
+![](embeddings-design_files/figure-commonmark/cell-16-output-1.png)
 
-Periodic embedding first makes sinusoidal features, then projects:
+## Temporal embeddings
+
+Temporal embedding is a separate branch on one time column, not a
+column-wise numerical map. It is always attached through
+`EmbeddingLayer`, which routes that column to `temp` and concatenates
+the result after the numerical features.
+
+### TemporalEmbeddings
+
+Fixed harmonics (not learned frequencies) of periods $T_i$ are
+projected, then an optional standardized trend is appended:
+
+$$\omega_{i,k}=2\pi k/T_i,\quad k=1,\ldots,o_i$$
+
+$$h(t)=[\sin(\omega t),\ \cos(\omega t)]$$
+
+$$e(t)=[\phi(W h(t)+b),\ (t-\mu)/\sigma]$$
+
+Defaults assume a POSIX-seconds column (`year`, `month`, `week`, `day`).
+The figure uses short periods so the same $[-2,2]$ path shows several
+cycles. Build it through `EmbeddingLayer` with `x_train` (for
+$\mu,\sigma$). Output width is $d_{emb}+1$ when `trend=true`; the last
+coordinate is the trend.
 
 ``` julia
-spec_periodic = PeriodicEmbeddings(d_embedding=4, frequencies=4, frequencies_init_scale=0.05f0, activation=:identity, lite=false)
-proj_periodic = make_projector(spec_periodic)
-y_periodic = proj_periodic(xgrid)
+order = [2, 1]
+periods = Float32[2, 4]
+conf_temporal = EmbeddingLayer(; temp=TemporalEmbeddings(; index=1, order, periods, trend=true, d_embedding))
+layer_temporal, ps_temporal, st_temporal = setup_embedding(conf_temporal; x_train)
+h_temporal = temporal_basis(layer_temporal, ps_temporal, st_temporal, xgrid)
+y_temporal = embed_grid(layer_temporal, ps_temporal, st_temporal, xgrid)
+n_harm = sum(order)
+embed_point(layer_temporal, ps_temporal, st_temporal, x1)
 ```
 
-    4×1000 Matrix{Float32}:
-     -0.178505  -0.178202  -0.177899  …  -0.265849  -0.266134  -0.266418
-      0.148926   0.148392   0.147856     -0.419773  -0.419821  -0.419867
-      0.59965    0.599402   0.599153     -0.102548  -0.103113  -0.103676
-     -0.471047  -0.47147   -0.471893     -0.440463  -0.439723  -0.438981
+    5-element Vector{Float32}:
+     0.0
+     0.0
+     0.3734188
+     0.0
+     0.4313913
+
+**Basis** — $\sin$ then $\cos$ of each harmonic:
+
+![](embeddings-design_files/figure-commonmark/cell-18-output-1.png)
+
+**Projected embedding** — $e_k=\mathrm{ReLU}(W h+b)$, last panel is the
+trend:
+
+![](embeddings-design_files/figure-commonmark/cell-19-output-1.png)
+
+### EmbeddingLayer
+
+The rest of this report built a **numerical** config for a single
+column. A real table has several numeric columns and, sometimes, one
+time column. `EmbeddingLayer` is the wrapper that says how those two
+kinds of columns are treated.
+
+``` text
+input columns:   [  x1   x2   x3   t  ]
+                    └─────────┘    │
+                         num       temp  (temp.index = 4)
+                           │       │
+                           └─ vcat ┘  →  backbone
+```
+
+- `num` — applied to every column **except** the time column. Default:
+  `IdentityEmbedding()` (pass-through).
+- `temp` — applied to **one** column, whose position is `temp.index`
+  (1-based in the feature list). Default: `nothing` (no time branch).
+
+You pass this object as `embedding_config` when fitting; `fit` then
+builds the chain. The snippets below call `build_embedding_chain` only
+to show widths.
+
+**Numerical only** (equivalent to passing `LinearEmbeddings` directly,
+as earlier sections did):
 
 ``` julia
-fig_periodic = plot_embedding_dims(y_periodic, "Periodic"; color=:mediumpurple)
-fig_periodic
+EmbeddingLayer(; num=LinearEmbeddings(; d_embedding, activation=:identity))
 ```
 
-<img src="embeddings_files/figure-commonmark/cell-11-output-1.png"
-width="1200" height="280" />
+    EmbeddingLayer{LinearEmbeddings, Nothing}(LinearEmbeddings(4, :identity), nothing)
 
-## BatchNormEmbeddings
-
-BatchNorm embedding keeps width 1 per feature and normalizes:
-$$e(x_1)=\gamma\frac{x_1-\mu}{\sqrt{\sigma^2+\varepsilon}}+\beta$$
+**Temporal only** — numeric columns pass through; column `index` is the
+timestamp:
 
 ``` julia
-spec_batchnorm = BatchNormEmbeddings()
-proj_batchnorm = make_projector(spec_batchnorm)
-y_batchnorm = proj_batchnorm(xgrid)
+EmbeddingLayer(; temp=TemporalEmbeddings(; index=1, d_embedding))
 ```
 
-    ┌ Warning: `training` is set to `Val{true}()` but is not being used within an autodiff call (gradient, jacobian, etc...). This will be slow. If you are using a `Lux.jl` model, set it to inference (test) mode using `LuxCore.testmode`. Reliance on this behavior is discouraged, and is not guaranteed by Semantic Versioning, and might be removed without a deprecation cycle. It is recommended to fix this issue in your code.
-    └ @ LuxLib.Utils C:\Users\jerem\.julia\packages\LuxLib\zPBrt\src\utils.jl:346
+    EmbeddingLayer{IdentityEmbedding, TemporalEmbeddings}(IdentityEmbedding(), TemporalEmbeddings(1, [4, 1, 7, 0], Float32[3.15576f7, 2.6298f6, 604800.0, 86400.0], true, 4))
 
-    1×1000 Matrix{Float32}:
-     -1.73031  -1.72685  -1.72338  …  1.71992  1.72338  1.72685  1.73031
+**Both** — two columns, `x1` then `t`. `index=2` means “the second
+column is time”, not embedding width:
 
 ``` julia
-fig_batchnorm = plot_scalar_curve(xgrid, vec(y_batchnorm[1, :]), "BatchNorm output"; color=:darkorange)
-fig_batchnorm
+nfeats = 2          # columns in the table
+time_column = 2     # t is column 2
+conf_combo = EmbeddingLayer(;
+    num=LinearEmbeddings(; d_embedding, activation=:identity),
+    temp=TemporalEmbeddings(; index=time_column, order=[2], periods=Float32[4], trend=true, d_embedding),
+)
+x_train2 = hcat(collect(xgrid), collect(xgrid))  # (n_samples, nfeats): [x1 | t]
+layer_combo = Embeddings.build_embedding_chain(conf_combo, nfeats; x_train=x_train2)
+
+# widths: one numeric feature → d_embedding; time → d_embedding projection + 1 trend
+n_numeric = nfeats - 1
+width_num = n_numeric * d_embedding
+width_temp = d_embedding + 1
+batch = randn(Float32, nfeats, 4)  # (nfeats, batch) dummy input
+
+(;
+    width_num,
+    width_temp,
+    concatenated=width_num + width_temp,
+    measured=Embeddings.embedding_width(layer_combo, batch, Xoshiro(seed)),
+)
 ```
 
-<img src="embeddings_files/figure-commonmark/cell-13-output-1.png"
-width="450" height="280" />
+    (width_num = 4, width_temp = 5, concatenated = 9, measured = 9)
 
-## IdentityEmbedding
+The second argument of `build_embedding_chain` is `nfeats` (how many
+columns the matrix has), not `temp.index`. `x_train` is
+`(n_samples, nfeats)`.
 
-Identity embedding is unchanged input:
-*e*(*x*<sub>1</sub>) = *x*<sub>1</sub>
-
-``` julia
-spec_identity = IdentityEmbedding()
-proj_identity = make_projector(spec_identity)
-y_identity = proj_identity(xgrid)
-```
-
-    1×1000 Matrix{Float32}:
-     -2.0  -1.996  -1.99199  -1.98799  -1.98398  …  1.98799  1.99199  1.996  2.0
-
-``` julia
-fig_identity = plot_scalar_curve(xgrid, vec(y_identity[1, :]), "Identity output"; color=:royalblue)
-fig_identity
-```
-
-<img src="embeddings_files/figure-commonmark/cell-15-output-1.png"
-width="450" height="280" />
+For hyperparameter search, a `Dict` is accepted: `:embedding_type`
+selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`,
+`:identity`), and `:temporal => Dict(:index => 2, ...)` builds `temp`.
+Unknown keys are ignored.

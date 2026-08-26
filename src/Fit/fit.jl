@@ -212,6 +212,11 @@ function fit_iter!(m, cache)
     for d in cache[:data]
         _, loss, _, ts = _single_train_step!(m.info[:backend], ad_backend, lux_loss, d, ts)
     end
+    # Reactant device buffers are released by Julia finalizers. Since `ConcreteRArray`s
+    # are tiny host objects, Julia's GC is not triggered by device memory pressure and
+    # dead buffers accumulate in the fixed-size XLA pool until it is exhausted (OOM).
+    # GC to forces finalization and returns the buffers to the pool.
+    m.info[:backend] == :reactant && GC.gc(false)
     cache[:train_state] = ts
     m.info[:nrounds] += 1
     return nothing

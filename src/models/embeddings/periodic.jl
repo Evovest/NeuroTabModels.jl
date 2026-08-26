@@ -16,9 +16,9 @@ struct Periodic <: LuxCore.AbstractLuxLayer
 end
 
 function LuxCore.initialparameters(rng::AbstractRNG, l::Periodic)
-    bound = l.sigma * 3f0
+    bound = l.sigma * 3.0f0
     w = clamp.(l.sigma .* randn(rng, Float32, l.n_frequencies, l.nfeats), -bound, bound)
-    w = reshape(2f0 * Float32(π) .* w, l.n_frequencies, l.nfeats, 1)
+    w = reshape(2.0f0 * Float32(π) .* w, l.n_frequencies, l.nfeats, 1)
     return (weight=w,)
 end
 
@@ -90,5 +90,6 @@ function (m::_PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
     return h_lin, (periodic=st_p, linear=st_l)
 end
 
-LuxCore.outputsize(m::_PeriodicEmbeddings, x, ::AbstractRNG) =
+function LuxCore.outputsize(m::_PeriodicEmbeddings, x, ::AbstractRNG)
     m.lite ? error("lite _PeriodicEmbeddings outputsize undefined") : (m.linear.out_features, size(x, 1))
+end

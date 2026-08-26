@@ -15,8 +15,9 @@ LuxCore.initialparameters(::AbstractRNG, ::TemporalPeriodic) = (;)
 # `omega` is fixed (no gradient), but it lives in `st` rather than as a struct
 # field so that `dev(st)` transfers it to the GPU alongside the learnable
 # state. Reshaped to a column so the broadcast against `(1, batch)` x is unambiguous.
-LuxCore.initialstates(::AbstractRNG, l::TemporalPeriodic) =
-    (omega = Matrix{Float32}(reshape(l.omega, length(l.omega), 1)),)
+function LuxCore.initialstates(::AbstractRNG, l::TemporalPeriodic)
+    (omega=Matrix{Float32}(reshape(l.omega, length(l.omega), 1)),)
+end
 
 function (l::TemporalPeriodic)(x::AbstractMatrix, ps, st)
     z = st.omega .* x
@@ -34,7 +35,7 @@ end
 """
     _TemporalEmbeddings(t_mean, t_std, order, trend, d_embedding; periods)
 
-Realize a `_TemporalEmbeddings` layer from spec.
+Realize a `_TemporalEmbeddings` layer from config.
 
 `order` and `periods` are aligned per-band: for each `(o_i, p_i)`, the Fourier
 basis contributes harmonics `k = 1:o_i` with angular frequency `ω = 2πk/p_i`.
@@ -46,19 +47,19 @@ which the `Dense` then projects to `d_embedding`.
 on whether the standardised raw time `(x - t_mean) / t_std` is appended.
 """
 function _TemporalEmbeddings(
-    t_mean::Real, t_std::Real,
-    order::AbstractVector{<:Integer}, trend::Bool, d_embedding::Int;
+    t_mean::Real,
+    t_std::Real,
+    order::AbstractVector{<:Integer},
+    trend::Bool,
+    d_embedding::Int;
     periods::AbstractVector{<:Real}=_DEFAULT_TEMPORAL_PERIODS,
 )
     @assert length(order) == length(periods) "length(order) must equal length(periods)"
     @assert any(>(0), order) "`order` must contain at least one positive entry"
-    omega = Float32[2f0 * Float32(π) * Float32(k) / Float32(p)
-                    for (o, p) in zip(order, periods) for k in 1:o]
+    omega = Float32[2.0f0 * Float32(π) * Float32(k) / Float32(p) for (o, p) in zip(order, periods) for k in 1:o]
     periodic = TemporalPeriodic(omega)
     dense = Dense(2 * length(omega) => d_embedding, NNlib.relu)
-    return _TemporalEmbeddings{typeof(periodic),typeof(dense),trend}(
-        periodic, dense, Float32(t_mean), Float32(t_std),
-    )
+    return _TemporalEmbeddings{typeof(periodic),typeof(dense),trend}(periodic, dense, Float32(t_mean), Float32(t_std))
 end
 
 function (m::_TemporalEmbeddings{P,D,true})(x::AbstractMatrix, ps, st) where {P,D}
@@ -73,5 +74,5 @@ function (m::_TemporalEmbeddings{P,D,false})(x::AbstractMatrix, ps, st) where {P
     return out, (periodic=st_p, dense=st_d)
 end
 
-LuxCore.outputsize(m::_TemporalEmbeddings{P,D,true},  x, ::AbstractRNG) where {P,D} = (m.dense.out_dims + 1,)
+LuxCore.outputsize(m::_TemporalEmbeddings{P,D,true}, x, ::AbstractRNG) where {P,D} = (m.dense.out_dims + 1,)
 LuxCore.outputsize(m::_TemporalEmbeddings{P,D,false}, x, ::AbstractRNG) where {P,D} = (m.dense.out_dims,)

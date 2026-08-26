@@ -29,11 +29,7 @@ end
 
 function ResNetConfig(; kwargs...)
     args = Dict{Symbol,Any}(
-        :stack_size => 1,
-        :hidden_size => 64,
-        :act => :relu,
-        :dropout => 0.0,
-        :MLE_tree_split => false,
+        :stack_size => 1, :hidden_size => 64, :act => :relu, :dropout => 0.0, :MLE_tree_split => false
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -49,34 +45,21 @@ function ResNetConfig(; kwargs...)
     end
 
     return ResNetConfig(
-        args[:stack_size],
-        args[:hidden_size],
-        Symbol(args[:act]),
-        args[:dropout],
-        args[:MLE_tree_split],
+        args[:stack_size], args[:hidden_size], Symbol(args[:act]), args[:dropout], args[:MLE_tree_split]
     )
 end
 
 function _res_block(hsize::Int, act, dropout::Float64)
-    layers = Any[
-        Dense(hsize => hsize),
-        BatchNorm(hsize, act),
-    ]
+    layers = Any[Dense(hsize => hsize), BatchNorm(hsize, act)]
     dropout > 0 && push!(layers, Dropout(dropout))
     push!(layers, Dense(hsize => hsize))
     push!(layers, BatchNorm(hsize))
 
-    return Chain(
-        SkipConnection(Chain(layers...), +),
-        BatchNorm(hsize, act),
-    )
+    return Chain(SkipConnection(Chain(layers...), +), BatchNorm(hsize, act))
 end
 
 function _resnet_trunk(ins::Int, hsize::Int, outsize::Int, act, stack_size::Int, dropout::Float64)
-    layers = Any[
-        Dense(ins => hsize),
-        BatchNorm(hsize, act),
-    ]
+    layers = Any[Dense(ins => hsize), BatchNorm(hsize, act)]
     for _ in 1:stack_size
         push!(layers, _res_block(hsize, act, dropout))
     end

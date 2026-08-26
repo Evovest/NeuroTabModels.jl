@@ -2,32 +2,34 @@ module Learners
 
 import MLJModelInterface as MMI
 import MLJModelInterface: fit, update, predict, schema
-import Random
+using Random: Random
 
 using ..Models
 using ..Models: AbstractEmbedding, IdentityEmbedding, EmbeddingLayer
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
 
-_to_embedding(::Nothing)            = IdentityEmbedding()
+_to_embedding(::Nothing) = IdentityEmbedding()
 _to_embedding(e::AbstractEmbedding) = e
-_to_embedding(d::AbstractDict)      = EmbeddingLayer(d)
-_to_embedding(x) = error("`embedding_config` must be `nothing`, an `AbstractDict`, or an `AbstractEmbedding`; got $(typeof(x)).")
+_to_embedding(d::AbstractDict) = EmbeddingLayer(d)
+function _to_embedding(x)
+    error("`embedding_config` must be `nothing`, an `AbstractDict`, or an `AbstractEmbedding`; got $(typeof(x)).")
+end
 
 mutable struct NeuroTabRegressor <: MMI.Deterministic
-  loss::Symbol
-  metric::Symbol
-  arch::Architecture
-  embedding_config::AbstractEmbedding
-  nrounds::Int
-  early_stopping_rounds::Int
-  lr::Float32
-  wd::Float32
-  batchsize::Int
-  seed::Int
-  scale_target::Bool
-  backend::Symbol
-  device::Symbol
-  gpuID::Int
+    loss::Symbol
+    metric::Symbol
+    arch::Architecture
+    embedding_config::AbstractEmbedding
+    nrounds::Int
+    early_stopping_rounds::Int
+    lr::Float32
+    wd::Float32
+    batchsize::Int
+    seed::Int
+    scale_target::Bool
+    backend::Symbol
+    device::Symbol
+    gpuID::Int
 end
 
 """
@@ -147,103 +149,103 @@ p = predict(mach, X)
 """
 function NeuroTabRegressor(arch::Architecture; kwargs...)
 
-  # defaults arguments
-  args = Dict{Symbol,Any}(
-    :loss => :mse,
-    :metric => nothing,
-    :nrounds => 10,
-    :early_stopping_rounds => typemax(Int),
-    :lr => 1.0f-2,
-    :wd => 0.0f0,
-    :batchsize => 2048,
-    :seed => 123,
-    :backend => :zygote,
-    :device => :gpu,
-    :gpuID => 0,
-    :embedding_config => nothing,
-    :scale_target => true
-  )
+    # defaults arguments
+    args = Dict{Symbol,Any}(
+        :loss => :mse,
+        :metric => nothing,
+        :nrounds => 10,
+        :early_stopping_rounds => typemax(Int),
+        :lr => 1.0f-2,
+        :wd => 0.0f0,
+        :batchsize => 2048,
+        :seed => 123,
+        :backend => :zygote,
+        :device => :gpu,
+        :gpuID => 0,
+        :embedding_config => nothing,
+        :scale_target => true,
+    )
 
-  args_ignored = setdiff(keys(kwargs), keys(args))
-  args_ignored_str = join(args_ignored, ", ")
-  length(args_ignored) > 0 &&
-    @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
+    args_ignored = setdiff(keys(kwargs), keys(args))
+    args_ignored_str = join(args_ignored, ", ")
+    length(args_ignored) > 0 &&
+        @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
 
-  args_default = setdiff(keys(args), keys(kwargs))
-  args_default_str = join(args_default, ", ")
-  length(args_default) > 0 &&
-    @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
+    args_default = setdiff(keys(args), keys(kwargs))
+    args_default_str = join(args_default, ", ")
+    length(args_default) > 0 &&
+        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
 
-  args_override = intersect(keys(args), keys(kwargs))
-  for arg in args_override
-    args[arg] = kwargs[arg]
-  end
+    args_override = intersect(keys(args), keys(kwargs))
+    for arg in args_override
+        args[arg] = kwargs[arg]
+    end
 
-  loss = Symbol(args[:loss])
-  loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation] && error("The provided kwarg `loss`: $loss is not supported.")
+    loss = Symbol(args[:loss])
+    loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation] &&
+        error("The provided kwarg `loss`: $loss is not supported.")
 
-  _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation]
-  if isnothing(args[:metric])
-    metric = loss
-  else
-    metric = Symbol(args[:metric])
-  end
-  if metric ∉ _metric_list
-    error("Invalid metric. Must be one of: $_metric_list")
-  end
+    _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation]
+    if isnothing(args[:metric])
+        metric = loss
+    else
+        metric = Symbol(args[:metric])
+    end
+    if metric ∉ _metric_list
+        error("Invalid metric. Must be one of: $_metric_list")
+    end
 
-  backend = Symbol(args[:backend])
-  device = Symbol(args[:device])
-  if device == :reactant
-    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
-  end
-  if backend == :enzyme && device == :gpu
-    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
-  end
+    backend = Symbol(args[:backend])
+    device = Symbol(args[:device])
+    if device == :reactant
+        error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+    end
+    if backend == :enzyme && device == :gpu
+        @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
+    end
 
-  embed = _to_embedding(args[:embedding_config])
+    embed = _to_embedding(args[:embedding_config])
 
-  config = NeuroTabRegressor(
-    loss,
-    metric,
-    arch,
-    embed,
-    args[:nrounds],
-    args[:early_stopping_rounds],
-    Float32(args[:lr]),
-    Float32(args[:wd]),
-    args[:batchsize],
-    args[:seed],
-    args[:scale_target],
-    backend,
-    device,
-    args[:gpuID]
-  )
+    config = NeuroTabRegressor(
+        loss,
+        metric,
+        arch,
+        embed,
+        args[:nrounds],
+        args[:early_stopping_rounds],
+        Float32(args[:lr]),
+        Float32(args[:wd]),
+        args[:batchsize],
+        args[:seed],
+        args[:scale_target],
+        backend,
+        device,
+        args[:gpuID],
+    )
 
-  return config
+    return config
 end
 
 function NeuroTabRegressor(; arch_name="NeuroTreeConfig", arch_config::AbstractDict=Dict(), kwargs...)
-  arch_type = eval(Meta.parse(arch_name))
-  arch = arch_type(; arch_config...)
-  return NeuroTabRegressor(arch; kwargs...)
+    arch_type = eval(Meta.parse(arch_name))
+    arch = arch_type(; arch_config...)
+    return NeuroTabRegressor(arch; kwargs...)
 end
 
-
 mutable struct NeuroTabClassifier <: MMI.Probabilistic
-  loss::Symbol
-  metric::Symbol
-  arch::Architecture
-  embedding_config::AbstractEmbedding
-  nrounds::Int
-  early_stopping_rounds::Int
-  lr::Float32
-  wd::Float32
-  batchsize::Int
-  seed::Int
-  backend::Symbol
-  device::Symbol
-  gpuID::Int
+    loss::Symbol
+    metric::Symbol
+    arch::Architecture
+    embedding_config::AbstractEmbedding
+    nrounds::Int
+    early_stopping_rounds::Int
+    lr::Float32
+    wd::Float32
+    batchsize::Int
+    seed::Int
+    backend::Symbol
+    device::Symbol
+    gpuID::Int
 end
 
 """
@@ -355,70 +357,70 @@ p = predict(mach, X)
 """
 function NeuroTabClassifier(arch::Architecture; kwargs...)
 
-  # defaults arguments
-  args = Dict{Symbol,Any}(
-    :metric => nothing,
-    :nrounds => 10,
-    :early_stopping_rounds => typemax(Int),
-    :lr => 1.0f-2,
-    :wd => 0.0f0,
-    :batchsize => 2048,
-    :seed => 123,
-    :backend => :zygote,
-    :device => :gpu,
-    :gpuID => 0,
-    :embedding_config => nothing,
-  )
+    # defaults arguments
+    args = Dict{Symbol,Any}(
+        :metric => nothing,
+        :nrounds => 10,
+        :early_stopping_rounds => typemax(Int),
+        :lr => 1.0f-2,
+        :wd => 0.0f0,
+        :batchsize => 2048,
+        :seed => 123,
+        :backend => :zygote,
+        :device => :gpu,
+        :gpuID => 0,
+        :embedding_config => nothing,
+    )
 
-  args_ignored = setdiff(keys(kwargs), keys(args))
-  args_ignored_str = join(args_ignored, ", ")
-  length(args_ignored) > 0 &&
-    @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
+    args_ignored = setdiff(keys(kwargs), keys(args))
+    args_ignored_str = join(args_ignored, ", ")
+    length(args_ignored) > 0 &&
+        @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
 
-  args_default = setdiff(keys(args), keys(kwargs))
-  args_default_str = join(args_default, ", ")
-  length(args_default) > 0 &&
-    @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
+    args_default = setdiff(keys(args), keys(kwargs))
+    args_default_str = join(args_default, ", ")
+    length(args_default) > 0 &&
+        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
 
-  args_override = intersect(keys(args), keys(kwargs))
-  for arg in args_override
-    args[arg] = kwargs[arg]
-  end
+    args_override = intersect(keys(args), keys(kwargs))
+    for arg in args_override
+        args[arg] = kwargs[arg]
+    end
 
-  backend = Symbol(args[:backend])
-  device = Symbol(args[:device])
-  if device == :reactant
-    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
-  end
-  if backend == :enzyme && device == :gpu
-    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
-  end
+    backend = Symbol(args[:backend])
+    device = Symbol(args[:device])
+    if device == :reactant
+        error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+    end
+    if backend == :enzyme && device == :gpu
+        @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
+    end
 
-  embed = _to_embedding(args[:embedding_config])
+    embed = _to_embedding(args[:embedding_config])
 
-  config = NeuroTabClassifier(
-    :mlogloss,
-    :mlogloss,
-    arch,
-    embed,
-    args[:nrounds],
-    args[:early_stopping_rounds],
-    Float32(args[:lr]),
-    Float32(args[:wd]),
-    args[:batchsize],
-    args[:seed],
-    backend,
-    device,
-    args[:gpuID]
-  )
+    config = NeuroTabClassifier(
+        :mlogloss,
+        :mlogloss,
+        arch,
+        embed,
+        args[:nrounds],
+        args[:early_stopping_rounds],
+        Float32(args[:lr]),
+        Float32(args[:wd]),
+        args[:batchsize],
+        args[:seed],
+        backend,
+        device,
+        args[:gpuID],
+    )
 
-  return config
+    return config
 end
 
 function NeuroTabClassifier(; arch_name="NeuroTreeConfig", arch_config::AbstractDict=Dict(), kwargs...)
-  arch_type = eval(Meta.parse(arch_name))
-  arch = arch_type(; arch_config...)
-  return NeuroTabClassifier(arch; kwargs...)
+    arch_type = eval(Meta.parse(arch_name))
+    arch = arch_type(; arch_config...)
+    return NeuroTabClassifier(arch; kwargs...)
 end
 
 const LearnerTypes = Union{NeuroTabRegressor,NeuroTabClassifier}
