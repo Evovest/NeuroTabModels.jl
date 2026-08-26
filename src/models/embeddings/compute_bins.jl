@@ -24,15 +24,15 @@ function compute_bins(X::AbstractMatrix; bins::Int=32)
     for j in 1:n_features
         copyto!(col_buf, view(X, :, j))
         sort!(col_buf)
-        quantile_probs = range(0f0, 1f0, length=bins + 1)
+        quantile_probs = range(0.0f0, 1.0f0; length=bins + 1)
         feat_edges = Float32[quantile(col_buf, p; sorted=true) for p in quantile_probs]
         unique!(feat_edges)
         if length(feat_edges) < 2
             # Constant features collapse all quantile edges to one value.
             # Give the encoder a tiny nonzero-width bin instead of failing.
             v = feat_edges[1]
-            delta = max(abs(v) * 1f-3, 1f-3)
-            feat_edges = Float32[v-delta, v+delta]
+            delta = max(abs(v) * 1.0f-3, 1.0f-3)
+            feat_edges = Float32[v - delta, v + delta]
         end
         edges[j] = feat_edges
     end

@@ -79,13 +79,25 @@ struct ModernNCALoader{X,Y,R<:AbstractRNG,D}
 end
 
 function ModernNCAConfig(;
-    d_embedding::Int=128, n_blocks::Int=2, d_block::Int=256,
-    dropout::Real=0.1, temperature::Real=1.0, sample_rate::Real=0.8,
-    max_candidates::Int=8192, eps::Real=1f-8,
+    d_embedding::Int=128,
+    n_blocks::Int=2,
+    d_block::Int=256,
+    dropout::Real=0.1,
+    temperature::Real=1.0,
+    sample_rate::Real=0.8,
+    max_candidates::Int=8192,
+    eps::Real=1.0f-8,
 )
-    return ModernNCAConfig(d_embedding, n_blocks, d_block,
-        Float32(dropout), Float32(temperature), Float32(sample_rate),
-        max_candidates, Float32(eps))
+    return ModernNCAConfig(
+        d_embedding,
+        n_blocks,
+        d_block,
+        Float32(dropout),
+        Float32(temperature),
+        Float32(sample_rate),
+        max_candidates,
+        Float32(eps),
+    )
 end
 
 """
@@ -121,7 +133,7 @@ function _pairwise_dist(q::AbstractMatrix, k::AbstractMatrix, ϵ::Float32)
     q2 = sum(abs2, q; dims=1)  # (1, batch)
     k2 = sum(abs2, k; dims=1)  # (1, num_keys)
     kq = k' * q                 # (num_keys, batch)
-    return sqrt.(max.(0f0, k2' .+ q2 .- 2f0 .* kq) .+ ϵ)
+    return sqrt.(max.(0.0f0, k2' .+ q2 .- 2.0f0 .* kq) .+ ϵ)
 end
 
 _diag_inf(i, j, d) = ifelse(i == j, typemax(typeof(d)), d)
@@ -132,20 +144,18 @@ _diag_inf(i, j, d) = ifelse(i == j, typemax(typeof(d)), d)
 Set the diagonal of distance matrix `d` to `typemax`, collapsing self-attention
 weights to zero during training.
 """
-_mask_diag(d::AbstractMatrix) =
-    _diag_inf.(reshape(1:size(d, 1), :, 1), reshape(1:size(d, 2), 1, :), d)
+_mask_diag(d::AbstractMatrix) = _diag_inf.(reshape(1:size(d, 1), :, 1), reshape(1:size(d, 2), 1, :), d)
 
 _to_output(::Type{<:Union{MSE,MAE}}, α, cy, _) = reshape(α' * cy, 1, :)
 
 function _to_output(::Type{<:LogLoss}, α, cy, _)
-    p = clamp.(reshape(α' * cy, 1, :), 1f-6, 1f0 - 1f-6)
-    return log.(p ./ (1f0 .- p))
+    p = clamp.(reshape(α' * cy, 1, :), 1.0f-6, 1.0f0 - 1.0f-6)
+    return log.(p ./ (1.0f0 .- p))
 end
 
 function _to_output(::Type{<:MLogLoss}, α, cy, outsize::Int)
-    oh = ((k, c) -> ifelse(k == c, 1f0, 0f0)).(
-        reshape(UInt32(1):UInt32(outsize), :, 1), reshape(cy, 1, :))
-    return log.(clamp.(oh * α, 1f-7, Inf32))
+    oh = ((k, c) -> ifelse(k == c, 1.0f0, 0.0f0)).(reshape(UInt32(1):UInt32(outsize), :, 1), reshape(cy, 1, :))
+    return log.(clamp.(oh * α, 1.0f-7, Inf32))
 end
 
 """
@@ -193,9 +203,7 @@ the candidate embeddings before NCA attention, then self-neighbors are masked.
 """
 function (m::ModernNCAModel)((x, cand_x, cand_y, y)::Tuple{Any,Any,Any,Any}, ps, st)
     zq, st_bb = m.backbone(x, ps, st)
-    zc, st_bb = size(cand_x, 2) == 0 ?
-                (similar(zq, size(zq, 1), 0), st_bb) :
-                m.backbone(cand_x, ps, st_bb)
+    zc, st_bb = size(cand_x, 2) == 0 ? (similar(zq, size(zq, 1), 0), st_bb) : m.backbone(cand_x, ps, st_bb)
     z_all = hcat(zq, zc)
     cy = vcat(vec(y), vec(cand_y))
     return _nca_logits(m, zq, z_all, cy; mask_self=true), st_bb
@@ -257,8 +265,7 @@ end
 Return `(full_x, full_y)`: the corpus feature matrix `(ins, N)` as `Float32`
 and the encoded target vector, ready for `ModernNCALoader`.
 """
-function build_corpus(df::AbstractDataFrame, feature_names, target_name,
-    loss_type::Type{<:LossType}, scalers)
+function build_corpus(df::AbstractDataFrame, feature_names, target_name, loss_type::Type{<:LossType}, scalers)
     full_x = permutedims(Matrix{Float32}(select(df, collect(feature_names))))
     full_y = _encode_targets(df, target_name, loss_type, scalers)
     return full_x, full_y
@@ -278,8 +285,7 @@ Encode targets for each loss type:
 - `loss_type`: target encoding dispatch.
 - `scalers`: optional target scaler `(mu, sigma)`.
 """
-_encode_targets(df, target_name, ::Type{<:MLogLoss}, _) =
-    UInt32.(CategoricalArrays.levelcode.(df[!, target_name]))
+_encode_targets(df, target_name, ::Type{<:MLogLoss}, _) = UInt32.(CategoricalArrays.levelcode.(df[!, target_name]))
 
 function _encode_targets(df, target_name, ::Type{<:LogLoss}, _)
     col = df[!, target_name]
@@ -324,16 +330,32 @@ before the cap; `batchsize == N` gives `n_cand = 0`.
 - `dev`: device
 - `rng`
 """
-function Models.train_dataloader(cfg::ModernNCAConfig, m::NeuroTabModel, ::Any, df;
-    feature_names, target_name, loss_type, scalers, batchsize, dev, rng, kwargs...)
+function Models.train_dataloader(
+    cfg::ModernNCAConfig,
+    m::NeuroTabModel,
+    ::Any,
+    df;
+    feature_names,
+    target_name,
+    loss_type,
+    scalers,
+    batchsize,
+    dev,
+    rng,
+    kwargs...,
+)
     cx, cy = build_corpus(df, feature_names, target_name, loss_type, scalers)
     m.info[:nca_ref] = (cx=cx, cy=cy)
     n = size(cx, 2)
     batchsize = min(batchsize, n)
     pool = n - batchsize
-    raw_n_cand = pool == 0 ? 0 :
-                 cfg.sample_rate >= 1f0 ? pool :
-                 max(Int(floor(cfg.sample_rate * pool)), 1)
+    raw_n_cand = if pool == 0
+        0
+    elseif cfg.sample_rate >= 1.0f0
+        pool
+    else
+        max(Int(floor(cfg.sample_rate * pool)), 1)
+    end
     n_cand = cfg.max_candidates > 0 ? min(raw_n_cand, cfg.max_candidates) : raw_n_cand
     return ModernNCALoader(dev(cx), dev(cy), batchsize, n_cand, rng, dev)
 end

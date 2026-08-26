@@ -32,8 +32,8 @@ function LuxCore.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
 
     for (i, bin_edges) in enumerate(l.bins)
         bin_width = diff(bin_edges)
-        w = 1f0 ./ bin_width
-        b = -bin_edges[1:(end-1)] ./ bin_width
+        w = 1.0f0 ./ bin_width
+        b = -bin_edges[1:(end - 1)] ./ bin_width
         nb = length(bin_edges) - 1
 
         # Place the last bin's weight/bias at the end row;
@@ -42,22 +42,19 @@ function LuxCore.initialstates(::AbstractRNG, l::PiecewiseLinearEncoding)
         weight[end, i] = w[end]
         bias[end, i] = b[end]
         if nb > 1
-            weight[1:(nb-1), i] = w[1:(end-1)]
-            bias[1:(nb-1), i] = b[1:(end-1)]
+            weight[1:(nb - 1), i] = w[1:(end - 1)]
+            bias[1:(nb - 1), i] = b[1:(end - 1)]
         end
     end
 
     # Pre-reshape to 3D to avoid per-call reshape in forward pass
-    return (
-        weight=reshape(weight, M, N, 1),
-        bias=reshape(bias, M, N, 1),
-    )
+    return (weight=reshape(weight, M, N, 1), bias=reshape(bias, M, N, 1))
 end
 
 function (l::PiecewiseLinearEncoding)(x::AbstractMatrix, ps, st)
     # For each feature j and bin b: h[b,j,:] = clamp(w[b,j]*x[j,:] + bias[b,j], 0, 1)
     x_r = reshape(x, 1, size(x, 1), size(x, 2))
-    h = clamp.(muladd.(st.weight, x_r, st.bias), 0f0, 1f0)
+    h = clamp.(muladd.(st.weight, x_r, st.bias), 0.0f0, 1.0f0)
     return h, st
 end
 
@@ -84,10 +81,7 @@ struct _PiecewiseLinearEmbeddings{L0,I,L,F} <: LuxCore.AbstractLuxContainerLayer
 end
 
 function _PiecewiseLinearEmbeddings(;
-    bins::Vector{<:AbstractVector},
-    d_embedding::Int,
-    activation=identity,
-    version::Symbol=:B,
+    bins::Vector{<:AbstractVector}, d_embedding::Int, activation=identity, version::Symbol=:B
 )
     @assert version in (:A, :B)
     nfeats = length(bins)

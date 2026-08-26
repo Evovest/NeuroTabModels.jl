@@ -41,14 +41,7 @@ feature_names = setdiff(names(df), ["y_cat", "Survived"])
 eltype(dtrain[:, "y_cat"])
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    actA=:identity,
-    init_scale=1.0,
-    k=8,
-    depth=4,
-    ntrees=16,
-    stack_size=1,
-    hidden_size=1,
-    scaler=true
+    actA=:identity, init_scale=1.0, k=8, depth=4, ntrees=16, stack_size=1, hidden_size=1, scaler=true
 )
 
 # arch = NeuroTabModels.TabMConfig(;
@@ -63,23 +56,9 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     d_embedding=32,
 # )
 
-learner = NeuroTabClassifier(
-    arch;
-    nrounds=200,
-    early_stopping_rounds=2,
-    lr=2e-2,
-    device=:cpu,
-    backend=:reactant
-)
+learner = NeuroTabClassifier(arch; nrounds=200, early_stopping_rounds=2, lr=2e-2, device=:cpu, backend=:reactant)
 
-m = NeuroTabModels.fit(
-    learner,
-    dtrain;
-    deval,
-    target_name,
-    feature_names,
-    print_every_n=10,
-)
+m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=10)
 
 p_train = m(dtrain)
 p_train_idx = [argmax(p) for p in eachrow(p_train)]

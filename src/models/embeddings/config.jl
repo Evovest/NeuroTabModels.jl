@@ -264,7 +264,10 @@ _select_rows(x::AbstractMatrix, rows) = x[rows, :]
 
 _build_num(::IdentityEmbedding; nfeats::Int, x_train=nothing) = NoOpLayer()
 function _build_num(config::LinearEmbeddings; nfeats::Int, x_train=nothing)
-    Chain(_LinearEmbeddings(; nfeats, d_embedding=config.d_embedding, activation=act_dict[config.activation]), FlattenLayer())
+    Chain(
+        _LinearEmbeddings(; nfeats, d_embedding=config.d_embedding, activation=act_dict[config.activation]),
+        FlattenLayer(),
+    )
 end
 function _build_num(config::PeriodicEmbeddings; nfeats::Int, x_train=nothing)
     Chain(
@@ -315,7 +318,9 @@ columns and `temp` to the time column, concatenated features-first then temporal
 # Returns
 A `Lux` layer emitting a flat `(width, batch)` output; recover the width with [`embedding_width`](@ref).
 """
-build_embedding_chain(config::AbstractNumericalEmbedding, nfeats::Int; x_train=nothing) = _build_num(config; nfeats, x_train)
+function build_embedding_chain(config::AbstractNumericalEmbedding, nfeats::Int; x_train=nothing)
+    _build_num(config; nfeats, x_train)
+end
 function build_embedding_chain(config::EmbeddingLayer, nfeats::Int; x_train=nothing)
     # numerical branch only
     isnothing(config.temp) && return _build_num(config.num; nfeats, x_train)
