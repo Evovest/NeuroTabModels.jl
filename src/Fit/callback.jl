@@ -33,7 +33,7 @@ function CallBack(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing,
+    eval_group_key=nothing,
 )
     dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     ts = cache[:train_state]
@@ -41,7 +41,7 @@ function CallBack(
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
 
-    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
+    dfg = isnothing(eval_group_key) ? df : groupby(df, eval_group_key; sort=true)
     deval =
         get_df_loader_train(
             dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false

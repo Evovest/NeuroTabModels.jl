@@ -122,6 +122,8 @@ end
         target_name,
         weight_name=nothing,
         offset_name=nothing,
+        group_key=nothing,
+        eval_group_key=group_key,
         deval=nothing,
         metric=nothing,
         print_every_n=9999,
@@ -142,6 +144,10 @@ Training function of NeuroTabModels' internal API.
 - `target_name`: Required. A `Symbol` or `String` indicating the name of the target variable.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
 - `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
+- `group_key=nothing`: Optional. Column used to group training data in the dataloader.
+- `eval_group_key=group_key`: Optional. Column used to group evaluation data when computing metrics.
+  Defaults to `group_key`. Set independently to compute groupby eval metrics while training on the
+  regular (ungrouped) dataloader.
 - `deval=nothing`: Optional. Evaluation data (`<:AbstractDataFrame`) for tracking metrics and early stopping.
 - `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`).
 - `print_every_n=9999`: Integer. Logs training progress to the console every `N` epochs.
@@ -158,15 +164,19 @@ function fit(
     weight_name=nothing,
     offset_name=nothing,
     group_key=nothing,
+    eval_group_key=group_key,
     deval=nothing,
     print_every_n=9999,
     verbosity=1,
 )
     m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
+    m.info[:eval_group_key] = isnothing(eval_group_key) ? nothing : Symbol(eval_group_key)
 
     logger = nothing
     if !isnothing(deval)
-        cb = CallBack(config, deval, cache, m; feature_names, target_name, weight_name, offset_name, group_key)
+        cb = CallBack(
+            config, deval, cache, m; feature_names, target_name, weight_name, offset_name, eval_group_key
+        )
         logger = init_logger(config)
         cb(logger, 0, cache[:train_state])
         (verbosity > 0) && @info "Init training" metric = logger[:metrics][end]

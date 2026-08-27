@@ -161,9 +161,13 @@ end
     correlation(m, x, y; agg=mean)
     correlation(m, x, y, w; agg=mean)
     correlation(m, x, y, w, offset; agg=mean)
+
+Uses the first output (`μ` when `gaussian_mle` returns `size(p, 1) == 2`).
 """
+_corr_pred(p) = vec(view(p, 1, :))
+
 function correlation(m, x, y; agg=mean)
-    p = vec(m(x))
+    p = _corr_pred(m(x))
     y = vec(y)
     p_mean = mean(p)
     p_var = mean(p .^ 2) - p_mean^2
@@ -173,7 +177,7 @@ function correlation(m, x, y; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * length(y)
 end
 function correlation(m, x, y, w; agg=mean)
-    p = vec(m(x))
+    p = _corr_pred(m(x))
     y = vec(y)
     w = vec(w)
     p_mean = w' * p / sum(w)
@@ -184,7 +188,7 @@ function correlation(m, x, y, w; agg=mean)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
 function correlation(m, x, y, w, offset; agg=mean)
-    p = vec(m(x)) .+ vec(offset)
+    p = _corr_pred(m(x) .+ offset)
     y = vec(y)
     w = vec(w)
     p_mean = w' * p / sum(w)

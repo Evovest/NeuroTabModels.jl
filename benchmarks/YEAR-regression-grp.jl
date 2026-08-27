@@ -4,10 +4,10 @@ using DataFrames
 using Statistics: mean, std
 using StatsBase: tiedrank
 
-using CUDA, cuDNN
 using Enzyme
 using Reactant
-using Zygote
+# using CUDA, cuDNN
+# using Zygote
 
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
@@ -97,8 +97,9 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 
 device = :gpu
 backend = :reactant
-loss = :mse # :mse :gaussian_mle :tweedie
-metric = :correlation # :mse :gaussian_mle :tweedie
+loss = :gaussian_mle # :mse :gaussian_mle :tweedie
+# metric = :mse # :mse :gaussian_mle :tweedie
+metric = :correlation 
 
 # embedding_config = Dict(
 #     :embedding_type => :piecewise,
@@ -111,12 +112,15 @@ embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activati
 # embedding_config = Dict(:embedding_type => "batchnorm")
 
 learner = NeuroTabRegressor(
-    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-4, batchsize=1024, device, backend
+    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-3, batchsize=1024, device, backend
 )
 
 group_key = "grp" #"grp" # nothing
 # group_key = nothing #"grp" # nothing
+eval_group_key = "grp"
+@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5);
 @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, print_every_n=5);
+@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, eval_group_key, print_every_n=5);
 # @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, weight_name, group_key, print_every_n=5);
 # @time m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, group_key, print_every_n=5);
 
