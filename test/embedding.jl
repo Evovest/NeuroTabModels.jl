@@ -1,5 +1,4 @@
 @testset "Embeddings - Regression" begin
-
     Random.seed!(123)
     n = 1000
     X = randn(Float32, n, 10)
@@ -31,9 +30,7 @@
             embedding_config[:frequencies] = 8
         end
 
-        learner = NeuroTabRegressor(arch;
-            loss=:mse, nrounds=20, lr=1e-2,
-            embedding_config)
+        learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, lr=1e-2, embedding_config)
 
         m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names)
 
@@ -41,13 +38,10 @@
         @test size(p, 1) == nrow(deval)
         @test !any(isnan, p)
         @test mean((p .- deval.y) .^ 2) < mse_baseline
-
     end
-
 end
 
 @testset "Embeddings - Classification" begin
-
     Random.seed!(123)
     X, y = @load_crabs
     df = DataFrame(X)
@@ -61,7 +55,6 @@ end
     deval = df[setdiff(1:nrow(df), train_indices), :]
 
     @testset "$embedding_type" for embedding_type in [:periodic, :linear, :piecewise]
-
         embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
         if embedding_type == :piecewise
             embedding_config[:bins] = 16
@@ -70,20 +63,15 @@ end
         end
 
         arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=128, dropout=0.0)
-        learner = NeuroTabClassifier(arch;
-            nrounds=500,
-            batchsize=64,
-            lr=1e-2,
-            early_stopping_rounds=20,
-            embedding_config)
+        learner = NeuroTabClassifier(
+            arch; nrounds=500, batchsize=64, lr=1e-2, early_stopping_rounds=20, embedding_config
+        )
 
-        m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5)
+        m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5);
 
         ptrain = [argmax(x) for x in eachrow(m(dtrain))]
         peval = [argmax(x) for x in eachrow(m(deval))]
         @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
         @test mean(peval .== levelcode.(deval.class)) > 0.95
-
     end
-
 end

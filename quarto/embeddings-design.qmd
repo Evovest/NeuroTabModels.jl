@@ -1,0 +1,366 @@
+---
+title: "Embeddings"
+author: "Evovest"
+engine: julia
+format:
+  gfm:
+    variant: -raw_html
+    toc: true
+    toc-depth: 3
+---
+
+Embeddings map each raw column into a representation the backbone consumes. Numerical embeddings act column-wise. A temporal embedding reserves one time column; `EmbeddingLayer` concatenates that branch last. Piecewise-linear and temporal embeddings need training data at build time (`needs_x_train`).
+
+## Setup
+
+```{julia}
+#| echo: false
+using NeuroTabModels
+using NeuroTabModels.Models.Embeddings
+using Random
+using CairoMakie
+using Statistics
+```
+
+Every block below uses the same scalar $x_1$ over $[-2, 2]$, the same mark $x_1=0.5$, and the same init seed. Figures are split by stage:
+
+1. **raw** — $x_1 \mapsto x_1$
+2. **basis** — intermediate $h(x_1)$, when the map has one
+3. **embedding** — coordinates $e_k(x_1)$
+
+Expanding embeddings use `d_embedding=4` and `activation=:identity` so the geometry is visible; Linear and Periodic default to `:relu` in the constructor.
+
+```{julia}
+#| echo: false
+
+xgrid = range(-2.0f0, 2.0f0; length=400)
+x1 = 0.5f0
+seed = 123
+d_embedding = 4
+x_train = reshape(collect(xgrid), :, 1)
+
+# Evovest graphics: https://evovest.com/en/styleguide/
+const EVO = (
+    raw="#5891d5",        # gfx-1
+    basis="#26a671",      # gfx-5
+    embedding="#7d568a",  # gfx-2
+)
+
+function setup_embedding(config; nfeats=1, x_train=nothing)
+    rng = Xoshiro(seed)
+    layer = Embeddings.build_embedding_chain(config, nfeats; x_train)
+    ps, st = Embeddings.LuxCore.setup(rng, layer)
+    return layer, ps, st
+end
+
+function eval_state(layer, st, xvals)
+    if haskey(st, :running_mean) && haskey(st, :running_var)
+        xv = vec(Float32.(collect(xvals)))
+        return (; running_mean=Float32[mean(xv)], running_var=Float32[var(xv; corrected=false)], training=Val{false}())
+    end
+    return Embeddings.LuxCore.testmode(st)
+end
+
+function embed_grid(layer, ps, st, xvals)
+    x = reshape(Float32.(collect(xvals)), 1, :)
+    y, _ = layer(x, ps, eval_state(layer, st, xvals))
+    return y
+end
+
+function embed_point(layer, ps, st, xval)
+    return vec(embed_grid(layer, ps, st, [xval])[:, 1])
+end
+
+function basis_grid(layer, ps, st, xvals, field::Symbol)
+    core, ps_c, st_c = layer[1], ps[1], st[1]
+    x = reshape(Float32.(collect(xvals)), 1, :)
+    h, _ = getfield(core, field)(x, getfield(ps_c, field), getfield(st_c, field))
+    return ndims(h) == 3 ? reshape(h, size(h, 1), size(h, 3)) : Array(h)
+end
+
+function temporal_basis(layer, ps, st, xvals)
+    temp = layer.layers.layer_2[2]
+    x = reshape(Float32.(collect(xvals)), 1, :)
+    h, _ = temp.periodic(x, ps.layer_2.layer_2.periodic, st.layer_2.layer_2.periodic)
+    return h
+end
+
+function mark!(ax, x_mark, y_mark)
+    vlines!(ax, [x_mark]; color=:black, linestyle=:dash, linewidth=1, alpha=0.35)
+    scatter!(ax, [x_mark], [y_mark]; color=:black, markersize=7)
+    return ax
+end
+
+function plot_raw(xvals; x_mark=x1)
+    x = collect(Float32.(xvals))
+    fig = Figure(; size=(520, 360))
+    ax = Axis(fig[1, 1]; title="raw x₁ over [-2, 2]", xlabel="x₁", ylabel="x₁")
+    lines!(ax, x, x; color=EVO.raw, linewidth=2)
+    mark!(ax, x_mark, Float32(x_mark))
+    xlims!(ax, first(x), last(x))
+    ylims!(ax, first(x), last(x))
+    return fig
+end
+
+function plot_channels(xvals, M; titles, color, x_mark=x1)
+    x = collect(Float32.(xvals))
+    imark = argmin(abs.(x .- Float32(x_mark)))
+    n = size(M, 1)
+    ncols = n == 1 ? 1 : (n <= 4 ? 2 : 3)
+    nrows = cld(n, ncols)
+    fig = Figure(; size=(n == 1 ? (520, 360) : (440 * ncols, 340 * nrows)))
+    for i in 1:n
+        r, c = fldmod1(i, ncols)
+        ax = Axis(fig[r, c]; title=titles[i], xlabel="x₁", ylabel="value")
+        lines!(ax, x, vec(M[i, :]); color=color, linewidth=2)
+        mark!(ax, x_mark, M[i, imark])
+        xlims!(ax, first(x), last(x))
+    end
+    rowgap!(fig.layout, 18)
+    colgap!(fig.layout, 18)
+    return fig
+end
+
+e_titles(n) = n == 1 ? ["e(x₁)"] : ["e_$k" for k in 1:n]
+```
+
+```{julia}
+#| echo: false
+plot_raw(xgrid)
+```
+
+## Numerical embeddings
+
+Each numerical config is applied independently to every non-time column. Expanding types emit $d_{emb}=4$ coordinates; BatchNorm and Identity keep width 1.
+
+### LinearEmbeddings
+
+The simplest expansion: each embedding coordinate is an independent affine map of the same scalar.
+
+$$e_k(x_1)=\phi(w_k x_1+b_k),\quad k=1,\ldots,d_{emb}$$
+
+One number $x_1$ becomes a vector whose coordinates are lines with different slopes $w_k$ and intercepts $b_k$. There is no intermediate basis. With $\phi=\mathrm{id}$ (as plotted), the grid is those lines; the default `:relu` would zero the negative half of each coordinate.
+
+```{julia}
+conf_linear = LinearEmbeddings(; d_embedding, activation=:identity)
+layer_linear, ps_linear, st_linear = setup_embedding(conf_linear)
+y_linear = embed_grid(layer_linear, ps_linear, st_linear, xgrid)
+embed_point(layer_linear, ps_linear, st_linear, x1)
+```
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, y_linear; titles=e_titles(size(y_linear, 1)), color=EVO.embedding)
+```
+
+### PeriodicEmbeddings
+
+Periodic embedding first lifts $x_1$ into $2K$ learned sinusoids, then projects that basis to $d_{emb}$:
+
+$$z_k(x_1)=2\pi w_k x_1$$
+
+$$h(x_1)=[\cos z(x_1),\ \sin z(x_1)]\in\mathbb{R}^{2K}$$
+
+$$e(x_1)=\phi(W h(x_1)+b)$$
+
+The frequencies $w_k$ are learned (Gaussian init, here scaled up so the waves are visible on $[-2,2]$). Each $e_k$ is a linear mixture of those sinusoids. `lite=true` shares $W$ across features; the figures use the default per-feature map.
+
+```{julia}
+K = 2
+conf_periodic = PeriodicEmbeddings(;
+    d_embedding, frequencies=K, frequencies_init_scale=0.4f0, activation=:identity, lite=false
+)
+layer_periodic, ps_periodic, st_periodic = setup_embedding(conf_periodic)
+h_periodic = basis_grid(layer_periodic, ps_periodic, st_periodic, xgrid, :periodic)
+y_periodic = embed_grid(layer_periodic, ps_periodic, st_periodic, xgrid)
+embed_point(layer_periodic, ps_periodic, st_periodic, x1)
+```
+
+**Basis** — $\cos z_k$ then $\sin z_k$:
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, h_periodic; titles=vcat(["cos $k" for k in 1:K], ["sin $k" for k in 1:K]), color=EVO.basis)
+```
+
+**Projected embedding:**
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, y_periodic; titles=e_titles(size(y_periodic, 1)), color=EVO.embedding)
+```
+
+### PiecewiseLinearEmbeddings
+
+Bin edges come from training quantiles. Each bin $b=[l_b,r_b]$ contributes a saturating ramp, and a learned map sends that encoding to $d_{emb}$:
+
+$$h_b(x_1)=clamp((x_1-l_b)/(r_b-l_b), 0, 1),\quad b=1,\ldots,B$$
+
+$$e(x_1)=\phi(W h(x_1)+b)$$
+
+$h_b$ is $0$ left of $l_b$, linear inside the bin, and $1$ right of $r_b$, so each $e_k$ is piecewise linear with kinks at the edges. Version `:A` (plotted) is that map. Version `:B` adds a residual linear path $r(x_1)$ and zero-initializes $W$, so at init `:B` looks like `LinearEmbeddings`. This config requires `x_train`.
+
+```{julia}
+conf_piecewise = PiecewiseLinearEmbeddings(; d_embedding, bins=4, activation=:identity, version=:A)
+bins = Embeddings.compute_bins(x_train; bins=4)[1]
+layer_piecewise, ps_piecewise, st_piecewise = setup_embedding(conf_piecewise; x_train)
+h_piecewise = basis_grid(layer_piecewise, ps_piecewise, st_piecewise, xgrid, :encoding)
+y_piecewise = embed_grid(layer_piecewise, ps_piecewise, st_piecewise, xgrid)
+(; bins, e_x1=embed_point(layer_piecewise, ps_piecewise, st_piecewise, x1))
+```
+
+**Basis** — one ramp per bin:
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, h_piecewise; titles=["h_$b" for b in 1:size(h_piecewise, 1)], color=EVO.basis)
+```
+
+**Projected embedding:**
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, y_piecewise; titles=e_titles(size(y_piecewise, 1)), color=EVO.embedding)
+```
+
+### BatchNormEmbeddings
+
+Width stays 1: the feature is standardized, then optionally rescaled.
+
+$$e(x_1)=\gamma\frac{x_1-\mu}{\sqrt{\sigma^2+\epsilon}}+\beta$$
+
+On this figure $\mu$ and $\sigma$ are the mean and variance of the displayed grid (as if that grid were one batch) and $(\gamma,\beta)=(1,0)$ at init, so $e$ is a centered, unit-scale copy of the raw line. During training those statistics come from each minibatch; at inference they are running averages.
+
+```{julia}
+conf_batchnorm = BatchNormEmbeddings()
+layer_batchnorm, ps_batchnorm, st_batchnorm = setup_embedding(conf_batchnorm)
+y_batchnorm = embed_grid(layer_batchnorm, ps_batchnorm, st_batchnorm, xgrid)
+embed_point(layer_batchnorm, ps_batchnorm, st_batchnorm, x1)
+```
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, y_batchnorm; titles=e_titles(1), color=EVO.embedding)
+```
+
+### IdentityEmbedding
+
+The default numerical embedding: the backbone sees the raw column.
+
+$$e(x_1)=x_1$$
+
+The curve matches the raw figure above; only the series color (embedding purple) changes.
+
+```{julia}
+conf_identity = IdentityEmbedding()
+layer_identity, ps_identity, st_identity = setup_embedding(conf_identity)
+y_identity = embed_grid(layer_identity, ps_identity, st_identity, xgrid)
+embed_point(layer_identity, ps_identity, st_identity, x1)
+```
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, y_identity; titles=e_titles(1), color=EVO.embedding)
+```
+
+## Temporal embeddings
+
+Temporal embedding is a separate branch on one time column, not a column-wise numerical map. It is always attached through `EmbeddingLayer`, which routes that column to `temp` and concatenates the result after the numerical features.
+
+### TemporalEmbeddings
+
+Fixed harmonics (not learned frequencies) of periods $T_i$ are projected, then an optional standardized trend is appended:
+
+$$\omega_{i,k}=2\pi k/T_i,\quad k=1,\ldots,o_i$$
+
+$$h(t)=[\sin(\omega t),\ \cos(\omega t)]$$
+
+$$e(t)=[\phi(W h(t)+b),\ (t-\mu)/\sigma]$$
+
+Defaults assume a POSIX-seconds column (`year`, `month`, `week`, `day`). The figure uses short periods so the same $[-2,2]$ path shows several cycles. Build it through `EmbeddingLayer` with `x_train` (for $\mu,\sigma$). Output width is $d_{emb}+1$ when `trend=true`; the last coordinate is the trend.
+
+```{julia}
+order = [2, 1]
+periods = Float32[2, 4]
+conf_temporal = EmbeddingLayer(; temp=TemporalEmbeddings(; index=1, order, periods, trend=true, d_embedding))
+layer_temporal, ps_temporal, st_temporal = setup_embedding(conf_temporal; x_train)
+h_temporal = temporal_basis(layer_temporal, ps_temporal, st_temporal, xgrid)
+y_temporal = embed_grid(layer_temporal, ps_temporal, st_temporal, xgrid)
+n_harm = sum(order)
+embed_point(layer_temporal, ps_temporal, st_temporal, x1)
+```
+
+**Basis** — $\sin$ then $\cos$ of each harmonic:
+
+```{julia}
+#| echo: false
+plot_channels(
+    xgrid, h_temporal; titles=vcat(["sin $k" for k in 1:n_harm], ["cos $k" for k in 1:n_harm]), color=EVO.basis
+)
+```
+
+**Projected embedding** — $e_k=\mathrm{ReLU}(W h+b)$, last panel is the trend:
+
+```{julia}
+#| echo: false
+plot_channels(xgrid, y_temporal; titles=vcat(["e_$k" for k in 1:d_embedding], ["trend"]), color=EVO.embedding)
+```
+
+### EmbeddingLayer
+
+The rest of this report built a **numerical** config for a single column. A real table has several numeric columns and, sometimes, one time column. `EmbeddingLayer` is the wrapper that says how those two kinds of columns are treated.
+
+```text
+input columns:   [  x1   x2   x3   t  ]
+                    └─────────┘    │
+                         num       temp  (temp.index = 4)
+                           │       │
+                           └─ vcat ┘  →  backbone
+```
+
+- `num` — applied to every column **except** the time column. Default: `IdentityEmbedding()` (pass-through).
+- `temp` — applied to **one** column, whose position is `temp.index` (1-based in the feature list). Default: `nothing` (no time branch).
+
+You pass this object as `embedding_config` when fitting; `fit` then builds the chain. The snippets below call `build_embedding_chain` only to show widths.
+
+**Numerical only** (equivalent to passing `LinearEmbeddings` directly, as earlier sections did):
+
+```{julia}
+EmbeddingLayer(; num=LinearEmbeddings(; d_embedding, activation=:identity))
+```
+
+**Temporal only** — numeric columns pass through; column `index` is the timestamp:
+
+```{julia}
+EmbeddingLayer(; temp=TemporalEmbeddings(; index=1, d_embedding))
+```
+
+**Both** — two columns, `x1` then `t`. `index=2` means "the second column is time", not embedding width:
+
+```{julia}
+nfeats = 2          # columns in the table
+time_column = 2     # t is column 2
+conf_combo = EmbeddingLayer(;
+    num=LinearEmbeddings(; d_embedding, activation=:identity),
+    temp=TemporalEmbeddings(; index=time_column, order=[2], periods=Float32[4], trend=true, d_embedding),
+)
+x_train2 = hcat(collect(xgrid), collect(xgrid))  # (n_samples, nfeats): [x1 | t]
+layer_combo = Embeddings.build_embedding_chain(conf_combo, nfeats; x_train=x_train2)
+
+# widths: one numeric feature → d_embedding; time → d_embedding projection + 1 trend
+n_numeric = nfeats - 1
+width_num = n_numeric * d_embedding
+width_temp = d_embedding + 1
+batch = randn(Float32, nfeats, 4)  # (nfeats, batch) dummy input
+
+(;
+    width_num,
+    width_temp,
+    concatenated=width_num + width_temp,
+    measured=Embeddings.embedding_width(layer_combo, batch, Xoshiro(seed)),
+)
+```
+
+The second argument of `build_embedding_chain` is `nfeats` (how many columns the matrix has), not `temp.index`. `x_train` is `(n_samples, nfeats)`.
+
+For hyperparameter search, a `Dict` is accepted: `:embedding_type` selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`, `:identity`), and `:temporal => Dict(:index => 2, ...)` builds `temp`. Unknown keys are ignored.

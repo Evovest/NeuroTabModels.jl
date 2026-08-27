@@ -29,11 +29,7 @@ end
 
 function ResNetConfig(; kwargs...)
     args = Dict{Symbol,Any}(
-        :stack_size => 1,
-        :hidden_size => 64,
-        :act => :relu,
-        :dropout => 0.0,
-        :MLE_tree_split => false,
+        :stack_size => 1, :hidden_size => 64, :act => :relu, :dropout => 0.0, :MLE_tree_split => false
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -49,34 +45,21 @@ function ResNetConfig(; kwargs...)
     end
 
     return ResNetConfig(
-        args[:stack_size],
-        args[:hidden_size],
-        Symbol(args[:act]),
-        args[:dropout],
-        args[:MLE_tree_split],
+        args[:stack_size], args[:hidden_size], Symbol(args[:act]), args[:dropout], args[:MLE_tree_split]
     )
 end
 
 function _res_block(hsize::Int, act, dropout::Float64)
-    layers = Any[
-        Dense(hsize => hsize),
-        BatchNorm(hsize, act),
-    ]
+    layers = Any[Dense(hsize => hsize), BatchNorm(hsize, act)]
     dropout > 0 && push!(layers, Dropout(dropout))
     push!(layers, Dense(hsize => hsize))
     push!(layers, BatchNorm(hsize))
 
-    return Chain(
-        SkipConnection(Chain(layers...), +),
-        BatchNorm(hsize, act),
-    )
+    return Chain(SkipConnection(Chain(layers...), +), BatchNorm(hsize, act))
 end
 
-function _resnet_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::Int, dropout::Float64)
-    layers = Any[
-        Dense(nfeats => hsize),
-        BatchNorm(hsize, act),
-    ]
+function _resnet_trunk(ins::Int, hsize::Int, outsize::Int, act, stack_size::Int, dropout::Float64)
+    layers = Any[Dense(ins => hsize), BatchNorm(hsize, act)]
     for _ in 1:stack_size
         push!(layers, _res_block(hsize, act, dropout))
     end
@@ -85,20 +68,20 @@ function _resnet_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::I
 end
 
 """
-    (config::ResNetConfig)(; nfeats, outsize)
+    (config::ResNetConfig)(; ins, outsize)
 
 Build a `Lux.Chain` from `config`.
 
 Each block applies two `Dense` layers with batch norm and a skip connection.
 
 # Arguments
-- `nfeats::Int`: Number of input features.
+- `ins::Int`: Number of input features.
 - `outsize::Int`: Number of output units.
 
 # Returns
 A `Lux.Chain` with residual blocks.
 """
-function (config::ResNetConfig)(; nfeats, outsize, kwargs...)
+function (config::ResNetConfig)(; ins, outsize, kwargs...)
     act = get_activation(config.act)
     hsize = config.hidden_size
 
@@ -108,12 +91,12 @@ function (config::ResNetConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                _resnet_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
-                _resnet_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
+                _resnet_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
+                _resnet_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
             ),
         )
     else
-        chain = _resnet_trunk(nfeats, hsize, outsize, act, config.stack_size, config.dropout)
+        chain = _resnet_trunk(ins, hsize, outsize, act, config.stack_size, config.dropout)
     end
 
     return chain

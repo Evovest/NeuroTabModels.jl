@@ -12,7 +12,16 @@ struct MOETree{F} <: AbstractLuxLayer
     init_scale::Float32
 end
 
-function MOETree((feats, outs)::Pair{<:Integer,<:Integer}; tree_type=:binary, actA=identity, scaler=true, depth, trees, k, init_scale=0.1)
+function MOETree(
+    (feats, outs)::Pair{<:Integer,<:Integer};
+    tree_type=:binary,
+    actA=identity,
+    scaler=true,
+    depth,
+    trees,
+    k,
+    init_scale=0.1,
+)
     @assert tree_type ∈ [:binary, :oblivious]
     nodes = tree_type == :binary ? 2^depth - 1 : depth
     leaves = 2^depth
@@ -41,7 +50,6 @@ function LuxCore.initialstates(rng::AbstractRNG, l::MOETree)
 end
 
 function (l::MOETree)(x, ps, st)
-
     enw1 = softplus(ps.ls) .* (ps.lw * x .+ ps.lb) # [F,B] => [NT,B]
     enw = reshape(enw1, size(st.ml, 2), :) # [NTK,B] => [N,TB]
     lwe1 = exp.(st.ml * enw .- st.ms * softplus.(enw)) # [N,TB] => [L,TB]
@@ -72,7 +80,7 @@ function get_logits_mask(::Val{:binary}, depth::Integer)
         k = 2^(depth - d)
         stride = 2 * k
         for b in 1:blocks
-            view(mask, (b-1)*stride+1:(b-1)*stride+k, 2^(d - 1) + b - 1) .= 1
+            view(mask, ((b - 1) * stride + 1):((b - 1) * stride + k), 2^(d - 1) + b - 1) .= 1
         end
     end
     return mask
@@ -85,7 +93,7 @@ function get_logits_mask(::Val{:oblivious}, depth::Integer)
         k = 2^(depth - d)
         stride = 2 * k
         for b in 1:blocks
-            view(mask, (b-1)*stride+1:(b-1)*stride+k, d) .= 1
+            view(mask, ((b - 1) * stride + 1):((b - 1) * stride + k), d) .= 1
         end
     end
     return mask
@@ -103,7 +111,7 @@ function get_softplus_mask(::Val{:binary}, depth::Integer)
         k = 2^(depth - d + 1)
         stride = k
         for b in 1:blocks
-            view(mask, (b-1)*stride+1:(b-1)*stride+k, 2^(d - 1) + b - 1) .= 1
+            view(mask, ((b - 1) * stride + 1):((b - 1) * stride + k), 2^(d - 1) + b - 1) .= 1
         end
     end
     return mask

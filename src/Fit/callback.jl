@@ -7,6 +7,7 @@ using ..Learners: LearnerTypes
 using ...Infer: reduce_pred, _get_device
 using ..Data: get_df_loader_train
 using ..Metrics
+using ...Models
 
 using Lux: Training, testmode
 
@@ -26,12 +27,13 @@ end
 function CallBack(
     config::LearnerTypes,
     df::AbstractDataFrame,
-    cache;
+    cache,
+    m;
     feature_names,
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing
+    eval_group_key=nothing,
 )
     dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     ts = cache[:train_state]
@@ -39,10 +41,14 @@ function CallBack(
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
 
-    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
-    deval = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
+    dfg = isnothing(eval_group_key) ? df : groupby(df, eval_group_key; sort=true)
+    deval =
+        get_df_loader_train(
+            dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false
+        ) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
+    deval = Models.eval_dataloader(m.chain, m.info, deval, dev, ps, st)
     d0 = first(deval)
     eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.backend == :reactant)
 
@@ -94,13 +100,12 @@ function update_logger!(logger; iter, metric)
     if iter == 0
         logger[:best_metric] = metric
     else
-        if (logger[:maximise] && metric > logger[:best_metric]) ||
-           (!logger[:maximise] && metric < logger[:best_metric])
+        if (logger[:maximise] && metric > logger[:best_metric]) || (!logger[:maximise] && metric < logger[:best_metric])
             logger[:best_metric] = metric
             logger[:best_iter] = iter
             logger[:iter_since_best] = 0
         else
-            logger[:iter_since_best] += logger[:metrics][:iter][end] - logger[:metrics][:iter][end-1]
+            logger[:iter_since_best] += logger[:metrics][:iter][end] - logger[:metrics][:iter][end - 1]
         end
     end
 end

@@ -9,7 +9,7 @@ using ..Losses
 using ..Metrics
 using ..Infer: reduce_pred, _get_device
 
-import Random: Xoshiro
+import Random: Xoshiro, default_rng
 import Statistics: mean, std
 import MLJModelInterface: fit
 import Optimisers: OptimiserChain, WeightDecay, NAdam, Adam
@@ -21,10 +21,12 @@ using CategoricalArrays
 
 get_ad_backend(backend::Symbol) = get_ad_backend(Val(backend))
 get_ad_backend(::Val{:reactant}) = get_ad_backend(Val(:enzyme))
-get_ad_backend(::Val{b}) where {b} = error(
-    "Unsupported or unloaded `backend=:$b`. Supported: [:enzyme, :zygote, :reactant]. " *
-    "`:enzyme` and `:reactant` require `using Enzyme`, `:zygote` requires `using Zygote`."
-)
+function get_ad_backend(::Val{b}) where {b}
+    error(
+        "Unsupported or unloaded `backend=:$b`. Supported: [:enzyme, :zygote, :reactant]. " *
+        "`:enzyme` and `:reactant` require `using Enzyme`, `:zygote` requires `using Zygote`.",
+    )
+end
 
 include("callback.jl")
 using .CallBacks
@@ -36,9 +38,8 @@ function init(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing
+    group_key=nothing,
 )
-
     feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
     weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
     offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
@@ -64,7 +65,7 @@ function init(
     end
 
     scalers = nothing
-    if hasproperty(config, :scale_target) && config.scale_target && L <: Union{MSE,MAE,GaussianMLE}
+    if hasproperty(config, :scale_target) && config.scale_target && L <: Union{MSE,MAE,GaussianMLE,Correlation}
         scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
     end
 
@@ -73,19 +74,11 @@ function init(
 
     # Build chain: optional embeddings + architecture backbone
     embed_config = config.embedding_config
-    if isnothing(embed_config)
-        chain = config.arch(; nfeats, outsize)
-    else
-        if embed_config.embedding_type == :piecewise
-            x_train = Matrix{Float32}(df[:, feature_names])
-        else
-            x_train = nothing
-        end
-        embed_chain = embed_config(; nfeats, x_train)
-        d_in = nfeats * embed_config.d_embedding
-        d_features = fill(embed_config.d_embedding, nfeats)
-        chain = Chain(embed_chain, config.arch(; nfeats=d_in, outsize, d_features, scaling_init_override=:normal))
-    end
+    x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
+    embed_chain = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
+    ins = Models.Embeddings.embedding_width(embed_chain, randn(Float32, nfeats, 2), default_rng())
+    core_chain = config.arch(; ins, outsize, loss_type=L)
+    chain = Chain(embed_chain, core_chain)
 
     info = Dict(
         :nrounds => 0,
@@ -99,16 +92,26 @@ function init(
         :scalers => scalers,
         :backend => config.backend,
         :device => config.device,
-        :gpuID => config.gpuID
+        :gpuID => config.gpuID,
     )
     m = NeuroTabModel(L, chain, info)
 
     rng = Xoshiro(config.seed)
     ps, st = Lux.setup(rng, m.chain) |> dev
+    # data = Models.train_dataloader(
+    #     config.arch, m, data, df; feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng
+    # ) # FIXME: wrapper only needed bacause of ModernNCA
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 
-    return m, Dict(:data => data, :lux_loss => lux_loss, :train_state => ts, :scalers => scalers, :ad_backend => get_ad_backend(config.backend))
+    return m,
+    Dict(
+        :data => data,
+        :lux_loss => lux_loss,
+        :train_state => ts,
+        :scalers => scalers,
+        :ad_backend => get_ad_backend(config.backend),
+    )
 end
 
 """
@@ -119,6 +122,8 @@ end
         target_name,
         weight_name=nothing,
         offset_name=nothing,
+        group_key=nothing,
+        eval_group_key=group_key,
         deval=nothing,
         metric=nothing,
         print_every_n=9999,
@@ -139,6 +144,10 @@ Training function of NeuroTabModels' internal API.
 - `target_name`: Required. A `Symbol` or `String` indicating the name of the target variable.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
 - `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
+- `group_key=nothing`: Optional. Column used to group training data in the dataloader.
+- `eval_group_key=group_key`: Optional. Column used to group evaluation data when computing metrics.
+  Defaults to `group_key`. Set independently to compute groupby eval metrics while training on the
+  regular (ungrouped) dataloader.
 - `deval=nothing`: Optional. Evaluation data (`<:AbstractDataFrame`) for tracking metrics and early stopping.
 - `metric=nothing`: Optional. The evaluation metric to track (e.g., `:mse`, `:logloss`).
 - `print_every_n=9999`: Integer. Logs training progress to the console every `N` epochs.
@@ -155,16 +164,19 @@ function fit(
     weight_name=nothing,
     offset_name=nothing,
     group_key=nothing,
+    eval_group_key=group_key,
     deval=nothing,
     print_every_n=9999,
-    verbosity=1
+    verbosity=1,
 )
-
     m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
+    m.info[:eval_group_key] = isnothing(eval_group_key) ? nothing : Symbol(eval_group_key)
 
     logger = nothing
     if !isnothing(deval)
-        cb = CallBack(config, deval, cache; feature_names, target_name, weight_name, offset_name, group_key)
+        cb = CallBack(
+            config, deval, cache, m; feature_names, target_name, weight_name, offset_name, eval_group_key
+        )
         logger = init_logger(config)
         cb(logger, 0, cache[:train_state])
         (verbosity > 0) && @info "Init training" metric = logger[:metrics][end]
@@ -175,7 +187,6 @@ function fit(
     while m.info[:nrounds] < config.nrounds
         fit_iter!(m, cache)
         iter = m.info[:nrounds]
-
         if !isnothing(logger)
             cb(logger, iter, cache[:train_state])
             if verbosity > 0 && iter % print_every_n == 0
@@ -186,7 +197,6 @@ function fit(
             (verbosity > 0 && iter % print_every_n == 0) && @info "iter $iter"
         end
     end
-
     _sync_params_to_model!(m, cache)
     m.info[:logger] = logger
     return m
@@ -199,8 +209,12 @@ function _sync_params_to_model!(m, cache)
     m.info[:st] = cdev(Lux.testmode(ts.states))
 end
 
-_single_train_step!(device::Symbol, ad_backend, lux_loss, d, ts) = _single_train_step!(Val(device), ad_backend, lux_loss, d, ts)
-_single_train_step!(::Val{D}, ad_backend, lux_loss, d, ts) where {D} = Training.single_train_step!(ad_backend, lux_loss, d, ts)
+function _single_train_step!(device::Symbol, ad_backend, lux_loss, d, ts)
+    _single_train_step!(Val(device), ad_backend, lux_loss, d, ts)
+end
+function _single_train_step!(::Val{D}, ad_backend, lux_loss, d, ts) where {D}
+    Training.single_train_step!(ad_backend, lux_loss, d, ts)
+end
 
 function fit_iter!(m, cache)
     ts, lux_loss = cache[:train_state], cache[:lux_loss]
@@ -208,6 +222,11 @@ function fit_iter!(m, cache)
     for d in cache[:data]
         _, loss, _, ts = _single_train_step!(m.info[:backend], ad_backend, lux_loss, d, ts)
     end
+    # Reactant device buffers are released by Julia finalizers. Since `ConcreteRArray`s
+    # are tiny host objects, Julia's GC is not triggered by device memory pressure and
+    # dead buffers accumulate in the fixed-size XLA pool until it is exhausted (OOM).
+    # GC to forces finalization and returns the buffers to the pool.
+    m.info[:backend] == :reactant && GC.gc(false)
     cache[:train_state] = ts
     m.info[:nrounds] += 1
     return nothing

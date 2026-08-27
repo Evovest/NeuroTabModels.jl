@@ -1,12 +1,13 @@
 """
     Periodic(nfeats, n_frequencies, sigma)
 
-Sinusoidal encoding `[cos(2π w x), sin(2π w x)]`. Output shape `(2 * n_frequencies, nfeats, batch)`.
+Maps each feature to `2 * n_frequencies` sinusoidal components
+`[cos(2π w x), sin(2π w x)]`. Output shape `(2 * n_frequencies, nfeats, batch)`.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
-- `n_frequencies::Int`: Frequency components per feature.
-- `sigma::Float32`: Std-dev for frequency weight init (clamped to ±3σ).
+- `n_frequencies::Int`: Number of frequency components per feature.
+- `sigma::Float32`: Std-dev for the frequency weight initialization (clamped to ±3σ).
 """
 struct Periodic <: LuxCore.AbstractLuxLayer
     nfeats::Int
@@ -15,9 +16,9 @@ struct Periodic <: LuxCore.AbstractLuxLayer
 end
 
 function LuxCore.initialparameters(rng::AbstractRNG, l::Periodic)
-    bound = l.sigma * 3f0
+    bound = l.sigma * 3.0f0
     w = clamp.(l.sigma .* randn(rng, Float32, l.n_frequencies, l.nfeats), -bound, bound)
-    w = reshape(2f0 * Float32(π) .* w, l.n_frequencies, l.nfeats, 1)
+    w = reshape(2.0f0 * Float32(π) .* w, l.n_frequencies, l.nfeats, 1)
     return (weight=w,)
 end
 
@@ -30,32 +31,34 @@ function (l::Periodic)(x::AbstractMatrix, ps, st)
 end
 
 """
-    PeriodicEmbeddings(nfeats, d_embedding=24; frequencies=48,
-                       frequencies_init_scale=0.01f0, activation=relu, lite=false)
+    _PeriodicEmbeddings(; nfeats, d_embedding=24, frequencies=48,
+                        frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
-`Periodic` followed by per-feature linear projection and activation.
+Periodic sinusoidal encoding followed by a learned linear projection: applies
+`Periodic`, then `NLinear` (or a shared `Dense` if `lite`), then `activation`.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
-- `d_embedding::Int`: Output dimension per feature (default `24`).
-- `frequencies::Int`: Sinusoidal components per feature (default `48`).
-- `frequencies_init_scale::Float32`: σ for frequency init (default `0.01f0`).
-- `activation`: Post-projection activation (default `relu`).
-- `lite::Bool`: Use shared `Dense` instead of per-feature `NLinear` (default `false`).
+- `d_embedding::Int`: Output embedding dimension per feature (default `24`).
+- `frequencies::Int`: Sinusoidal frequency components per feature (default `48`).
+- `frequencies_init_scale::Float32`: σ for frequency weight init (default `0.01f0`).
+- `activation`: Activation applied after projection (default `relu`).
+- `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear`
+  (default `false`). Requires a non-identity `activation`.
 """
-struct PeriodicEmbeddings{P,L,F} <: LuxCore.AbstractLuxContainerLayer{(:periodic, :linear)}
+struct _PeriodicEmbeddings{P,L,F} <: LuxCore.AbstractLuxContainerLayer{(:periodic, :linear)}
     periodic::P
     linear::L
     activation::F
     lite::Bool
 end
 
-function PeriodicEmbeddings(
+function _PeriodicEmbeddings(;
     nfeats::Int,
-    d_embedding::Int=24;
+    d_embedding::Int=24,
     frequencies::Int=48,
     frequencies_init_scale::Float32=0.01f0,
-    activation=relu,
+    activation=NNlib.relu,
     lite::Bool=false,
 )
     if lite && activation === identity
@@ -67,10 +70,10 @@ function PeriodicEmbeddings(
     else
         NLinear(nfeats, 2 * frequencies, d_embedding)
     end
-    return PeriodicEmbeddings(periodic, linear, activation, lite)
+    return _PeriodicEmbeddings(periodic, linear, activation, lite)
 end
 
-function (m::PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
+function (m::_PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
     h, st_p = m.periodic(x, ps.periodic, st.periodic)
 
     h_lin, st_l = if m.lite
@@ -82,5 +85,11 @@ function (m::PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
         m.linear(h, ps.linear, st.linear)
     end
 
-    return m.activation.(h_lin), (periodic=st_p, linear=st_l)
+    h_lin = m.activation.(h_lin)
+
+    return h_lin, (periodic=st_p, linear=st_l)
+end
+
+function LuxCore.outputsize(m::_PeriodicEmbeddings, x, ::AbstractRNG)
+    m.lite ? error("lite _PeriodicEmbeddings outputsize undefined") : (m.linear.out_features, size(x, 1))
 end

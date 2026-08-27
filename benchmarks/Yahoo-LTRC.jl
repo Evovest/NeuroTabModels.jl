@@ -24,14 +24,14 @@ end
 
 function ndcg(p, y, k=10)
     k = min(k, length(p))
-    p_order = partialsortperm(p, 1:k, rev=true)
-    y_order = partialsortperm(y, 1:k, rev=true)
+    p_order = partialsortperm(p, 1:k; rev=true)
+    y_order = partialsortperm(y, 1:k; rev=true)
     _y = y[p_order]
     gains = 2 .^ _y .- 1
     discounts = log2.((1:k) .+ 1)
     ndcg = sum(gains ./ discounts)
 
-    y_order = partialsortperm(y, 1:k, rev=true)
+    y_order = partialsortperm(y, 1:k; rev=true)
     _y = y[y_order]
     gains = 2 .^ _y .- 1
     discounts = log2.((1:k) .+ 1)
@@ -61,9 +61,9 @@ x_train_miss = x_train .== 0
 x_eval_miss = x_eval .== 0
 x_test_miss = x_test .== 0
 
-x_train[x_train.==0] .= 0.5
-x_eval[x_eval.==0] .= 0.5
-x_test[x_test.==0] .= 0.5
+x_train[x_train .== 0] .= 0.5
+x_eval[x_eval .== 0] .= 0.5
+x_test[x_test .== 0] .= 0.5
 
 x_train = hcat(x_train, x_train_miss)
 x_eval = hcat(x_eval, x_eval_miss)
@@ -93,7 +93,7 @@ target_name = "y"
 #####################################
 # training
 #####################################
-config = NeuroTreeRegressor(
+config = NeuroTreeRegressor(;
     loss=:logloss,
     nrounds=400,
     actA=:identity,
@@ -123,13 +123,12 @@ config = NeuroTreeRegressor(
 dinfer = NeuroTreeModels.get_df_loader_infer(dtest; feature_names, batchsize=config.batchsize, device=config.device);
 p_test = m(dinfer) .* 4;
 
-test_df = DataFrame(p=p_test, y=dtest.y_raw, q=dtest.q)
+test_df = DataFrame(; p=p_test, y=dtest.y_raw, q=dtest.q)
 test_df_agg = combine(groupby(test_df, "q"), ["p", "y"] => ndcg => "ndcg")
 ndcg_test = mean(test_df_agg.ndcg)
 mse_test = mean((p_test .- dtest.y_raw) .^ 2)
 @info "MSE - full - test data" mse_test
 @info "NDCG - full - test data" ndcg_test
-
 
 # Tuning fit - depth 5 boosting_size 4 stack 1
 # 6920.016444 seconds (505.02 M allocations: 3.038 TiB, 1.12% gc time, 0.00% compilation time)

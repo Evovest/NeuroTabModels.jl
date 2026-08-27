@@ -5,7 +5,7 @@ export NeuroTreeConfig
 using Lux
 using LuxCore
 using Random: AbstractRNG
-using Statistics: mean
+using Statistics: mean, std
 using NNlib: tanh_fast, hardtanh, tanhshrink
 
 import ..Models: Architecture
@@ -16,16 +16,18 @@ struct StackedNeuroTree{L} <: LuxCore.AbstractLuxWrapperLayer{:chain}
     chain::L
 end
 
-function StackedNeuroTree((ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...)
+function StackedNeuroTree(
+    (ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...
+)
     if stack_size == 1
         return StackedNeuroTree(NeuroTree(ins => outs; k, tree_kwargs...))
     end
 
     layers = Any[NeuroTree(ins => 1; k=hidden_size, tree_kwargs...), FlattenLayer()]
-    for _ in 2:(stack_size-1)
-        push!(layers, SkipConnection(
-            Chain(NeuroTree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +
-        ))
+    for _ in 2:(stack_size - 1)
+        push!(
+            layers, SkipConnection(Chain(NeuroTree(hidden_size => 1; k=hidden_size, tree_kwargs...), FlattenLayer()), +)
+        )
     end
     push!(layers, NeuroTree(hidden_size => outs; k, tree_kwargs...))
 
@@ -115,18 +117,18 @@ function _tree_kwargs(config::NeuroTreeConfig)
 end
 
 """
-    (config::NeuroTreeConfig)(; nfeats, outsize)
+    (config::NeuroTreeConfig)(; ins, outsize)
 
 Build a `Lux.Chain` from `config`.
 
 # Arguments
-- `nfeats::Int`: Number of input features.
+- `ins::Int`: Number of input features.
 - `outsize::Int`: Number of output units.
 
 # Returns
 A `Lux.Chain` of stacked neuro-tree layers.
 """
-function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
+function (config::NeuroTreeConfig)(; ins, outsize, kwargs...)
     kwargs = _tree_kwargs(config)
 
     if config.MLE_tree_split
@@ -135,33 +137,31 @@ function (config::NeuroTreeConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
-                StackedNeuroTree(nfeats => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedNeuroTree(ins => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
+                StackedNeuroTree(ins => head_outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
             ),
         )
     else
-        chain = Chain(
-            StackedNeuroTree(nfeats => outsize; config.hidden_size, config.stack_size, config.k, kwargs...),
-        )
+        chain = Chain(StackedNeuroTree(ins => outsize; config.hidden_size, config.stack_size, config.k, kwargs...))
     end
 
     return chain
 end
 
 function _identity_act(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 function _tanh_act(x)
     x = tanh_fast.(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 function _hardtanh_act(x)
     x = hardtanh.(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 function _tanhshrink_act(x)
     x = tanhshrink.(x)
-    return x ./ sum(abs.(x), dims=2)
+    return x ./ sum(abs.(x); dims=2)
 end
 
 """
@@ -171,10 +171,7 @@ Dictionary mapping feature activation symbols to their functions.
 Supported keys: `:identity`, `:tanh`, `:hardtanh`, `:tanhshrink`.
 """
 const act_dict = Dict(
-    :identity => _identity_act,
-    :tanh => _tanh_act,
-    :hardtanh => _hardtanh_act,
-    :tanhshrink => _tanhshrink_act,
+    :identity => _identity_act, :tanh => _tanh_act, :hardtanh => _hardtanh_act, :tanhshrink => _tanhshrink_act
 )
 
 end
