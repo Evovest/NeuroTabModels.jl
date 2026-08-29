@@ -8,6 +8,7 @@ using ...Infer: reduce_pred, _get_device
 using ..Data: get_df_loader_train
 using ..Metrics
 using ...Models
+using ...Losses: masked_input
 
 using Lux: Training, testmode
 
@@ -64,14 +65,16 @@ function _build_eval_step(chain, feval, d0, ps, st; reactant::Bool)
         return reactant ? _compile_eval_step(Val(:reactant), _step2, d0[1], d0[2], ps, st) : _step2
     elseif length(d0) == 3
         function _step3(x, y, w, ps, st)
+            xin = masked_input(chain, x, w)
             m = x -> reduce_pred(first(chain(x, ps, st)))
-            return feval(m, x, y, w; agg=sum), sum(w)
+            return feval(m, xin, y, w; agg=sum), sum(w)
         end
         return reactant ? _compile_eval_step(Val(:reactant), _step3, d0[1], d0[2], d0[3], ps, st) : _step3
     else
         function _step4(x, y, w, offset, ps, st)
+            xin = masked_input(chain, x, w)
             m = x -> reduce_pred(first(chain(x, ps, st)))
-            return feval(m, x, y, w, offset; agg=sum), sum(w)
+            return feval(m, xin, y, w, offset; agg=sum), sum(w)
         end
         return reactant ? _compile_eval_step(Val(:reactant), _step4, d0[1], d0[2], d0[3], d0[4], ps, st) : _step4
     end

@@ -1,14 +1,16 @@
 module Models
 
-export NeuroTabModel, Architecture
+export NeuroTabModel, Architecture, uses_batch_mask, MaskedModel
 export Embeddings, EmbeddingLayer
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
-export BatchNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
+export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
 export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractEmbedding
-export NeuroTreeConfig, MLPConfig, ResNetConfig, TabMConfig, MOETreeConfig, ModernNCAConfig
+export NeuroTreeConfig, MLPConfig, MLPAttnConfig, NeuroTreeAttnConfig
+export ResNetConfig, TabMConfig, MOETreeConfig, ModernNCAConfig
 
 using ..Losses
 using Lux: Chain
+using LuxCore: AbstractLuxContainerLayer
 using NNlib
 
 """
@@ -31,6 +33,46 @@ function get_activation(act::Symbol)
         error("Unknown activation: $act. Supported: $(sort(collect(keys(activation_dict))))")
     return activation_dict[act]
 end
+
+"""
+    uses_batch_mask(layer) -> Bool
+
+Whether `layer` consumes a `(x, mask)` tuple so padded group-buffer slots can be ignored
+in batch-level attention. Default is `false`; architectures that mix across observations
+override this.
+"""
+uses_batch_mask(::Any) = false
+uses_batch_mask(c::Chain) = any(uses_batch_mask, c.layers)
+
+"""
+    MaskedModel(embed, core)
+
+Assemble embeddings and a core backbone that may take an optional padding mask.
+
+Embeddings still see only `x`. When the input is `(x, w)`, this layer runs
+`embed(x)` then `core((z, w))`. Used instead of `Chain(embed, core)` when the
+core mixes across observations and needs to ignore padded group-buffer slots.
+"""
+struct MaskedModel{E,C} <: AbstractLuxContainerLayer{(:embed, :core)}
+    embed::E
+    core::C
+end
+
+uses_batch_mask(::MaskedModel) = true
+
+function (m::MaskedModel)(x::AbstractArray, ps, st)
+    z, st_e = m.embed(x, ps.embed, st.embed)
+    y, st_c = m.core(z, ps.core, st.core)
+    return y, (; embed=st_e, core=st_c)
+end
+function (m::MaskedModel)((x, w)::Tuple, ps, st)
+    z, st_e = m.embed(x, ps.embed, st.embed)
+    y, st_c = m.core((z, w), ps.core, st.core)
+    return y, (; embed=st_e, core=st_c)
+end
+
+import ..Losses: masked_input
+masked_input(::MaskedModel, x, w) = (x, w)
 
 """
     train_dataloader(arch, m, default, df; kwargs...)
@@ -105,6 +147,12 @@ using .TabM
 
 include("MLP/mlp.jl")
 using .MLP
+
+include("MLPAttn/mlp.jl")
+using .MLPAttn
+
+include("NeuroTreeAttn/neurotreeattn.jl")
+using .NeuroTreeAttn
 
 include("ResNet/resnet.jl")
 using .ResNet

@@ -1,6 +1,6 @@
 module Losses
 
-export get_loss_fn, get_loss_type
+export get_loss_fn, get_loss_type, masked_input
 export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie, Correlation
 
 import Statistics: mean, std
@@ -24,19 +24,32 @@ function _forward(model, ps, st, x)
     return _reshape_3d(pred), st_
 end
 
+"""
+    masked_input(model, x, w)
+
+Features to pass into `model` when a sample-weight / padding mask `w` is available.
+Default ignores `w` (same as calling `model(x)`). Architectures that mix across the
+batch override to return `(x, w)`.
+"""
+masked_input(::Any, x, w) = x
+
+_model_x(model, data::Tuple{Any,Any}) = data[1]
+_model_x(model, data::Tuple{Any,Any,Any}) = masked_input(model, data[1], data[3])
+_model_x(model, data::Tuple{Any,Any,Any,Any}) = masked_input(model, data[1], data[3])
+
 _reduce(loss) = mean(loss)
 _reduce(loss, w) = sum(mean(loss; dims=2) .* w) / sum(w)
 
 function _apply_loss(core, model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = _forward(model, ps, st, data[1])
+    pred, st_ = _forward(model, ps, st, _model_x(model, data))
     return _reduce(core(pred, _reshape_3d(data[2]))), st_, NamedTuple()
 end
 function _apply_loss(core, model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = _forward(model, ps, st, data[1])
+    pred, st_ = _forward(model, ps, st, _model_x(model, data))
     return _reduce(core(pred, _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 function _apply_loss(core, model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = _forward(model, ps, st, data[1])
+    pred, st_ = _forward(model, ps, st, _model_x(model, data))
     return _reduce(core(pred .+ _reshape_3d(data[4]), _reshape_3d(data[2])), _reshape_3d(data[3])), st_, NamedTuple()
 end
 
@@ -69,17 +82,17 @@ function _gaussian_mle_core(μ, σ, y)
 end
 
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any})
-    pred, st_ = _forward(model, ps, st, data[1])
+    pred, st_ = _forward(model, ps, st, _model_x(model, data))
     return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2]))), st_, NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any})
-    pred, st_ = _forward(model, ps, st, data[1])
+    pred, st_ = _forward(model, ps, st, _model_x(model, data))
     return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])),
     st_,
     NamedTuple()
 end
 function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any,Any})
-    pred, st_ = _forward(model, ps, st, data[1])
+    pred, st_ = _forward(model, ps, st, _model_x(model, data))
     pred = pred .+ _reshape_3d(data[4])
     return _reduce(_gaussian_mle_core(pred[1:1, :, :], pred[2:2, :, :], _reshape_3d(data[2])), _reshape_3d(data[3])),
     st_,
@@ -87,7 +100,7 @@ function gaussian_mle(model, ps, st, data::Tuple{Any,Any,Any,Any})
 end
 
 function correlation(m, ps, st, d)
-    p, _st = m(d[1], ps, st)
+    p, _st = m(_model_x(m, d), ps, st)
     p = vec(p[1, 1, :])
     y = vec(d[2])
     w = vec(d[3])

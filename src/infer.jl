@@ -73,10 +73,14 @@ function _infer_loop(::Val, chain, data, x0, dev, cdev, ps, st)
 end
 
 # Grouped variant: each batch is `(x, mask)`; `mask` selects real rows from padded groups.
-function _infer_grp_loop(::Val, chain, data, x0, dev, cdev, ps, st)
+# Architectures that mix across observations also receive `mask` as a key-padding mask.
+function _infer_grp_loop(::Val, chain, data, x0, mask0, dev, cdev, ps, st)
     preds = Vector{AbstractArray}()
+    use_mask = uses_batch_mask(chain)
     for (x, mask) in data
-        pred = _forward_reduce(chain, dev(x), ps, st)
+        xd = dev(x)
+        xin = use_mask ? (xd, dev(mask)) : xd
+        pred = _forward_reduce(chain, xin, ps, st)
         push!(preds, cdev(pred)[:, mask])
     end
     return preds
@@ -130,11 +134,7 @@ function infer_grp(
     scalers = m.info[:scalers]
 
     (x0, mask0) = first(data)
-    # @info typeof("mask0") mask0
-    # data = data |> dev
-    # (x0, mask0) = first(data)
-    # @info typeof("mask0-dev") mask0
-    preds = _infer_grp_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
+    preds = _infer_grp_loop(Val(backend), m.chain, data, x0, mask0, dev, cdev, ps, st)
 
     p_raw = _assemble(L, preds)
     proj || return p_raw

@@ -160,6 +160,11 @@ end
 
 @testset "Classification - $arch_name" for (arch_name, arch) in [
     ("MLP", NeuroTabModels.MLPConfig(; hidden_size=32, stack_size=1, dropout=0.5)),
+    ("MLPAttn", NeuroTabModels.MLPAttnConfig(; hidden_size=32, nheads=4, stack_size=1, dropout=0.1)),
+    (
+        "NeuroTreeAttn",
+        NeuroTabModels.NeuroTreeAttnConfig(; hidden_size=32, nheads=4, stack_size=1, depth=3, ntrees=8, dropout=0.1),
+    ),
     ("ResNet", NeuroTabModels.ResNetConfig(; hidden_size=32, stack_size=1, dropout=0.5)),
 ]
     Random.seed!(123)
@@ -191,6 +196,112 @@ end
     peval = [argmax(x) for x in eachrow(m(deval))]
     @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
     @test mean(peval .== levelcode.(deval.class)) > 0.95
+end
+
+@testset "Regression - MLPAttn grouped" begin
+    Random.seed!(123)
+    nobs = 400
+    X = randn(Float32, nobs, 8)
+    y = X[:, 1] .+ 0.5f0 .* X[:, 2] .+ 0.1f0 .* randn(Float32, nobs)
+    df = DataFrame(X, :auto)
+    df[!, :y] = y
+    df[!, :grp] = repeat(1:20, inner=20)
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name, "grp"])
+
+    train_ratio = 0.8
+    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    dtrain = df[train_indices, :]
+    deval = df[setdiff(1:nrow(df), train_indices), :]
+    sort!(dtrain, :grp)
+    sort!(deval, :grp)
+
+    arch = NeuroTabModels.MLPAttnConfig(; hidden_size=32, nheads=4, stack_size=1, n_attn_layers=1)
+    learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, early_stopping_rounds=5, lr=1e-2, batchsize=64)
+
+    m = NeuroTabModels.fit(
+        learner, dtrain; target_name, feature_names, deval, group_key="grp", print_every_n=5
+    )
+
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    @test !any(isnan, p)
+end
+
+@testset "MLPAttn key-padding mask" begin
+    Random.seed!(123)
+    rng = Random.Xoshiro(123)
+    nfeats, hsize, nheads = 6, 16, 4
+    arch = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, dropout=0.0)
+    chain = arch(; ins=nfeats, outsize=1)
+    ps, st = Lux.setup(rng, chain)
+    st = Lux.testmode(st)
+
+    x_real = randn(Float32, nfeats, 3)
+    y1, _ = chain(x_real, ps, st)
+
+    x_pad = hcat(x_real, zeros(Float32, nfeats, 2))
+    w = reshape(Float32[1, 1, 1, 0, 0], 1, 1, 5)
+    y2, _ = chain((x_pad, w), ps, st)
+
+    @test size(y1, 2) == 3
+    @test size(y2, 2) == 5
+    @test y2[:, 1:3] ≈ y1
+end
+
+@testset "Regression - NeuroTreeAttn grouped" begin
+    Random.seed!(123)
+    nobs = 400
+    X = randn(Float32, nobs, 8)
+    y = X[:, 1] .+ 0.5f0 .* X[:, 2] .+ 0.1f0 .* randn(Float32, nobs)
+    df = DataFrame(X, :auto)
+    df[!, :y] = y
+    df[!, :grp] = repeat(1:20, inner=20)
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name, "grp"])
+
+    train_ratio = 0.8
+    train_indices = randperm(nrow(df))[1:Int(train_ratio * nrow(df))]
+    dtrain = df[train_indices, :]
+    deval = df[setdiff(1:nrow(df), train_indices), :]
+    sort!(dtrain, :grp)
+    sort!(deval, :grp)
+
+    arch = NeuroTabModels.NeuroTreeAttnConfig(;
+        hidden_size=32, nheads=4, stack_size=1, n_attn_layers=1, depth=3, ntrees=8
+    )
+    learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, early_stopping_rounds=5, lr=1e-2, batchsize=64)
+
+    m = NeuroTabModels.fit(
+        learner, dtrain; target_name, feature_names, deval, group_key="grp", print_every_n=5
+    )
+
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    @test !any(isnan, p)
+end
+
+@testset "NeuroTreeAttn key-padding mask" begin
+    Random.seed!(123)
+    rng = Random.Xoshiro(123)
+    nfeats, hsize, nheads = 6, 16, 4
+    arch = NeuroTabModels.NeuroTreeAttnConfig(;
+        hidden_size=hsize, nheads, stack_size=1, dropout=0.0, depth=3, ntrees=4
+    )
+    chain = arch(; ins=nfeats, outsize=1)
+    ps, st = Lux.setup(rng, chain)
+    st = Lux.testmode(st)
+
+    x_real = randn(Float32, nfeats, 3)
+    y1, _ = chain(x_real, ps, st)
+
+    x_pad = hcat(x_real, zeros(Float32, nfeats, 2))
+    w = reshape(Float32[1, 1, 1, 0, 0], 1, 1, 5)
+    y2, _ = chain((x_pad, w), ps, st)
+
+    @test size(y1, 2) == 3
+    @test size(y2, 2) == 5
+    @test y2[:, 1:3] ≈ y1
 end
 
 @testset "Backend/device - reactant is a backend" begin

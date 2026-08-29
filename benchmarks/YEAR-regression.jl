@@ -83,19 +83,44 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     dropout=0.2
 # )
 
-# arch = NeuroTabModels.ResNetConfig(; stack_size=2, hidden_size=64, act=:relu, dropout=0.5)
+# arch = NeuroTabModels.MLPAttnConfig(;
+#     act=:relu,
+#     stack_size=2,
+#     hidden_size=64,
+#     nheads=1,
+#     n_attn_layers=1,
+#     dropout=0.2,
+#     attn_dropout=0.1,
+# )
+
+# arch = NeuroTabModels.NeuroTreeAttnConfig(;
+#     tree_type=:binary,
+#     actA=:identity,
+#     depth=4,
+#     ntrees=32,
+#     stack_size=1,
+#     hidden_size=32,
+#     nheads=1,
+#     n_attn_layers=1,
+#     dropout=0.0,
+#     attn_dropout=0.1,
+# )
+
+arch = NeuroTabModels.ResNetConfig(; stack_size=1, hidden_size=64, act=:relu, dropout=0.2)
 
 device = :gpu
 backend = :reactant
-loss = :mse # :mse :gaussian_mle :tweedie
+loss = :gaussian_mle # :mse :gaussian_mle :tweedie
 # metric = :correlation # :mse :gaussian_mle :tweedie
 
-embedding_config = Dict(:embedding_type => :linear, :d_embedding => 8, :activation => :relu)
+# embedding_config = Dict(:embedding_type => :linear, :d_embedding => 8, :activation => :relu)
 # embedding_config = Dict(:embedding_type => :piecewise, :d_embedding => 8, :activation => "relu", :nbins => 16)
 # embedding_config = Dict(
 #     :embedding_type => :periodic, :d_embedding => 8, :activation => "relu", :frequencies => 16, :lite => true
 # )
-# embedding_config = Dict(:embedding_type => :batchnorm)
+# embedding_config = Dict(:embedding_type => :identity)
+embedding_config = Dict(:embedding_type => :batchnorm)
+# embedding_config = Dict(:embedding_type => :layernorm)
 
 learner = NeuroTabRegressor(
     arch;
@@ -104,7 +129,7 @@ learner = NeuroTabRegressor(
     # metric,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=1e-3,
+    lr=3e-4,
     batchsize=1024,
     device,
     backend,

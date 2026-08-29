@@ -78,7 +78,11 @@ function init(
     embed_chain = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
     ins = Models.Embeddings.embedding_width(embed_chain, randn(Float32, nfeats, 2), default_rng())
     core_chain = config.arch(; ins, outsize, loss_type=L)
-    chain = Chain(embed_chain, core_chain)
+    chain = if uses_batch_mask(core_chain)
+        MaskedModel(embed_chain, core_chain)
+    else
+        Chain(embed_chain, core_chain)
+    end
 
     info = Dict(
         :nrounds => 0,
@@ -98,9 +102,9 @@ function init(
 
     rng = Xoshiro(config.seed)
     ps, st = Lux.setup(rng, m.chain) |> dev
-    # data = Models.train_dataloader(
-    #     config.arch, m, data, df; feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng
-    # ) # FIXME: wrapper only needed bacause of ModernNCA
+    data = Models.train_dataloader(
+        config.arch, m, data, df; feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng
+    )
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 

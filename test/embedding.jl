@@ -1,3 +1,22 @@
+using NeuroTabModels.Models.Embeddings: EmbeddingLayer, LayerNormEmbeddings, BatchNormEmbeddings
+using NeuroTabModels.Models.Embeddings: build_embedding_chain, embedding_width
+
+@testset "Norm embeddings" begin
+    nfeats, batch = 6, 16
+    x = randn(Float32, nfeats, batch)
+    rng = Xoshiro(123)
+    for (etype, T) in [(:batchnorm, BatchNormEmbeddings), (:layernorm, LayerNormEmbeddings)]
+        config = EmbeddingLayer(Dict(:embedding_type => etype))
+        @test config.num isa T
+        layer = build_embedding_chain(config, nfeats)
+        ps, st = Lux.setup(rng, layer)
+        y, _ = layer(x, ps, st)
+        @test size(y) == (nfeats, batch)
+        @test !any(isnan, y)
+        @test embedding_width(layer, x, Xoshiro(1)) == nfeats
+    end
+end
+
 @testset "Embeddings - Regression" begin
     Random.seed!(123)
     n = 1000

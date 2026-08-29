@@ -11,6 +11,7 @@ time features and concatenate that branch with the remaining numerical features.
 - `PeriodicEmbeddings`: expands each feature with learned sinusoidal terms before projection.
 - `PiecewiseLinearEmbeddings`: computes feature bins from the training data and embeds the resulting piecewise-linear encoding.
 - `BatchNormEmbeddings`: batch-normalizes raw numerical features without expanding them.
+- `LayerNormEmbeddings`: layer-normalizes raw numerical features without expanding them.
 - `TemporalEmbeddings`: embeds one time column with Fourier features and an optional trend term.
 
 ## Configuration

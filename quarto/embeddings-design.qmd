@@ -363,4 +363,4 @@ batch = randn(Float32, nfeats, 4)  # (nfeats, batch) dummy input
 
 The second argument of `build_embedding_chain` is `nfeats` (how many columns the matrix has), not `temp.index`. `x_train` is `(n_samples, nfeats)`.
 
-For hyperparameter search, a `Dict` is accepted: `:embedding_type` selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`, `:identity`), and `:temporal => Dict(:index => 2, ...)` builds `temp`. Unknown keys are ignored.
+For hyperparameter search, a `Dict` is accepted: `:embedding_type` selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`), and `:temporal => Dict(:index => 2, ...)` builds `temp`. Unknown keys are ignored.

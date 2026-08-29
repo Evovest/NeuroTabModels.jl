@@ -101,6 +101,13 @@ Batch-normalize the raw features without expanding their dimension (one output p
 struct BatchNormEmbeddings <: AbstractNumericalEmbedding end
 
 """
+    LayerNormEmbeddings()
+
+Layer-normalize the raw features without expanding their dimension (one output per feature).
+"""
+struct LayerNormEmbeddings <: AbstractNumericalEmbedding end
+
+"""
     TemporalEmbeddings(; index, order=[4, 1, 7, 0], periods=_DEFAULT_TEMPORAL_PERIODS,
                        trend=true, d_embedding=16)
 
@@ -159,7 +166,7 @@ EmbeddingLayer(;
 `build_embedding_chain(config, nfeats; x_train)` still needs `nfeats` = number of columns.
 
 The `Dict` form is for the hyperparameter harness: `:embedding_type` (`:linear`,
-`:periodic`, `:piecewise`, `:batchnorm`, `:identity`) selects the numerical type, an
+`:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`) selects the numerical type, an
 optional `:temporal` Dict gives [`TemporalEmbeddings`](@ref) kwargs, and unknown or
 `nothing` keys are ignored (missing `:embedding_type` → identity).
 
@@ -184,6 +191,7 @@ const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
     :periodic => PeriodicEmbeddings,
     :piecewise => PiecewiseLinearEmbeddings,
     :batchnorm => BatchNormEmbeddings,
+    :layernorm => LayerNormEmbeddings,
 )
 
 # Used by the `_num_from_dict` methods below. Filters a (possibly superset) config
@@ -206,6 +214,7 @@ function _num_from_dict(::Type{PiecewiseLinearEmbeddings}, d)
     PiecewiseLinearEmbeddings(; _pick(d, (:d_embedding, :bins, :activation, :version))...)
 end
 _num_from_dict(::Type{BatchNormEmbeddings}, d) = BatchNormEmbeddings()
+_num_from_dict(::Type{LayerNormEmbeddings}, d) = LayerNormEmbeddings()
 
 function EmbeddingLayer(d::AbstractDict)
     d = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
@@ -230,10 +239,11 @@ end
 # Output width of a temporal embedding: d_embedding, +1 when trend is appended.
 temporal_out_dim(t::TemporalEmbeddings) = t.d_embedding + (t.trend ? 1 : 0)
 
-# Per-feature output width of a numerical embedding. Identity and BatchNorm keep each
-# feature at width 1; the expanding embeddings emit `d_embedding` columns per feature.
+# Per-feature output width of a numerical embedding. Identity, BatchNorm and LayerNorm
+# keep each feature at width 1; the expanding embeddings emit `d_embedding` columns per feature.
 _num_d_embedding(::IdentityEmbedding) = 1
 _num_d_embedding(::BatchNormEmbeddings) = 1
+_num_d_embedding(::LayerNormEmbeddings) = 1
 _num_d_embedding(config::Union{LinearEmbeddings,PeriodicEmbeddings,PiecewiseLinearEmbeddings}) = config.d_embedding
 
 """
@@ -255,9 +265,9 @@ needs_x_train(::AbstractTemporalEmbedding) = true
 needs_x_train(config::EmbeddingLayer) = needs_x_train(config.num) || needs_x_train(config.temp)
 
 # Numerical embeddings: each builds its own chain emitting a flat (width, batch)
-# output. Expanding types append their own FlattenLayer; BatchNorm is already 2D and
-# Identity is a no-op. The builder never inspects the type to decide how to flatten;
-# adding a new numerical embedding means adding one method here.
+# output. Expanding types append their own FlattenLayer; BatchNorm and LayerNorm are
+# already 2D and Identity is a no-op. The builder never inspects the type to decide
+# how to flatten; adding a new numerical embedding means adding one method here.
 # Row (feature-column) selector used by the temporal `Parallel` branches. Named (not a
 # closure) so the resulting `WrappedFunction` is concretely typed via `Base.Fix2`.
 _select_rows(x::AbstractMatrix, rows) = x[rows, :]
@@ -295,6 +305,7 @@ function _build_num(config::PiecewiseLinearEmbeddings; nfeats::Int, x_train=noth
     )
 end
 _build_num(::BatchNormEmbeddings; nfeats::Int, x_train=nothing) = _BatchNormEmbeddings(; nfeats)
+_build_num(::LayerNormEmbeddings; nfeats::Int, x_train=nothing) = _LayerNormEmbeddings(; nfeats)
 
 function _build_temp(t::TemporalEmbeddings, x_col)
     x_col === nothing && error("TemporalEmbeddings requires x_train for t_mean/t_std")
