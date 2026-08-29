@@ -249,6 +249,34 @@ end
     @test y2[:, 1:3] ≈ y1
 end
 
+@testset "MLPAttn residual encoder and attn scale" begin
+    rng = Random.Xoshiro(123)
+    nfeats, hsize, nheads = 6, 16, 4
+    arch = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, dropout=0.0, attn_scale=0.1f0)
+    chain = arch(; ins=nfeats, outsize=1)
+    ps, st = Lux.setup(rng, chain)
+    st = Lux.testmode(st)
+
+    @test ps.blocks.layer_1.scale.s ≈ Float32[0.1]
+
+    x = randn(Float32, nfeats, 5)
+    y, _ = chain(x, ps, st)
+    @test size(y) == (1, 5)
+    @test !any(isnan, y)
+
+    arch0 = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, n_attn_layers=0)
+    chain0 = arch0(; ins=nfeats, outsize=1)
+    ps0, st0 = Lux.setup(rng, chain0)
+    st0 = Lux.testmode(st0)
+    y0, _ = chain0(x, ps0, st0)
+    @test size(y0) == (1, 5)
+    @test !any(isnan, y0)
+
+    w = reshape(Float32[1, 1, 1, 1, 1], 1, 1, 5)
+    y0m, _ = chain0((x, w), ps0, st0)
+    @test y0m ≈ y0
+end
+
 @testset "Regression - NeuroTreeAttn grouped" begin
     Random.seed!(123)
     nobs = 400

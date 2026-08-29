@@ -5,7 +5,7 @@ export NeuroTreeAttnConfig
 using Lux
 using LuxCore
 
-import ..Models: Architecture, get_activation, uses_batch_mask
+import ..Models: Architecture, uses_batch_mask
 import ..NeuroTrees: NeuroTree, act_dict
 import ..MLPAttn
 
@@ -56,7 +56,7 @@ Configuration for a NeuroTree encoder plus batch-level transformer attention.
 
 The tree root maps each observation to a `hidden_size` embedding (`k = hidden_size`
 scalar trees, flattened). Those embeddings are the tokens of a single sequence (the
-current batch / group). Transformer blocks mix signal across observations, then a
+current batch / group). A scaled attention residual mixes peer observations, then a
 linear head produces the per-observation prediction.
 
 When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
@@ -75,14 +75,14 @@ the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel
   residual `NeuroTree` of width `hidden_size`, with optional dropout.
 - `scaler::Bool`: Apply softplus scaling on tree logits (default `true`).
 - `init_scale::Float32`: Leaf weight init scale (default `0.1`).
-- `act::Symbol`: Transformer FFN activation — `:relu`, `:gelu`, `:sigmoid`, or `:tanh`
-  (default `:relu`).
-- `dropout::Float64`: Dropout after extra encoder layers and after attention/FFN
-  residuals (default `0.0`).
+- `act::Symbol`: Unused; kept for config compatibility (default `:relu`).
+- `dropout::Float64`: Dropout after extra encoder layers and on the attention residual
+  (default `0.0`).
 - `nheads::Int`: Number of attention heads (default `4`).
-- `n_attn_layers::Int`: Number of transformer blocks (default `1`).
+- `n_attn_layers::Int`: Number of attention residuals (default `1`). `0` skips attention.
 - `attn_dropout::Float64`: Dropout on attention scores (default `0.0`).
-- `ffn_hidden::Int`: Transformer FFN inner width (default `0` → `hidden_size`).
+- `attn_scale::Float32`: Initial attention residual scalar (default `0.1`).
+- `ffn_hidden::Int`: Unused; kept for config compatibility (default `0`).
 """
 struct NeuroTreeAttnConfig <: Architecture
     tree_type::Symbol
@@ -98,6 +98,7 @@ struct NeuroTreeAttnConfig <: Architecture
     nheads::Int
     n_attn_layers::Int
     attn_dropout::Float64
+    attn_scale::Float32
     ffn_hidden::Int
 end
 
@@ -116,6 +117,7 @@ function NeuroTreeAttnConfig(; kwargs...)
         :nheads => 4,
         :n_attn_layers => 1,
         :attn_dropout => 0.0,
+        :attn_scale => 0.1f0,
         :ffn_hidden => 0,
     )
 
@@ -145,6 +147,7 @@ function NeuroTreeAttnConfig(; kwargs...)
         args[:nheads],
         args[:n_attn_layers],
         args[:attn_dropout],
+        Float32(args[:attn_scale]),
         args[:ffn_hidden],
     )
 end
@@ -170,8 +173,7 @@ turns that into `(hsize, batch)` tokens for attention.
 
 - `stack_size == 0`: `NoOpLayer`. Requires `ins == hsize` so the NeuroTab embedding
   block can be the sole numerical embedding.
-- `stack_size == 1`: `NeuroTree(ins → 1; k=hsize)` + flatten. No encoder dropout:
-  each `TransformerBlock` already starts with pre-norm LayerNorm.
+- `stack_size == 1`: `NeuroTree(ins → 1; k=hsize)` + flatten. No encoder dropout.
 - `stack_size >= 2`: that stem, then `stack_size - 1` residual `NeuroTree` blocks
   of width `hsize`, with optional dropout after each residual.
 """
@@ -194,14 +196,14 @@ end
 function _build_neurotree_attn(ins::Int, outsize::Int, config::NeuroTreeAttnConfig)
     hsize = config.hidden_size
     nheads = config.nheads
-    hsize % nheads == 0 || error("`hidden_size` ($hsize) must be divisible by `nheads` ($nheads).")
-    config.n_attn_layers >= 1 || error("`n_attn_layers` must be ≥ 1, got $(config.n_attn_layers).")
+    config.n_attn_layers >= 0 || error("`n_attn_layers` must be ≥ 0, got $(config.n_attn_layers).")
+    if config.n_attn_layers > 0
+        hsize % nheads == 0 || error("`hidden_size` ($hsize) must be divisible by `nheads` ($nheads).")
+    end
 
-    act = get_activation(config.act)
-    ffn_hidden = config.ffn_hidden > 0 ? config.ffn_hidden : hsize
     encoder = _tree_encoder(ins, hsize, config.stack_size, config.dropout, _tree_kwargs(config))
     blocks = MLPAttn._attn_blocks(
-        hsize, nheads, act, config.n_attn_layers, config.dropout, config.attn_dropout, ffn_hidden
+        hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout; attn_scale=config.attn_scale
     )
 
     head = Dense(hsize => outsize)

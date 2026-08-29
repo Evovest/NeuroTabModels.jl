@@ -4,38 +4,51 @@ export MLPAttnConfig
 
 using Lux
 using LuxCore
+using Random: AbstractRNG
 
 import ..Models: Architecture, get_activation, uses_batch_mask
 
 """
-    TransformerBlock(hsize, nheads, act; dropout=0.0, attn_dropout=0.0, ffn_hidden=hsize)
+    ResidualScale(init)
 
-Pre-norm transformer block: LayerNorm → multi-head self-attention → residual,
-then LayerNorm → FFN → residual.
+Single learned scalar on a residual branch. One parameter, so peer attention starts
+as a small add-on (`init`, default `0.1`) rather than a full-scale mix.
+"""
+struct ResidualScale <: LuxCore.AbstractLuxLayer
+    init::Float32
+end
+
+function LuxCore.initialparameters(::AbstractRNG, l::ResidualScale)
+    return (; s=Float32[l.init])
+end
+LuxCore.parameterlength(::ResidualScale) = 1
+LuxCore.statelength(::ResidualScale) = 0
+
+(l::ResidualScale)(x::AbstractArray, ps, st) = x .* ps.s, st
+
+"""
+    AttnResidual(hsize, nheads; dropout=0.0, attn_dropout=0.0, attn_scale=0.1f0)
+
+Peer-context residual: `x + scale * Dropout(MHA(x))`.
+
+No extra LayerNorm and no FFN — the item encoder already has capacity and (for MLPAttn)
+BatchNorm. One learned scalar `scale` keeps the mix small at init.
 
 Inputs are `(hidden, seq)` feature-first matrices. An optional key-padding mask
 may be passed as `(x, mask)` so padded group-buffer slots are ignored.
 """
-struct TransformerBlock{N1,A,D1,N2,F,D2} <: LuxCore.AbstractLuxContainerLayer{(
-    :norm1, :mha, :drop1, :norm2, :ffn, :drop2
-)}
-    norm1::N1
+struct AttnResidual{A,S,D} <: LuxCore.AbstractLuxContainerLayer{(:mha, :scale, :drop)}
     mha::A
-    drop1::D1
-    norm2::N2
-    ffn::F
-    drop2::D2
+    scale::S
+    drop::D
 end
 
-function TransformerBlock(
-    hsize::Int, nheads::Int, act; dropout::Float64=0.0, attn_dropout::Float64=0.0, ffn_hidden::Int=hsize
+function AttnResidual(
+    hsize::Int, nheads::Int; dropout::Float64=0.0, attn_dropout::Float64=0.0, attn_scale::Float32=0.1f0
 )
-    return TransformerBlock(
-        LayerNorm((hsize,); dims=1),
+    return AttnResidual(
         MultiHeadAttention(hsize; nheads, attention_dropout_probability=Float32(attn_dropout)),
-        Dropout(dropout),
-        LayerNorm((hsize,); dims=1),
-        Chain(Dense(hsize => ffn_hidden, act), Dense(ffn_hidden => hsize)),
+        ResidualScale(attn_scale),
         Dropout(dropout),
     )
 end
@@ -53,20 +66,15 @@ function _mha(mha, x::AbstractMatrix, mask, ps, st)
     return _from_seq(y), st_
 end
 
-function _block(l::TransformerBlock, x::AbstractMatrix, mask, ps, st)
-    h, st_n1 = l.norm1(x, ps.norm1, st.norm1)
-    a, st_a = _mha(l.mha, h, mask, ps.mha, st.mha)
-    a, st_d1 = l.drop1(a, ps.drop1, st.drop1)
-    x = x .+ a
-    h, st_n2 = l.norm2(x, ps.norm2, st.norm2)
-    f, st_f = l.ffn(h, ps.ffn, st.ffn)
-    f, st_d2 = l.drop2(f, ps.drop2, st.drop2)
-    y = x .+ f
-    return y, (; norm1=st_n1, mha=st_a, drop1=st_d1, norm2=st_n2, ffn=st_f, drop2=st_d2)
+function _block(l::AttnResidual, x::AbstractMatrix, mask, ps, st)
+    a, st_a = _mha(l.mha, x, mask, ps.mha, st.mha)
+    a, st_s = l.scale(a, ps.scale, st.scale)
+    a, st_d = l.drop(a, ps.drop, st.drop)
+    return x .+ a, (; mha=st_a, scale=st_s, drop=st_d)
 end
 
-(l::TransformerBlock)(x::AbstractMatrix, ps, st) = _block(l, x, nothing, ps, st)
-function (l::TransformerBlock)((x, mask)::Tuple, ps, st)
+(l::AttnResidual)(x::AbstractMatrix, ps, st) = _block(l, x, nothing, ps, st)
+function (l::AttnResidual)((x, mask)::Tuple, ps, st)
     y, st_ = _block(l, x, mask, ps, st)
     return (y, mask), st_
 end
@@ -74,8 +82,7 @@ end
 """
     MLPAttn
 
-MLP encoder (per-observation numerical embeddings) followed by transformer blocks
-that mix information across observations in the batch, then a linear prediction head.
+ResNet item encoder plus a thin peer-attention residual, then a linear head.
 
 Intended to sit after the usual embedding layer: `Chain(embed, MLPAttn(...))`.
 
@@ -127,26 +134,25 @@ uses_batch_mask(::MLPAttn) = true
 """
     MLPAttnConfig(; kwargs...)
 
-Configuration for an MLP encoder plus batch-level transformer attention.
+ResNet item encoder with a scaled multi-head attention residual over the batch / group.
 
-The MLP root maps each observation to a `hidden_size` embedding. Those embeddings are the
-tokens of a single sequence (the current batch / group). Transformer blocks mix signal
-across observations, then a linear head produces the per-observation prediction.
+The encoder is the same stem + residual blocks as ResNet (BatchNorm, not LayerNorm).
+Attention is a single residual `x + scale * MHA(x)` — no extra LayerNorm tower and no
+transformer FFN. A linear head produces the per-observation prediction.
 
 When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
 the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel`.
 
 # Arguments
 - `act::Symbol`: Activation — `:relu`, `:gelu`, `:sigmoid`, or `:tanh` (default `:relu`).
-- `hidden_size::Int`: Embedding / attention dimension (default `64`). Must be divisible by `nheads`.
-- `stack_size::Int`: Encoder depth (default `1`). `0` is a no-op (embedding width must
-  equal `hidden_size`). `1` is a linear map `ins → hidden_size`. Each extra layer is
-  pre-norm `LayerNorm` + `Dense(hidden_size → hidden_size)` with optional dropout.
-- `dropout::Float64`: Dropout in the encoder and after attention/FFN residuals (default `0.0`).
+- `hidden_size::Int`: Encoder / attention dimension (default `64`). Must be divisible by `nheads`.
+- `stack_size::Int`: Number of residual blocks after the stem (default `1`), matching ResNet.
+  `0` is a no-op (embedding width must equal `hidden_size`).
+- `dropout::Float64`: Dropout in residual blocks and on the attention residual (default `0.0`).
 - `nheads::Int`: Number of attention heads (default `4`).
-- `n_attn_layers::Int`: Number of transformer blocks (default `1`).
+- `n_attn_layers::Int`: Number of attention residuals (default `1`). `0` is encoder + head only.
 - `attn_dropout::Float64`: Dropout on attention scores (default `0.0`).
-- `ffn_hidden::Int`: Transformer FFN inner width (default `0` → `hidden_size`).
+- `attn_scale::Float32`: Initial attention residual scalar (default `0.1`).
 - `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
 """
 struct MLPAttnConfig <: Architecture
@@ -157,7 +163,7 @@ struct MLPAttnConfig <: Architecture
     nheads::Int
     n_attn_layers::Int
     attn_dropout::Float64
-    ffn_hidden::Int
+    attn_scale::Float32
     MLE_tree_split::Bool
 end
 
@@ -170,7 +176,7 @@ function MLPAttnConfig(; kwargs...)
         :nheads => 4,
         :n_attn_layers => 1,
         :attn_dropout => 0.0,
-        :ffn_hidden => 0,
+        :attn_scale => 0.1f0,
         :MLE_tree_split => false,
     )
 
@@ -194,23 +200,31 @@ function MLPAttnConfig(; kwargs...)
         args[:nheads],
         args[:n_attn_layers],
         args[:attn_dropout],
-        args[:ffn_hidden],
+        Float32(args[:attn_scale]),
         args[:MLE_tree_split],
     )
 end
 
 """
+    _item_res_block(hsize, act, dropout)
+
+Same residual block as ResNet: two Denses with BatchNorm and a skip.
+"""
+function _item_res_block(hsize::Int, act, dropout::Float64)
+    layers = Any[Dense(hsize => hsize), BatchNorm(hsize, act)]
+    dropout > 0 && push!(layers, Dropout(dropout))
+    push!(layers, Dense(hsize => hsize))
+    push!(layers, BatchNorm(hsize))
+    return Chain(SkipConnection(Chain(layers...), +), BatchNorm(hsize, act))
+end
+
+"""
     _mlp_encoder(ins, hsize, act, stack_size, dropout)
 
-Per-observation map into the attention width `hsize`.
+Item-wise ResNet trunk without the prediction head.
 
-- `stack_size == 0`: `NoOpLayer`. Requires `ins == hsize` so the NeuroTab embedding
-  block can be the sole numerical embedding.
-- `stack_size == 1`: `Dense(ins → hsize)` only. No encoder LayerNorm: each
-  `TransformerBlock` already starts with pre-norm LayerNorm.
-- `stack_size >= 2`: that projection, then `stack_size - 1` blocks of
-  `LayerNorm(act) → Dense → Dropout`. Dropout sits after the extra Denses, not on
-  the stem projection (the transformer residual path already regularizes).
+- `stack_size == 0`: `NoOpLayer`. Requires `ins == hsize`.
+- `stack_size >= 1`: `Dense(ins → hsize)` + BatchNorm+act, then `stack_size` residual blocks.
 """
 function _mlp_encoder(ins::Int, hsize::Int, act, stack_size::Int, dropout::Float64)
     stack_size >= 0 || error("`stack_size` must be ≥ 0, got $stack_size.")
@@ -220,42 +234,47 @@ function _mlp_encoder(ins::Int, hsize::Int, act, stack_size::Int, dropout::Float
         )
         return NoOpLayer()
     end
-    layers = Any[Dense(ins => hsize)]
-    for _ in 2:stack_size
-        push!(layers, LayerNorm((hsize,), act; dims=1))
-        push!(layers, Dense(hsize => hsize))
-        dropout > 0 && push!(layers, Dropout(dropout))
+    layers = Any[Dense(ins => hsize), BatchNorm(hsize, act)]
+    for _ in 1:stack_size
+        push!(layers, _item_res_block(hsize, act, dropout))
     end
     return Chain(layers...)
 end
 
 function _attn_blocks(
-    hsize::Int, nheads::Int, act, n_attn_layers::Int, dropout::Float64, attn_dropout::Float64, ffn_hidden::Int
+    hsize::Int, nheads::Int, n_attn_layers::Int, dropout::Float64, attn_dropout::Float64; attn_scale::Float32=0.1f0
 )
-    blocks = [TransformerBlock(hsize, nheads, act; dropout, attn_dropout, ffn_hidden) for _ in 1:n_attn_layers]
+    n_attn_layers >= 0 || error("`n_attn_layers` must be ≥ 0, got $n_attn_layers.")
+    n_attn_layers == 0 && return NoOpLayer()
+    blocks = [AttnResidual(hsize, nheads; dropout, attn_dropout, attn_scale) for _ in 1:n_attn_layers]
     return Chain(blocks...)
+end
+
+function _pred_head(hsize::Int, outsize::Int, MLE_tree_split::Bool)
+    if MLE_tree_split
+        iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
+        head_outsize = outsize ÷ 2
+        return Parallel(vcat, Dense(hsize => head_outsize), Dense(hsize => head_outsize))
+    end
+    return Dense(hsize => outsize)
 end
 
 function _build_mlp_attn(ins::Int, outsize::Int, config::MLPAttnConfig)
     hsize = config.hidden_size
     nheads = config.nheads
-    hsize % nheads == 0 || error("`hidden_size` ($hsize) must be divisible by `nheads` ($nheads).")
-    config.n_attn_layers >= 1 || error("`n_attn_layers` must be ≥ 1, got $(config.n_attn_layers).")
-
-    act = get_activation(config.act)
-    ffn_hidden = config.ffn_hidden > 0 ? config.ffn_hidden : hsize
-    encoder = _mlp_encoder(ins, hsize, act, config.stack_size, config.dropout)
-    blocks = _attn_blocks(hsize, nheads, act, config.n_attn_layers, config.dropout, config.attn_dropout, ffn_hidden)
-
-    head = if config.MLE_tree_split
-        iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
-        head_outsize = outsize ÷ 2
-        Parallel(vcat, Dense(hsize => head_outsize), Dense(hsize => head_outsize))
-    else
-        Dense(hsize => outsize)
+    config.n_attn_layers >= 0 || error("`n_attn_layers` must be ≥ 0, got $(config.n_attn_layers).")
+    if config.n_attn_layers > 0
+        nheads > 0 || error("`nheads` must be ≥ 1 when `n_attn_layers` > 0, got $nheads.")
+        hsize % nheads == 0 || error("`hidden_size` ($hsize) must be divisible by `nheads` ($nheads).")
     end
 
-    return MLPAttn(encoder, blocks, head)
+    act = get_activation(config.act)
+    encoder = _mlp_encoder(ins, hsize, act, config.stack_size, config.dropout)
+    blocks = _attn_blocks(
+        hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout; attn_scale=config.attn_scale
+    )
+
+    return MLPAttn(encoder, blocks, _pred_head(hsize, outsize, config.MLE_tree_split))
 end
 
 """
