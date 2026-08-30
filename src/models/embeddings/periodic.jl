@@ -35,7 +35,7 @@ end
                         frequencies_init_scale=0.01f0, activation=relu, lite=false)
 
 Periodic sinusoidal encoding followed by a learned linear projection: applies
-`Periodic`, then `NLinear` (or a shared `Dense` if `lite`), then `activation`.
+`Periodic`, then `GroupedDense` (or a shared `Dense` if `lite`), then `activation`.
 
 # Arguments
 - `nfeats::Int`: Number of input features.
@@ -43,7 +43,7 @@ Periodic sinusoidal encoding followed by a learned linear projection: applies
 - `frequencies::Int`: Sinusoidal frequency components per feature (default `48`).
 - `frequencies_init_scale::Float32`: σ for frequency weight init (default `0.01f0`).
 - `activation`: Activation applied after projection (default `relu`).
-- `lite::Bool`: Use a single shared `Dense` instead of per-feature `NLinear`
+- `lite::Bool`: Use a single shared `Dense` instead of per-feature `GroupedDense`
   (default `false`). Requires a non-identity `activation`.
 """
 struct _PeriodicEmbeddings{P,L,F} <: LuxCore.AbstractLuxContainerLayer{(:periodic, :linear)}
@@ -68,7 +68,7 @@ function _PeriodicEmbeddings(;
     linear = if lite
         Dense(2 * frequencies => d_embedding)
     else
-        NLinear(nfeats, 2 * frequencies, d_embedding)
+        GroupedDense(2 * frequencies => d_embedding, nfeats)
     end
     return _PeriodicEmbeddings(periodic, linear, activation, lite)
 end
@@ -91,5 +91,5 @@ function (m::_PeriodicEmbeddings)(x::AbstractMatrix, ps, st)
 end
 
 function LuxCore.outputsize(m::_PeriodicEmbeddings, x, ::AbstractRNG)
-    m.lite ? error("lite _PeriodicEmbeddings outputsize undefined") : (m.linear.out_features, size(x, 1))
+    m.lite ? error("lite _PeriodicEmbeddings outputsize undefined") : (m.linear.out_dims, size(x, 1))
 end

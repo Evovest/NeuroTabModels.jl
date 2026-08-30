@@ -11,30 +11,32 @@ Produces a `(d_embedding, nfeats, batch)` tensor.
 - `activation`: Activation function applied element-wise (default `relu`).
   E.g. `relu`, `tanh`, `identity`.
 """
-struct _LinearEmbeddings{F} <: LuxCore.AbstractLuxLayer
-    nfeats::Int
-    d_embedding::Int
-    activation::F
+struct _LinearEmbeddings{G} <: LuxCore.AbstractLuxWrapperLayer{:layer}
+    layer::G
 end
+
+# Fan-out uniform, matching the previous `_LinearEmbeddings` init (not fan-in rsqrt).
+function _embed_affine_init(rng::AbstractRNG, out::Integer, in::Integer, groups::Integer)
+    limit = Float32(out)^(-0.5f0)
+    return (rand(rng, Float32, out, in, groups) .* 2.0f0 .* limit) .- limit
+end
+
+_as_feature_groups(x::AbstractMatrix) = reshape(x, 1, size(x, 1), size(x, 2))
 
 function _LinearEmbeddings(; nfeats::Int, d_embedding::Int, activation=NNlib.relu)
-    return _LinearEmbeddings(nfeats, d_embedding, activation)
-end
-
-function LuxCore.initialparameters(rng::AbstractRNG, l::_LinearEmbeddings)
-    limit = Float32(l.d_embedding)^(-0.5f0)
-    weight = reshape(
-        (rand(rng, Float32, l.d_embedding, l.nfeats) .* 2.0f0 .* limit) .- limit, l.d_embedding, l.nfeats, 1
+    return _LinearEmbeddings(
+        GroupedDense(
+            1 => d_embedding,
+            nfeats,
+            activation;
+            init_weight=_embed_affine_init,
+            init_bias=_embed_affine_init,
+        ),
     )
-    bias = reshape((rand(rng, Float32, l.d_embedding, l.nfeats) .* 2.0f0 .* limit) .- limit, l.d_embedding, l.nfeats, 1)
-    return (weight=weight, bias=bias)
 end
-
-LuxCore.initialstates(::AbstractRNG, ::_LinearEmbeddings) = (;)
 
 function (l::_LinearEmbeddings)(x::AbstractMatrix, ps, st)
-    x_r = reshape(x, 1, size(x, 1), size(x, 2))
-    return l.activation.(muladd.(ps.weight, x_r, ps.bias)), st
+    return l.layer(_as_feature_groups(x), ps, st)
 end
 
-LuxCore.outputsize(l::_LinearEmbeddings, x, ::AbstractRNG) = (l.d_embedding, size(x, 1))
+LuxCore.outputsize(l::_LinearEmbeddings, x, ::AbstractRNG) = (l.layer.out_dims, size(x, 1))

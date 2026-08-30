@@ -228,6 +228,30 @@ end
     @test !any(isnan, p)
 end
 
+@testset "MaskedBatchNorm" begin
+    rng = Random.Xoshiro(123)
+    l = NeuroTabModels.MaskedBatchNorm(4)
+    ps, st = Lux.setup(rng, l)
+    st_tr = Lux.trainmode(st)
+
+    x_real = randn(Float32, 4, 3)
+    x_pad = hcat(x_real, zeros(Float32, 4, 2))
+    valid = [true, true, true, false, false]
+    y1, _ = l(x_real, ps, st_tr)
+    (y2, _), _ = l((x_pad, valid), ps, st_tr)
+    @test y2[:, 1:3] ≈ y1
+
+    st_te = Lux.testmode(st)
+    y1e, _ = l(x_real, ps, st_te)
+    (y2e, _), _ = l((x_pad, valid), ps, st_te)
+    @test y2e[:, 1:3] ≈ y1e
+
+    none = falses(5)
+    _, st_none = l((x_pad, none), ps, st_tr)
+    @test st_none.running_mean == st_tr.running_mean
+    @test st_none.running_var == st_tr.running_var
+end
+
 @testset "MLPAttn key-padding mask" begin
     Random.seed!(123)
     rng = Random.Xoshiro(123)
@@ -247,22 +271,35 @@ end
     @test size(y1, 2) == 3
     @test size(y2, 2) == 5
     @test y2[:, 1:3] ≈ y1
+
+    st_tr = Lux.trainmode(st)
+    y1t, _ = chain(x_real, ps, st_tr)
+    y2t, _ = chain((x_pad, w), ps, st_tr)
+    @test y2t[:, 1:3] ≈ y1t
 end
 
-@testset "MLPAttn residual encoder and attn scale" begin
+@testset "MLPAttn BN encoder and attention" begin
     rng = Random.Xoshiro(123)
     nfeats, hsize, nheads = 6, 16, 4
-    arch = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, dropout=0.0, attn_scale=0.1f0)
+    arch = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, dropout=0.0)
     chain = arch(; ins=nfeats, outsize=1)
     ps, st = Lux.setup(rng, chain)
     st = Lux.testmode(st)
 
-    @test ps.blocks.layer_1.scale.s ≈ Float32[0.1]
+    @test haskey(ps.blocks.layer_1, :qk_proj)
+    @test !haskey(ps.blocks.layer_1, :norm)
+    @test !haskey(ps.blocks.layer_1, :fuse)
+    @test !haskey(ps.blocks.layer_1, :v_proj)
 
     x = randn(Float32, nfeats, 5)
+    z, _ = chain.encoder(x, ps.encoder, st.encoder)
+    z_mix, _ = chain.blocks(z, ps.blocks, st.blocks)
+    @test size(z_mix) == size(z)
+
     y, _ = chain(x, ps, st)
     @test size(y) == (1, 5)
     @test !any(isnan, y)
+    @test !iszero(y)
 
     arch0 = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, n_attn_layers=0)
     chain0 = arch0(; ins=nfeats, outsize=1)

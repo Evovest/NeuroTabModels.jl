@@ -4,10 +4,10 @@ using DataFrames
 using Statistics: mean, std
 using StatsBase: tiedrank
 
-using CUDA, cuDNN
+# using CUDA, cuDNN
 using Enzyme
 using Reactant
-using Zygote
+# using Zygote
 
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
@@ -102,11 +102,11 @@ arch = NeuroTabModels.MLPAttnConfig(;
 #     hidden_size=32,
 #     nheads=1,
 #     n_attn_layers=1,
-#     dropout=0.0,
+#     dropout=0.2,
 #     attn_dropout=0.1,
 # )
 
-# arch = NeuroTabModels.ResNetConfig(; stack_size=1, hidden_size=64, act=:relu, dropout=0.2)
+# arch = NeuroTabModels.ResNetConfig(; stack_size=2, hidden_size=64, act=:relu, dropout=0.2)
 
 device = :gpu
 backend = :reactant

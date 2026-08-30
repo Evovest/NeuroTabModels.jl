@@ -72,34 +72,21 @@ end
 """
     LinearEnsemble(in_f, out_f, k; bias=true)
 
-`k` independent linear layers via `batched_matmul`. Input/output `(features, k, batch)`.
+`k` independent linear layers. Input/output `(features, k, batch)`.
+
+Constructs a `GroupedDense` with TabM's rsqrt weight and bias init.
 """
-struct LinearEnsemble <: LuxCore.AbstractLuxLayer
-    in_features::Int
-    out_features::Int
-    k::Int
-    use_bias::Bool
+function LinearEnsemble(in_f::Int, out_f::Int, k::Int; bias::Bool=true)
+    return GroupedDense(
+        in_f => out_f,
+        k;
+        use_bias=bias,
+        init_weight=rsqrt_uniform_grouped,
+        init_bias=_tabm_rsqrt_bias(in_f),
+    )
 end
 
-LinearEnsemble(in_f::Int, out_f::Int, k::Int; bias::Bool=true) = LinearEnsemble(in_f, out_f, k, bias)
-
-function LuxCore.initialparameters(rng::AbstractRNG, m::LinearEnsemble)
-    d = (; weight=_init_rsqrt_uniform(rng, (m.out_features, m.in_features, m.k), m.in_features))
-    if m.use_bias
-        d = merge(d, (; bias=_init_rsqrt_uniform(rng, (m.out_features, m.k), m.in_features)))
-    end
-    return d
-end
-
-function (m::LinearEnsemble)(x::AbstractArray{T,3}, ps, st) where {T}
-    xp = permutedims(x, (1, 3, 2))
-    out = batched_matmul(ps.weight, xp)
-    out = permutedims(out, (1, 3, 2))
-    if m.use_bias
-        out = out .+ reshape(ps.bias, m.out_features, m.k, 1)
-    end
-    return out, st
-end
+_tabm_rsqrt_bias(fan_in::Int) = (rng, out, d, g) -> _init_rsqrt_uniform(rng, (out, d, g), fan_in)
 
 """
     ScaleEnsemble(k, d; init=:random_signs, bias=false)

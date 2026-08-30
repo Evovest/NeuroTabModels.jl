@@ -55,17 +55,17 @@ sort!(dtrain, :grp)
 sort!(deval, :grp)
 sort!(dtest, :grp)
 
-arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    actA=:identity,
-    k=1,
-    ntrees=32,
-    depth=4,
-    stack_size=1,
-    hidden_size=16,
-    init_scale=0.1,
-    scaler=true,
-)
+# arch = NeuroTabModels.NeuroTreeConfig(;
+#     tree_type=:binary,
+#     actA=:identity,
+#     k=1,
+#     ntrees=32,
+#     depth=4,
+#     stack_size=1,
+#     hidden_size=16,
+#     init_scale=0.1,
+#     scaler=true,
+# )
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
@@ -95,32 +95,33 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     MLE_tree_split=false
 # )
 
+arch = NeuroTabModels.MLPAttnConfig(;
+    act=:relu, stack_size=1, hidden_size=64, nheads=1, n_attn_layers=1, dropout=0.2, attn_dropout=0.1
+)
+
 device = :gpu
 backend = :reactant
-loss = :gaussian_mle # :mse :gaussian_mle :tweedie
+loss = :mse # :mse :gaussian_mle :tweedie
 # metric = :mse # :mse :gaussian_mle :tweedie
-metric = :correlation 
+metric = :correlation
 
-# embedding_config = Dict(
-#     :embedding_type => :piecewise,
-#     :d_embedding => 8,
-#     :activation => nothing,
-#     :bins => 16,
-#     :frequencies => 16,
-# )
-embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => "identity")
 # embedding_config = Dict(:embedding_type => "batchnorm")
+embedding_config = Dict(:embedding_type => "linear", :d_embedding => 1, :activation => "identity")
+embedding_config = Dict(:embedding_type => "linear", :d_embedding => 8, :activation => "relu")
+# embedding_config = Dict(
+#     :embedding_type => :piecewise, :d_embedding => 8, :bins => 16, :version => "B"
+# )
 
 learner = NeuroTabRegressor(
-    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=1e-3, batchsize=1024, device, backend
+    arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=3e-4, device, backend
 )
 
 group_key = "grp" #"grp" # nothing
 # group_key = nothing #"grp" # nothing
 eval_group_key = "grp"
-@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5);
 @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, print_every_n=5);
-@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, eval_group_key, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, eval_group_key, print_every_n=5);
 # @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, weight_name, group_key, print_every_n=5);
 # @time m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, group_key, print_every_n=5);
 

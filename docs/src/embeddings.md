@@ -4,6 +4,10 @@ Embeddings transform raw input columns before they reach a model backbone. Numer
 embeddings operate column-wise, while temporal embeddings reserve one column for
 time features and concatenate that branch with the remaining numerical features.
 
+They do not consume the grouped padding mask: embeddings map each observation
+independently, and `MaskedModel` only reattaches `w` at the mixer core. See
+[Grouped padding and masks](@ref).
+
 ## Available Embeddings
 
 - `IdentityEmbedding`: leaves numerical features unchanged.

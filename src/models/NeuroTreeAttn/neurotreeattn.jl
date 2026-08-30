@@ -12,8 +12,8 @@ import ..MLPAttn
 """
     NeuroTreeAttn
 
-NeuroTree encoder (per-observation numerical embeddings) followed by transformer blocks
-that mix information across observations in the batch, then a linear prediction head.
+NeuroTree encoder (per-observation numerical embeddings) followed by a shared-QK
+peer-attention residual, then a linear prediction head.
 
 Intended to sit after the usual embedding layer: `Chain(embed, NeuroTreeAttn(...))`.
 
@@ -56,8 +56,8 @@ Configuration for a NeuroTree encoder plus batch-level transformer attention.
 
 The tree root maps each observation to a `hidden_size` embedding (`k = hidden_size`
 scalar trees, flattened). Those embeddings are the tokens of a single sequence (the
-current batch / group). A scaled attention residual mixes peer observations, then a
-linear head produces the per-observation prediction.
+current batch / group). Shared Q=K attention (values = encoder tokens) is
+residual-added, then a linear head produces the per-observation prediction.
 
 When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
 the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel`.
@@ -81,7 +81,6 @@ the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel
 - `nheads::Int`: Number of attention heads (default `4`).
 - `n_attn_layers::Int`: Number of attention residuals (default `1`). `0` skips attention.
 - `attn_dropout::Float64`: Dropout on attention scores (default `0.0`).
-- `attn_scale::Float32`: Initial attention residual scalar (default `0.1`).
 - `ffn_hidden::Int`: Unused; kept for config compatibility (default `0`).
 """
 struct NeuroTreeAttnConfig <: Architecture
@@ -98,7 +97,6 @@ struct NeuroTreeAttnConfig <: Architecture
     nheads::Int
     n_attn_layers::Int
     attn_dropout::Float64
-    attn_scale::Float32
     ffn_hidden::Int
 end
 
@@ -117,7 +115,6 @@ function NeuroTreeAttnConfig(; kwargs...)
         :nheads => 4,
         :n_attn_layers => 1,
         :attn_dropout => 0.0,
-        :attn_scale => 0.1f0,
         :ffn_hidden => 0,
     )
 
@@ -147,7 +144,6 @@ function NeuroTreeAttnConfig(; kwargs...)
         args[:nheads],
         args[:n_attn_layers],
         args[:attn_dropout],
-        Float32(args[:attn_scale]),
         args[:ffn_hidden],
     )
 end
@@ -202,13 +198,9 @@ function _build_neurotree_attn(ins::Int, outsize::Int, config::NeuroTreeAttnConf
     end
 
     encoder = _tree_encoder(ins, hsize, config.stack_size, config.dropout, _tree_kwargs(config))
-    blocks = MLPAttn._attn_blocks(
-        hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout; attn_scale=config.attn_scale
-    )
+    blocks = MLPAttn._attn_blocks(hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout)
 
-    head = Dense(hsize => outsize)
-
-    return NeuroTreeAttn(encoder, blocks, head)
+    return NeuroTreeAttn(encoder, blocks, MLPAttn._pred_head(hsize, outsize))
 end
 
 """

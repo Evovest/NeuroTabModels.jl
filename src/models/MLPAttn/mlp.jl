@@ -3,74 +3,51 @@ module MLPAttn
 export MLPAttnConfig
 
 using Lux
+using Lux: StatefulLuxLayer
 using LuxCore
-using Random: AbstractRNG
+using NNlib: dot_product_attention
 
-import ..Models: Architecture, get_activation, uses_batch_mask
+import ..Models: Architecture, get_activation, uses_batch_mask, MaskedBatchNorm, CarryMask, MaskSkip
 
-"""
-    ResidualScale(init)
-
-Single learned scalar on a residual branch. One parameter, so peer attention starts
-as a small add-on (`init`, default `0.1`) rather than a full-scale mix.
-"""
-struct ResidualScale <: LuxCore.AbstractLuxLayer
-    init::Float32
-end
-
-function LuxCore.initialparameters(::AbstractRNG, l::ResidualScale)
-    return (; s=Float32[l.init])
-end
-LuxCore.parameterlength(::ResidualScale) = 1
-LuxCore.statelength(::ResidualScale) = 0
-
-(l::ResidualScale)(x::AbstractArray, ps, st) = x .* ps.s, st
+_untuple(x) = x isa Tuple ? x[1] : x
 
 """
-    AttnResidual(hsize, nheads; dropout=0.0, attn_dropout=0.0, attn_scale=0.1f0)
+    AttnResidual(hsize, nheads; dropout=0.0, attn_dropout=0.0)
 
-Peer-context residual: `x + scale * Dropout(MHA(x))`.
-
-No extra LayerNorm and no FFN — the item encoder already has capacity and (for MLPAttn)
-BatchNorm. One learned scalar `scale` keeps the mix small at init.
+Peer attention over an unordered set (attention batch dim = 1). Shared ``W_{qk}``
+for query and key, values = encoder tokens. Scale is the usual
+`NNlib.dot_product_attention` ``1/√d``. Residual `x + Dropout(Attn)`.
 
 Inputs are `(hidden, seq)` feature-first matrices. An optional key-padding mask
 may be passed as `(x, mask)` so padded group-buffer slots are ignored.
 """
-struct AttnResidual{A,S,D} <: LuxCore.AbstractLuxContainerLayer{(:mha, :scale, :drop)}
-    mha::A
-    scale::S
+struct AttnResidual{QK,AD,D} <: LuxCore.AbstractLuxContainerLayer{(:qk_proj, :attn_drop, :drop)}
+    qk_proj::QK
+    attn_drop::AD
     drop::D
+    nheads::Int
 end
 
-function AttnResidual(
-    hsize::Int, nheads::Int; dropout::Float64=0.0, attn_dropout::Float64=0.0, attn_scale::Float32=0.1f0
-)
+function AttnResidual(hsize::Int, nheads::Int; dropout::Float64=0.0, attn_dropout::Float64=0.0)
     return AttnResidual(
-        MultiHeadAttention(hsize; nheads, attention_dropout_probability=Float32(attn_dropout)),
-        ResidualScale(attn_scale),
+        Dense(hsize => hsize; use_bias=false),
+        Dropout(attn_dropout),
         Dropout(dropout),
+        nheads,
     )
 end
 
 _as_seq(x::AbstractMatrix) = reshape(x, size(x, 1), size(x, 2), 1)
 _from_seq(x::AbstractArray) = reshape(x, size(x, 1), size(x, 2))
 
-function _mha(mha, x::AbstractMatrix, ::Nothing, ps, st)
-    (y, _), st_ = mha(_as_seq(x), ps, st)
-    return _from_seq(y), st_
-end
-function _mha(mha, x::AbstractMatrix, mask, ps, st)
-    x3 = _as_seq(x)
-    (y, _), st_ = mha((x3, x3, x3, mask), ps, st)
-    return _from_seq(y), st_
-end
-
 function _block(l::AttnResidual, x::AbstractMatrix, mask, ps, st)
-    a, st_a = _mha(l.mha, x, mask, ps.mha, st.mha)
-    a, st_s = l.scale(a, ps.scale, st.scale)
-    a, st_d = l.drop(a, ps.drop, st.drop)
-    return x .+ a, (; mha=st_a, scale=st_s, drop=st_d)
+    qk, st_qk = l.qk_proj(x, ps.qk_proj, st.qk_proj)
+    attn_drop = StatefulLuxLayer(l.attn_drop, ps.attn_drop, st.attn_drop)
+    a3, _ = dot_product_attention(
+        _as_seq(qk), _as_seq(qk), _as_seq(x); nheads=l.nheads, mask, fdrop=attn_drop
+    )
+    a, st_d = l.drop(_from_seq(a3), ps.drop, st.drop)
+    return x .+ a, (; qk_proj=st_qk, attn_drop=attn_drop.st, drop=st_d)
 end
 
 (l::AttnResidual)(x::AbstractMatrix, ps, st) = _block(l, x, nothing, ps, st)
@@ -82,7 +59,11 @@ end
 """
     MLPAttn
 
-ResNet item encoder plus a thin peer-attention residual, then a linear head.
+ResNet-style encoder (BatchNorm residual MLP) plus a thin peer-attention residual,
+then a linear head.
+
+Scale: BatchNorm on the item stream (same recipe as [`ResNetConfig`](@ref)).
+`n_attn_layers=0` is that encoder plus a Glorot head — the ResNet ablation.
 
 Intended to sit after the usual embedding layer: `Chain(embed, MLPAttn(...))`.
 
@@ -92,6 +73,8 @@ Intended to sit after the usual embedding layer: `Chain(embed, MLPAttn(...))`.
   positions are treated as padded group-buffer slots and are ignored by attention via a
   rectangular key-padding mask of shape `(seq, 1, 1, 1)`, broadcast onto attention scores
   `(kv_len, q_len, nheads, 1)`. This is not a causal (triangular) mask.
+  Encoder BatchNorm uses the same valid-token flags so pads do not enter mean/var
+  (or running stats). The attention mask still zeros padded *keys*.
 """
 struct MLPAttn{N,B,H} <: LuxCore.AbstractLuxContainerLayer{(:encoder, :blocks, :head)}
     encoder::N
@@ -102,7 +85,7 @@ end
 """
     _key_padding_mask(w, seq)
 
-Build a boolean key-padding mask for `MultiHeadAttention`.
+Build a boolean key-padding mask for `NNlib.dot_product_attention`.
 
 Attention scores have shape `(kv_len, q_len, nheads, batch)`. A `true` entry keeps that
 key position. Reshaping valid-token flags to `(seq, 1, 1, 1)` zeros out entire *columns*
@@ -122,8 +105,10 @@ function (m::MLPAttn)(x::AbstractArray, ps, st)
     return y, (; encoder=st_n, blocks=st_b, head=st_h)
 end
 function (m::MLPAttn)((x, w)::Tuple, ps, st)
-    z, st_n = m.encoder(x, ps.encoder, st.encoder)
-    mask = _key_padding_mask(w, size(z, 2))
+    valid = _valid_tokens(vec(w))
+    z, st_n = m.encoder((x, valid), ps.encoder, st.encoder)
+    z = _untuple(z)
+    mask = reshape(valid, size(z, 2), 1, 1, 1)
     z, st_b = m.blocks((z, mask), ps.blocks, st.blocks)
     y, st_h = m.head(z[1], ps.head, st.head)
     return y, (; encoder=st_n, blocks=st_b, head=st_h)
@@ -134,11 +119,12 @@ uses_batch_mask(::MLPAttn) = true
 """
     MLPAttnConfig(; kwargs...)
 
-ResNet item encoder with a scaled multi-head attention residual over the batch / group.
+Item-wise residual encoder with peer attention over the batch / group.
 
-The encoder is the same stem + residual blocks as ResNet (BatchNorm, not LayerNorm).
-Attention is a single residual `x + scale * MHA(x)` — no extra LayerNorm tower and no
-transformer FFN. A linear head produces the per-observation prediction.
+The encoder is a BatchNorm residual MLP like [`ResNetConfig`](@ref), but each BN
+restricts mean/var to valid tokens when a padding mask is passed (grouped loaders).
+Attention is shared Q=K via `NNlib.dot_product_attention`, values = encoder tokens, residual-added. The head is
+Glorot `Dense` like ResNet. `n_attn_layers=0` should track ResNet on ungrouped data.
 
 When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
 the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel`.
@@ -146,14 +132,12 @@ the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel
 # Arguments
 - `act::Symbol`: Activation — `:relu`, `:gelu`, `:sigmoid`, or `:tanh` (default `:relu`).
 - `hidden_size::Int`: Encoder / attention dimension (default `64`). Must be divisible by `nheads`.
-- `stack_size::Int`: Number of residual blocks after the stem (default `1`), matching ResNet.
+- `stack_size::Int`: Number of residual blocks after the stem (default `1`).
   `0` is a no-op (embedding width must equal `hidden_size`).
 - `dropout::Float64`: Dropout in residual blocks and on the attention residual (default `0.0`).
 - `nheads::Int`: Number of attention heads (default `4`).
 - `n_attn_layers::Int`: Number of attention residuals (default `1`). `0` is encoder + head only.
 - `attn_dropout::Float64`: Dropout on attention scores (default `0.0`).
-- `attn_scale::Float32`: Initial attention residual scalar (default `0.1`).
-- `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
 """
 struct MLPAttnConfig <: Architecture
     act::Symbol
@@ -163,8 +147,6 @@ struct MLPAttnConfig <: Architecture
     nheads::Int
     n_attn_layers::Int
     attn_dropout::Float64
-    attn_scale::Float32
-    MLE_tree_split::Bool
 end
 
 function MLPAttnConfig(; kwargs...)
@@ -176,8 +158,6 @@ function MLPAttnConfig(; kwargs...)
         :nheads => 4,
         :n_attn_layers => 1,
         :attn_dropout => 0.0,
-        :attn_scale => 0.1f0,
-        :MLE_tree_split => false,
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -200,31 +180,30 @@ function MLPAttnConfig(; kwargs...)
         args[:nheads],
         args[:n_attn_layers],
         args[:attn_dropout],
-        Float32(args[:attn_scale]),
-        args[:MLE_tree_split],
     )
 end
 
 """
-    _item_res_block(hsize, act, dropout)
+    _res_block(hsize, act, dropout)
 
-Same residual block as ResNet: two Denses with BatchNorm and a skip.
+ResNet residual block with masked BatchNorm so grouped pads can be ignored.
 """
-function _item_res_block(hsize::Int, act, dropout::Float64)
-    layers = Any[Dense(hsize => hsize), BatchNorm(hsize, act)]
-    dropout > 0 && push!(layers, Dropout(dropout))
-    push!(layers, Dense(hsize => hsize))
-    push!(layers, BatchNorm(hsize))
-    return Chain(SkipConnection(Chain(layers...), +), BatchNorm(hsize, act))
+function _res_block(hsize::Int, act, dropout::Float64)
+    layers = Any[CarryMask(Dense(hsize => hsize)), MaskedBatchNorm(hsize, act)]
+    dropout > 0 && push!(layers, CarryMask(Dropout(dropout)))
+    push!(layers, CarryMask(Dense(hsize => hsize)))
+    push!(layers, MaskedBatchNorm(hsize))
+    return Chain(MaskSkip(Chain(layers...)), MaskedBatchNorm(hsize, act))
 end
 
 """
     _mlp_encoder(ins, hsize, act, stack_size, dropout)
 
-Item-wise ResNet trunk without the prediction head.
+ResNet trunk without the prediction `Dense`. Accepts `x` or `(x, valid)` so
+BatchNorm can skip padded group-buffer slots.
 
 - `stack_size == 0`: `NoOpLayer`. Requires `ins == hsize`.
-- `stack_size >= 1`: `Dense(ins → hsize)` + BatchNorm+act, then `stack_size` residual blocks.
+- `stack_size >= 1`: `Dense(ins → hsize)` + MaskedBN+act, then `stack_size` residual blocks.
 """
 function _mlp_encoder(ins::Int, hsize::Int, act, stack_size::Int, dropout::Float64)
     stack_size >= 0 || error("`stack_size` must be ≥ 0, got $stack_size.")
@@ -234,28 +213,21 @@ function _mlp_encoder(ins::Int, hsize::Int, act, stack_size::Int, dropout::Float
         )
         return NoOpLayer()
     end
-    layers = Any[Dense(ins => hsize), BatchNorm(hsize, act)]
+    layers = Any[CarryMask(Dense(ins => hsize)), MaskedBatchNorm(hsize, act)]
     for _ in 1:stack_size
-        push!(layers, _item_res_block(hsize, act, dropout))
+        push!(layers, _res_block(hsize, act, dropout))
     end
     return Chain(layers...)
 end
 
-function _attn_blocks(
-    hsize::Int, nheads::Int, n_attn_layers::Int, dropout::Float64, attn_dropout::Float64; attn_scale::Float32=0.1f0
-)
+function _attn_blocks(hsize::Int, nheads::Int, n_attn_layers::Int, dropout::Float64, attn_dropout::Float64)
     n_attn_layers >= 0 || error("`n_attn_layers` must be ≥ 0, got $n_attn_layers.")
     n_attn_layers == 0 && return NoOpLayer()
-    blocks = [AttnResidual(hsize, nheads; dropout, attn_dropout, attn_scale) for _ in 1:n_attn_layers]
+    blocks = [AttnResidual(hsize, nheads; dropout, attn_dropout) for _ in 1:n_attn_layers]
     return Chain(blocks...)
 end
 
-function _pred_head(hsize::Int, outsize::Int, MLE_tree_split::Bool)
-    if MLE_tree_split
-        iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
-        head_outsize = outsize ÷ 2
-        return Parallel(vcat, Dense(hsize => head_outsize), Dense(hsize => head_outsize))
-    end
+function _pred_head(hsize::Int, outsize::Int)
     return Dense(hsize => outsize)
 end
 
@@ -270,11 +242,9 @@ function _build_mlp_attn(ins::Int, outsize::Int, config::MLPAttnConfig)
 
     act = get_activation(config.act)
     encoder = _mlp_encoder(ins, hsize, act, config.stack_size, config.dropout)
-    blocks = _attn_blocks(
-        hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout; attn_scale=config.attn_scale
-    )
+    blocks = _attn_blocks(hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout)
 
-    return MLPAttn(encoder, blocks, _pred_head(hsize, outsize, config.MLE_tree_split))
+    return MLPAttn(encoder, blocks, _pred_head(hsize, outsize))
 end
 
 """

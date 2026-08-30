@@ -88,9 +88,11 @@ struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
     version::Symbol
 end
 function PiecewiseLinearEmbeddings(; d_embedding::Int=16, bins::Int=32, activation=:identity, version=:B)
+    version = Symbol(version)
+    activation = Symbol(activation)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     version in (:A, :B) || throw(ArgumentError("version must be :A or :B, got :$version"))
-    PiecewiseLinearEmbeddings(d_embedding, bins, Symbol(activation), Symbol(version))
+    PiecewiseLinearEmbeddings(d_embedding, bins, activation, version)
 end
 
 """

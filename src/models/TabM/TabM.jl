@@ -4,10 +4,10 @@ export TabMConfig
 
 using Lux
 using LuxCore
-using LuxLib: batched_matmul
 using Random: AbstractRNG, rand, randn
 
 import ..Models: Architecture, _broadcast_relu
+using ..GroupedDenseLayer: GroupedDense, rsqrt_uniform_grouped
 
 include("layers.jl")
 

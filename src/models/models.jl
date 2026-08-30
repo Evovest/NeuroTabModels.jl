@@ -1,6 +1,7 @@
 module Models
 
 export NeuroTabModel, Architecture, uses_batch_mask, MaskedModel
+export MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense
 export Embeddings, EmbeddingLayer
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
 export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
@@ -52,6 +53,11 @@ Assemble embeddings and a core backbone that may take an optional padding mask.
 Embeddings still see only `x`. When the input is `(x, w)`, this layer runs
 `embed(x)` then `core((z, w))`. Used instead of `Chain(embed, core)` when the
 core mixes across observations and needs to ignore padded group-buffer slots.
+
+Embeddings are per-observation maps, so a pad column cannot contaminate a
+real column there; the mask is only required where the core reduces or mixes
+across the batch (attention, `MaskedBatchNorm`). See the "Padding and masks"
+design page.
 """
 struct MaskedModel{E,C} <: AbstractLuxContainerLayer{(:embed, :core)}
     embed::E
@@ -73,6 +79,12 @@ end
 
 import ..Losses: masked_input
 masked_input(::MaskedModel, x, w) = (x, w)
+
+include("maskednorm.jl")
+import .MaskedNorm: MaskedBatchNorm, CarryMask, MaskSkip
+
+include("groupeddense.jl")
+using .GroupedDenseLayer: GroupedDense
 
 """
     train_dataloader(arch, m, default, df; kwargs...)

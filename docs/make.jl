@@ -9,6 +9,7 @@ pages = [
     "Embeddings" => ["Design" => "quarto/embeddings-design.md", "API" => "embeddings.md"],
     "Models" => [
         "Interface" => "models/models.md",
+        "Padding and masks" => "models/padding-mask.md",
         "MLP" => "models/mlp.md",
         "ResNet" => "models/resnet.md",
         "NeuroTrees" => ["design" => "design.md", "API" => "models/neurotrees.md"],

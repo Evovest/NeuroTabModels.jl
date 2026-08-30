@@ -62,8 +62,8 @@ end
     _PiecewiseLinearEmbeddings(; bins, d_embedding, activation=identity, version=:B)
 
 Learnable embeddings on top of `PiecewiseLinearEncoding`.
-Version `:A`: PLE -> NLinear (with bias).
-Version `:B`: PLE -> NLinear (zero-init, no bias) + per-feature linear residual.
+Version `:A`: PLE -> GroupedDense (with bias).
+Version `:B`: PLE -> GroupedDense (zero-init, no bias) + per-feature linear residual.
 Output shape `(d_embedding, nfeats, batch)`.
 
 # Arguments
@@ -90,7 +90,11 @@ function _PiecewiseLinearEmbeddings(;
     encoding = PiecewiseLinearEncoding(bins)
     # Residual path uses raw affine output (no activation)
     linear0 = (version == :B) ? _LinearEmbeddings(; nfeats, d_embedding, activation=identity) : nothing
-    linear = NLinear(nfeats, max_n_bins, d_embedding; bias=(version == :A))
+    linear = if version == :A
+        GroupedDense(max_n_bins => d_embedding, nfeats)
+    else
+        GroupedDense(max_n_bins => d_embedding, nfeats; use_bias=false, init_weight=zeros32)
+    end
 
     return _PiecewiseLinearEmbeddings(linear0, encoding, linear, activation, version)
 end
@@ -98,14 +102,7 @@ end
 function LuxCore.initialparameters(rng::AbstractRNG, m::_PiecewiseLinearEmbeddings)
     ps_l0 = m.linear0 === nothing ? nothing : LuxCore.initialparameters(rng, m.linear0)
     ps_enc = LuxCore.initialparameters(rng, m.encoding)
-
-    if m.version == :B
-        n = m.linear.n
-        ps_lin = (weight=zeros(Float32, m.linear.out_features, m.linear.in_features, n),)
-    else
-        ps_lin = LuxCore.initialparameters(rng, m.linear)
-    end
-
+    ps_lin = LuxCore.initialparameters(rng, m.linear)
     return (linear0=ps_l0, encoding=ps_enc, linear=ps_lin)
 end
 
@@ -126,4 +123,4 @@ function (m::_PiecewiseLinearEmbeddings)(x::AbstractMatrix, ps, st)
     return h_final, (linear0=st_l0, encoding=st_enc, linear=st_lin)
 end
 
-LuxCore.outputsize(m::_PiecewiseLinearEmbeddings, x, ::AbstractRNG) = (m.linear.out_features, size(x, 1))
+LuxCore.outputsize(m::_PiecewiseLinearEmbeddings, x, ::AbstractRNG) = (m.linear.out_dims, size(x, 1))
