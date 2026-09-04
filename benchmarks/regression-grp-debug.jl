@@ -52,7 +52,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 device = :gpu
 backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
-metric = :correlation # :mse :gaussian_mle :tweedie
+metric = :pearson # :mse :gaussian_mle :tweedie
 
 # embedding_config = Dict(
 #     :embedding_type => :piecewise,

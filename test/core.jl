@@ -485,18 +485,18 @@ end
     @test p_scaled[:, 2] ≈ p[:, 2] .* 2
 end
 
-@testset "Correlation loss" begin
+@testset "Pearson loss" begin
     idm = (x, ps, st) -> (x, st)
     x = Float32[1.0 2.0 3.0 4.0]
     y = Float32[1.0 2.0 3.0 4.0]
-    val, _, _ = NeuroTabModels.Losses.Correlation()(idm, (;), (;), (x, y))
+    val, _, _ = NeuroTabModels.Losses.Pearson()(idm, (;), (;), (x, y))
     @test val ≈ -4.0f0
 
     x3 = reshape(x, 1, 1, 4)
-    val3, _, _ = NeuroTabModels.Losses.Correlation()(idm, (;), (;), (x3, y))
+    val3, _, _ = NeuroTabModels.Losses.Pearson()(idm, (;), (;), (x3, y))
     @test val3 ≈ -4.0f0
 
     w = Float32[1, 1, 1, 1]
-    valw, _, _ = NeuroTabModels.Losses.Correlation()(idm, (;), (;), (x, y, w))
+    valw, _, _ = NeuroTabModels.Losses.Pearson()(idm, (;), (;), (x, y, w))
     @test valw ≈ -4.0f0
 end

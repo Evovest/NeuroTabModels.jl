@@ -40,7 +40,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 device = :gpu
 backend = :reactant
 loss = :mse
-metric = :correlation
+metric = :pearson
 
 embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => "identity")
 

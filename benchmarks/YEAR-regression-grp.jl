@@ -103,7 +103,7 @@ device = :gpu
 backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
 # metric = :mse # :mse :gaussian_mle :tweedie
-metric = :correlation
+metric = :pearson
 
 # embedding_config = Dict(:embedding_type => "batchnorm")
 embedding_config = Dict(:embedding_type => "linear", :d_embedding => 1, :activation => "identity")

@@ -1,6 +1,6 @@
 module Losses
 
-export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie, Correlation
+export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie, Pearson
 export masked_input
 
 import Statistics: mean
@@ -27,7 +27,7 @@ struct LogLoss <: LossType end
 struct MLogLoss <: LossType end
 struct GaussianMLE <: LossType end
 struct Tweedie <: LossType end
-struct Correlation <: LossType end
+struct Pearson <: LossType end
 
 LossType(loss::LossType) = loss
 LossType(::Type{L}) where {L<:LossType} = L()
@@ -38,10 +38,10 @@ LossType(::Val{:logloss}) = LogLoss()
 LossType(::Val{:mlogloss}) = MLogLoss()
 LossType(::Val{:gaussian_mle}) = GaussianMLE()
 LossType(::Val{:tweedie}) = Tweedie()
-LossType(::Val{:correlation}) = Correlation()
+LossType(::Val{:pearson}) = Pearson()
 function LossType(::Val{s}) where {s}
     error(
-        "Unknown loss `:$s`. Supported: :mse, :mae, :logloss, :mlogloss, :gaussian_mle, :tweedie, :correlation.",
+        "Unknown loss `:$s`. Supported: :mse, :mae, :logloss, :mlogloss, :gaussian_mle, :tweedie, :pearson.",
     )
 end
 
@@ -51,7 +51,7 @@ noutputs(::GaussianMLE) = 2
 
 """Whether this loss standardises the target when `scale_target=true`."""
 scales_target(::LossType) = false
-scales_target(::Union{MSE,MAE,GaussianMLE,Correlation}) = true
+scales_target(::Union{MSE,MAE,GaussianMLE,Pearson}) = true
 
 _reshape_3d(x::AbstractVector) = reshape(x, 1, 1, :)
 _reshape_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
@@ -126,7 +126,7 @@ end
 _corr_from_pred(pred) = vec(mean(view(pred, 1, :, :); dims=1))
 _ones_like(p) = fill!(similar(p), one(eltype(p)))
 
-function _correlation_value(p, y, w)
+function _pearson_value(p, y, w)
     p = vec(p)
     y = vec(y)
     w = vec(w)
@@ -139,13 +139,13 @@ function _correlation_value(p, y, w)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sw
 end
 
-function _aggregate(::Correlation, pred, y, ::Nothing)
+function _aggregate(::Pearson, pred, y, ::Nothing)
     p = _corr_from_pred(pred)
-    return -_correlation_value(p, y, _ones_like(p))
+    return -_pearson_value(p, y, _ones_like(p))
 end
-function _aggregate(::Correlation, pred, y, w)
+function _aggregate(::Pearson, pred, y, w)
     p = _corr_from_pred(pred)
-    return -_correlation_value(p, y, w)
+    return -_pearson_value(p, y, w)
 end
 
 end

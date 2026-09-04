@@ -46,7 +46,7 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
   - `:logloss`
   - `:tweedie`
   - `:gaussian_mle`
-  - `:correlation`
+  - `:pearson`
 - `nrounds=10`:             Max number of rounds (epochs).
 - `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `lr` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
@@ -183,10 +183,10 @@ function NeuroTabRegressor(arch::Architecture; kwargs...)
     end
 
     loss = Symbol(args[:loss])
-    loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation] &&
+    loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :pearson] &&
         error("The provided kwarg `loss`: $loss is not supported.")
 
-    _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation]
+    _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :pearson]
     if isnothing(args[:metric])
         metric = loss
     else

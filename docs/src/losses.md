@@ -28,7 +28,7 @@ MSE()(model, ps, st, data)
 | `:mlogloss` | `MLogLoss` | `(C, K, B)` | `{1, …, C}` | raw logits |
 | `:gaussian_mle` | `GaussianMLE` | `(2, K, B)` | scalar | `pred[1,:,:]` = μ, `pred[2,:,:]` = log-σ |
 | `:tweedie` | `Tweedie` | `(1, K, B)` | non-negative | log-scale pred, ρ = 1.5 |
-| `:correlation` | `Correlation` | `(1, K, B)` | scalar | negative Pearson correlation |
+| `:pearson` | `Pearson` | `(1, K, B)` | scalar | negative Pearson correlation |
 
 ## Data Tuples
 
