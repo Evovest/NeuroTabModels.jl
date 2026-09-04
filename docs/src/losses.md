@@ -1,5 +1,7 @@
 # Losses
 
+Losses are concrete callable types, following the [Lux loss API](https://lux.csail.mit.edu/stable/api/Lux/utilities#Loss-Functions): they take `(model, ps, st, data)` and return `(scalar_loss, updated_state, NamedTuple())`.
+
 ## Prediction Shape
 
 All losses expect 3D predictions: `(outsize, K, batch)` where `K` is the ensemble size. 2D outputs are reshaped to `(outsize, 1, batch)` automatically.
@@ -7,11 +9,14 @@ All losses expect 3D predictions: `(outsize, K, batch)` where `K` is the ensembl
 `reduce_pred` averages over `K` on raw predictions before any transformation.
 
 ## Usage
+
 ```julia
-get_loss_fn(:mse)       # by symbol
-get_loss_fn(MSE)        # by type
-get_loss_type(:mse)     # → MSE
+MSE()                    # callable loss functor
+LossType(:mse)           # same, from a symbol (`MSE()`)
+MSE()(model, ps, st, data)
 ```
+
+`NeuroTabRegressor` / `NeuroTabClassifier` still take `loss=:mse` (a symbol). `fit` converts that once to a functor and stores it on `NeuroTabModel.loss`.
 
 ## Supported Losses
 
@@ -23,6 +28,7 @@ get_loss_type(:mse)     # → MSE
 | `:mlogloss` | `MLogLoss` | `(C, K, B)` | `{1, …, C}` | raw logits |
 | `:gaussian_mle` | `GaussianMLE` | `(2, K, B)` | scalar | `pred[1,:,:]` = μ, `pred[2,:,:]` = log-σ |
 | `:tweedie` | `Tweedie` | `(1, K, B)` | non-negative | log-scale pred, ρ = 1.5 |
+| `:correlation` | `Correlation` | `(1, K, B)` | scalar | negative Pearson correlation |
 
 ## Data Tuples
 
@@ -33,6 +39,7 @@ get_loss_type(:mse)     # → MSE
 | `(x, y, w, offset)` | with offset (e.g. boosting) |
 
 ## Signature
+
 ```julia
-loss_fn(model, ps, st, data) → (scalar_loss, updated_state, NamedTuple())
+loss(model, ps, st, data) → (scalar_loss, updated_state, NamedTuple())
 ```

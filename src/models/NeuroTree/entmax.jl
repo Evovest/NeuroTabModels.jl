@@ -22,7 +22,7 @@ end
     entmax15(x)
 
 WIP: entmax15 activation function for sparse feature selection. 
-Doesn't improve performanceon YEAR dataset as stated in NODE paper.
+Doesn't improve performance on YEAR dataset as stated in NODE paper.
 """
 function entmax15(x)
     x_norm = (x .- maximum(x; dims=2)) ./ 2

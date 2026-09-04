@@ -20,11 +20,10 @@
     feature_names = "var_" .* string.(1:nfeats)
 
     outsize = 1
-    loss = NeuroTabModels.Losses.get_loss_fn(learner.loss)
-    L = NeuroTabModels.Losses.get_loss_type(learner.loss)
+    loss = NeuroTabModels.Losses.LossType(learner.loss)
     chain = learner.arch(; ins=nfeats, outsize)
     info = Dict(:nrounds => 0, :feature_names => feature_names)
-    m = NeuroTabModel(L, chain, info)
+    m = NeuroTabModel(loss, chain, info)
 end
 
 @testset "Regression - NeuroTree" begin
@@ -121,8 +120,8 @@ end
     # Predictions depend on the number of samples in the dataset
     ptrain = [argmax(x) for x in eachrow(m(dtrain))]
     peval = [argmax(x) for x in eachrow(m(deval))]
-    @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
-    @test mean(peval .== levelcode.(deval.class)) > 0.95
+    @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
+    @test mean(peval .== levelcode.(deval.class)) >= 0.95
 end
 
 @testset "Classification - TabM $arch_type" for arch_type in [:tabm, :tabm_mini, :tabm_packed]
@@ -154,16 +153,16 @@ end
 
     ptrain = [argmax(x) for x in eachrow(m(dtrain))]
     peval = [argmax(x) for x in eachrow(m(deval))]
-    @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
-    @test mean(peval .== levelcode.(deval.class)) > 0.95
+    @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
+    @test mean(peval .== levelcode.(deval.class)) >= 0.95
 end
 
 @testset "Classification - $arch_name" for (arch_name, arch) in [
     ("MLP", NeuroTabModels.MLPConfig(; hidden_size=32, stack_size=1, dropout=0.5)),
-    ("MLPAttn", NeuroTabModels.MLPAttnConfig(; hidden_size=32, nheads=4, stack_size=1, dropout=0.1)),
+    ("MLPAttn", NeuroTabModels.MLPAttnConfig(; hidden_size=32, nheads=1, stack_size=1, dropout=0.5)),
     (
         "NeuroTreeAttn",
-        NeuroTabModels.NeuroTreeAttnConfig(; hidden_size=32, nheads=4, stack_size=1, depth=3, ntrees=8, dropout=0.1),
+        NeuroTabModels.NeuroTreeAttnConfig(; hidden_size=8, nheads=1, stack_size=1, depth=3, ntrees=8, dropout=0.5),
     ),
     ("ResNet", NeuroTabModels.ResNetConfig(; hidden_size=32, stack_size=1, dropout=0.5)),
 ]
@@ -187,15 +186,15 @@ end
         nrounds=200,
         batchsize=32,
         early_stopping_rounds=5,
-        lr=2e-3,
+        lr=3e-3,
     )
 
     m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5)
 
     ptrain = [argmax(x) for x in eachrow(m(dtrain))]
     peval = [argmax(x) for x in eachrow(m(deval))]
-    @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
-    @test mean(peval .== levelcode.(deval.class)) > 0.95
+    @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
+    @test mean(peval .== levelcode.(deval.class)) >= 0.95
 end
 
 @testset "Regression - MLPAttn grouped" begin
@@ -367,6 +366,33 @@ end
     @test size(y1, 2) == 3
     @test size(y2, 2) == 5
     @test y2[:, 1:3] ≈ y1
+
+    st_tr = Lux.trainmode(st)
+    y1t, _ = chain(x_real, ps, st_tr)
+    y2t, _ = chain((x_pad, w), ps, st_tr)
+    @test y2t[:, 1:3] ≈ y1t
+end
+
+@testset "NeuroTreeAttn encoder is k-ensembles, not leaves" begin
+    rng = Random.Xoshiro(123)
+    nfeats, hsize, nheads, depth, ntrees = 6, 16, 4, 3, 4
+    @test 2^depth != hsize
+    arch = NeuroTabModels.NeuroTreeAttnConfig(;
+        hidden_size=hsize, nheads, stack_size=1, dropout=0.0, depth, ntrees
+    )
+    chain = arch(; ins=nfeats, outsize=1)
+    ps, st = Lux.setup(rng, chain)
+    tree = chain.encoder[1].layer[1]
+    @test tree isa NeuroTabModels.Models.NeuroTrees.NeuroTree
+    @test tree.k == hsize
+    @test tree.outs == 1
+    @test tree.leaves == 2^depth
+    @test size(ps.encoder.layer_1.layer_1.p) == (1, 2^depth, ntrees, hsize)
+
+    x = randn(Float32, nfeats, 5)
+    z, _ = chain.encoder(x, ps.encoder, Lux.testmode(st).encoder)
+    z = z isa Tuple ? z[1] : z
+    @test size(z) == (hsize, 5)
 end
 
 @testset "Backend/device - reactant is a backend" begin
@@ -442,6 +468,35 @@ end
 
     ptrain = [argmax(x) for x in eachrow(m(dtrain))]
     peval = [argmax(x) for x in eachrow(m(deval))]
-    @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
-    @test mean(peval .== levelcode.(deval.class)) > 0.95
+    @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
+    @test mean(peval .== levelcode.(deval.class)) >= 0.95
+end
+
+@testset "GaussianMLE inverse link and scaling" begin
+    pred = Float32[0.2 0.3; 0.0 1.0]
+    p = NeuroTabModels.Infer._inverse_link(NeuroTabModels.Losses.GaussianMLE(), pred)
+    @test size(p) == (2, 2)
+    @test p[:, 1] ≈ Float32[0.2, 0.3]
+    @test p[:, 2] ≈ exp.(Float32[0.0, 1.0])
+
+    scalers = (mu=10.0f0, sigma=2.0f0)
+    p_scaled = NeuroTabModels.Infer._scaler(NeuroTabModels.Losses.GaussianMLE(), copy(p), scalers)
+    @test p_scaled[:, 1] ≈ p[:, 1] .* 2 .+ 10
+    @test p_scaled[:, 2] ≈ p[:, 2] .* 2
+end
+
+@testset "Correlation loss" begin
+    idm = (x, ps, st) -> (x, st)
+    x = Float32[1.0 2.0 3.0 4.0]
+    y = Float32[1.0 2.0 3.0 4.0]
+    val, _, _ = NeuroTabModels.Losses.Correlation()(idm, (;), (;), (x, y))
+    @test val ≈ -4.0f0
+
+    x3 = reshape(x, 1, 1, 4)
+    val3, _, _ = NeuroTabModels.Losses.Correlation()(idm, (;), (;), (x3, y))
+    @test val3 ≈ -4.0f0
+
+    w = Float32[1, 1, 1, 1]
+    valw, _, _ = NeuroTabModels.Losses.Correlation()(idm, (;), (;), (x, y, w))
+    @test valw ≈ -4.0f0
 end

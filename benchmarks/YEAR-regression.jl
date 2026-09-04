@@ -51,8 +51,8 @@ dtest = df_tot[(end - 51630 + 1):end, :];
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
     actA=:identity,
-    k=1,
-    ntrees=32,
+    k=8,
+    ntrees=16,
     depth=4,
     stack_size=1,
     hidden_size=16,
@@ -83,15 +83,15 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     dropout=0.2
 # )
 
-arch = NeuroTabModels.MLPAttnConfig(;
-    act=:relu,
-    stack_size=1,
-    hidden_size=64,
-    nheads=1,
-    n_attn_layers=1,
-    dropout=0.2,
-    attn_dropout=0.1,
-)
+# arch = NeuroTabModels.MLPAttnConfig(;
+#     act=:relu,
+#     stack_size=1,
+#     hidden_size=64,
+#     nheads=1,
+#     n_attn_layers=1,
+#     dropout=0.2,
+#     attn_dropout=0.1,
+# )
 
 # arch = NeuroTabModels.NeuroTreeAttnConfig(;
 #     tree_type=:binary,

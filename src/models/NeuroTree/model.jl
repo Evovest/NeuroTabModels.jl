@@ -3,17 +3,18 @@
               depth, trees, k, init_scale=0.1)
 
 Differentiable tree ensemble layer.
-Outpout dims: `[outs, k, batch_size]`.
+Output dims: `[outs, k, batch_size]`.
 
 # Arguments
 - `feats::Int`: Number of input features.
-- `outs::Int`: Number of output targets per tree ensemble.
+- `outs::Int`: Number of predictions per leaf (the `P` axis). Encoder use is `outs = 1`.
 - `tree_type::Symbol`: `:binary` or `:oblivious`.
 - `actA`: Feature activation applied to split weights.
 - `scaler::Bool`: Scale logits with a learned softplus factor.
 - `depth::Int`: Tree depth.
-- `trees::Int`: Number of trees in the ensemble.
-- `k::Int`: Ensemble size.
+- `trees::Int`: Number of trees averaged in each of the `k` ensembles.
+- `k::Int`: Number of independent ensembles. Each ensemble produces one `outs`-wide
+  vector; leaf values are **not** shared across `k`.
 - `init_scale::Float32`: Standard deviation for leaf weight initialization.
 """
 struct NeuroTree{F} <: AbstractLuxLayer
@@ -58,7 +59,7 @@ function LuxCore.initialparameters(rng::AbstractRNG, l::NeuroTree)
         w=Float32.((rand(rng, l.nodes * l.trees * l.k, l.feats) .- 0.5) ./ 4), # [NTK,F]
         b=zeros(Float32, l.nodes * l.trees * l.k), # [NTK]
         s=Float32.(fill(log(expm1(1)), l.nodes * l.trees * l.k)), # [NTK]
-        p=Float32.(randn(rng, l.outs, l.leaves, l.trees) .* l.init_scale), # [P,L,T,K]
+        p=Float32.(randn(rng, l.outs, l.leaves, l.trees, l.k) .* l.init_scale), # [P,L,T,K]
     )
 end
 

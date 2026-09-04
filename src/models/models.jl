@@ -100,7 +100,7 @@ train_dataloader(::Architecture, ::Any, data, ::Any; kwargs...) = data
 """
     build_chain(arch, embed_chain; ins, outsize)
 
-Utility fucntion for assembling the Lux chain that `fit` will train.
+Utility function for assembling the Lux chain that `fit` will train.
 """
 function build_chain(arch::Architecture, embed_chain; ins, outsize, kwargs...)
     Chain(embed_chain, arch(; ins, outsize, kwargs...))
@@ -134,13 +134,13 @@ The object containing the model and associated metadata.
 
 # Fields
 
-- `loss_type`: the loss type used in training (`MSE`, `LogLoss`, `MLogLoss`, `GaussianMLE`).
+- `loss`: the loss functor used in training (`MSE()`, `LogLoss()`, `MLogLoss()`, `GaussianMLE()`).
 - `chain`: the underlying `Lux.Chain` neural network.
 - `info`: a `Dict{Symbol,Any}` of metadata such as `:feature_names`, `:target_levels`,
   and `:device`, plus the fitted parameters (`ps`) and state (`st`).
 """
 struct NeuroTabModel{L<:LossType,C}
-    loss_type::Type{L}
+    loss::L
     chain::C
     info::Dict{Symbol,Any}
 end

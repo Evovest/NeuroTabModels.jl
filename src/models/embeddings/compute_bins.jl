@@ -3,7 +3,7 @@
 
 Quantile-based bin edges for piecewise-linear embeddings.
 
-`X` must have shape `(n_samples, n_features)`,the transpose of model input `(n_features, batch)`.
+`X` must have shape `(n_samples, n_features)`, the transpose of model input `(n_features, batch)`.
 
 # Arguments
 - `X::AbstractMatrix`: Training data `(n_samples, n_features)`.

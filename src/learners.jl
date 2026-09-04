@@ -40,14 +40,15 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 
 # Hyper-parameters
 
-- `loss=:mse`:              Loss to be be minimized during training. One of:
+- `loss=:mse`:              Loss to be minimized during training. One of:
   - `:mse`
   - `:mae`
   - `:logloss`
-  - `:mlogloss`
+  - `:tweedie`
   - `:gaussian_mle`
-- `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
+  - `:correlation`
+- `nrounds=10`:             Max number of rounds (epochs).
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `lr` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
@@ -65,7 +66,7 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 # Internal API
 
 Do `config = NeuroTabRegressor()` to construct an instance with default hyper-parameters.
-Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabRegressor(loss=:logistic, depth=5, ...)`.
+Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabRegressor(loss=:mse, nrounds=10, ...)`.
 
 ## Training model
 
@@ -77,7 +78,7 @@ m = fit(config, dtrain; feature_names, target_name, kwargs...)
 
 ## Inference
 
-Models act as a functor. returning predictions when called as a function with features as argument:
+Models act as a functor, returning predictions when called as a function with features as argument:
 
 ```julia
 m(data)
@@ -128,7 +129,7 @@ The fields of `report(mach)` are:
 
 ```julia
 using NeuroTabModels, DataFrames
-config = NeuroTabRegressor(depth=5, nrounds=10)
+config = NeuroTabRegressor(NeuroTreeConfig(; depth=5); nrounds=10)
 nobs, nfeats = 1_000, 5
 dtrain = DataFrame(randn(nobs, nfeats), :auto)
 dtrain.y = rand(nobs)
@@ -141,7 +142,7 @@ p = m(dtrain)
 
 ```julia
 using MLJBase, NeuroTabModels
-m = NeuroTabRegressor(depth=5, nrounds=10)
+m = NeuroTabRegressor(NeuroTreeConfig(; depth=5); nrounds=10)
 X, y = @load_boston
 mach = machine(m, X, y) |> fit!
 p = predict(mach, X)
@@ -256,8 +257,8 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 
 # Hyper-parameters
 
-- `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
+- `nrounds=10`:             Max number of rounds (epochs).
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `lr` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
@@ -273,7 +274,7 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 # Internal API
 
 Do `config = NeuroTabClassifier()` to construct an instance with default hyper-parameters.
-Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(depth=5, ...)`.
+Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(nrounds=10, ...)`.
 
 ## Training model
 
@@ -285,7 +286,7 @@ m = fit(config, dtrain; feature_names, target_name, kwargs...)
 
 ## Inference
 
-Models act as a functor. returning predictions when called as a function with features as argument:
+Models act as a functor, returning predictions when called as a function with features as argument:
 
 ```julia
 m(data)
@@ -300,7 +301,7 @@ NeuroTabClassifier = @load NeuroTabClassifier pkg=NeuroTabModels
 ```
 
 Do `model = NeuroTabClassifier()` to construct an instance with default hyper-parameters.
-Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(loss=...)`.
+Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(nrounds=...)`.
 
 ## Training model
 
@@ -336,7 +337,7 @@ The fields of `report(mach)` are:
 
 ```julia
 using NeuroTabModels, DataFrames, CategoricalArrays, Random
-config = NeuroTabClassifier(depth=5, nrounds=10)
+config = NeuroTabClassifier(NeuroTreeConfig(; depth=5); nrounds=10)
 nobs, nfeats = 1_000, 5
 dtrain = DataFrame(randn(nobs, nfeats), :auto)
 dtrain.y = categorical(rand(1:2, nobs))
@@ -349,7 +350,7 @@ p = m(dtrain)
 
 ```julia
 using MLJBase, NeuroTabModels
-m = NeuroTabClassifier(depth=5, nrounds=10)
+m = NeuroTabClassifier(NeuroTreeConfig(; depth=5); nrounds=10)
 X, y = @load_crabs
 mach = machine(m, X, y) |> fit!
 p = predict(mach, X)

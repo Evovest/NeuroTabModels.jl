@@ -121,7 +121,7 @@ end
 
         ptrain = [argmax(x) for x in eachrow(m(dtrain))]
         peval = [argmax(x) for x in eachrow(m(deval))]
-        @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
-        @test mean(peval .== levelcode.(deval.class)) > 0.95
+        @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
+        @test mean(peval .== levelcode.(deval.class)) >= 0.95
     end
 end

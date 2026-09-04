@@ -113,7 +113,7 @@ struct LayerNormEmbeddings <: AbstractNumericalEmbedding end
     TemporalEmbeddings(; index, order=[4, 1, 7, 0], periods=_DEFAULT_TEMPORAL_PERIODS,
                        trend=true, d_embedding=16)
 
-Fourier embedding of a single time column: the column at `index` is expanded into multi-scale sine/cosine features at `periods`, projected to `d_embedding`, and optionally augmented with a linear trend. `order` and `periods` align per band  `order[i]` is the harmonic count for `periods[i]`.
+Fourier embedding of a single time column: the column at `index` is expanded into multi-scale sine/cosine features at `periods`, projected to `d_embedding`, and optionally augmented with a linear trend. `order` and `periods` align per band: `order[i]` is the harmonic count for `periods[i]`.
 
 # Arguments
 - `index::Int`: Required. 1-based position of the time column in `feature_names`.

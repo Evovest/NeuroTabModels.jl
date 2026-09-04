@@ -187,9 +187,12 @@ head(z)        Dense on every column, including pads
 `(features, mask)` without each `Dense` knowing about padding.
 `MaskedBatchNorm` is the layer that actually **reads** the flag.
 
-`NeuroTreeAttn` is the same split with a different encoder: trees are
-per-observation, so the encoder is called as `encoder(x)` (no mask),
-and only the attention blocks receive `_key_padding_mask(w, seq)`.
+`NeuroTreeAttn` is the same split with a tree encoder: trees are
+per-observation (`CarryMask` around `NeuroTree` + flatten), then
+`MaskedBatchNorm` uses the valid-token flag like MLPAttn. Attention
+blocks receive a rectangular key-padding mask. The hidden width is
+NeuroTree `k` (one ensemble of `ntrees` per channel, scalar leaf
+preds), not the number of leaves.
 
 Attention’s own batch dimension is always `1`. The “sequence” is the
 group / minibatch. The mask is therefore a **key-padding** mask over
