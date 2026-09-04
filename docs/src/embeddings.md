@@ -5,7 +5,7 @@ embeddings operate column-wise, while temporal embeddings reserve one column for
 time features and concatenate that branch with the remaining numerical features.
 
 They do not consume the grouped padding mask: embeddings map each observation
-independently, and `MaskedModel` only reattaches `w` at the mixer core. See
+independently, and `MaskedModel` only reattaches `w` at the `*Attn` core. See
 [Grouped padding and masks](@ref).
 
 ## Available Embeddings

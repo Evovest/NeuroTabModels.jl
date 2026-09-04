@@ -1,7 +1,7 @@
 # Models
 
-Set mixers and grouped loaders: see [Grouped padding and masks](@ref) for
-why `w` exists, why embeddings never see it, and how `MaskedModel` threads
+`MLPAttn` / `NeuroTreeAttn` and grouped loaders: see [Grouped padding and masks](@ref)
+for why `w` exists, why embeddings never see it, and how `MaskedModel` threads
 the mask into the core.
 
 ## Layers
