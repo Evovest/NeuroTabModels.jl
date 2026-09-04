@@ -160,12 +160,12 @@ Run inference on tabular data and return predictions.
 function infer(
     m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true
 )
-    group_key = m.info[:group_key]
-    if isnothing(group_key)
+    group_name = m.info[:group_name]
+    if isnothing(group_name)
         dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
         p = infer(m, dinfer; device, backend, proj)
     else
-        dfg = groupby(df, group_key; sort=true)
+        dfg = groupby(df, group_name; sort=true)
         dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
         p = infer_grp(m, dinfer; device, backend, proj)
     end

@@ -116,14 +116,14 @@ learner = NeuroTabRegressor(
     arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=2, lr=3e-4, device, backend
 )
 
-group_key = "grp" #"grp" # nothing
-# group_key = nothing #"grp" # nothing
-eval_group_key = "grp"
+group_name = "grp" #"grp" # nothing
+# group_name = nothing #"grp" # nothing
+eval_group_name = "grp"
 # @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5);
-@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, print_every_n=5);
-# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, eval_group_key, print_every_n=5);
-# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, weight_name, group_key, print_every_n=5);
-# @time m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, group_key, print_every_n=5);
+@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_name, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_name, eval_group_name, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, weight_name, group_name, print_every_n=5);
+# @time m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, group_name, print_every_n=5);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]

@@ -1,14 +1,14 @@
 # Grouped padding and masks
 
 Set mixers (`MLPAttn`, `NeuroTreeAttn`) treat the current batch — or one
-group, when `group_key` is set — as an **unordered set of tokens**.
+group, when `group_name` is set — as an **unordered set of tokens**.
 Grouped loaders pad those sets to a common buffer width. This page is
 the design for that padding: where `w` comes from, why embeddings never
 see it, and how the core consumes it.
 
 ## Why there is a pad at all
 
-A grouped train/eval/infer loader takes `groupby(df, group_key)` and
+A grouped train/eval/infer loader takes `groupby(df, group_name)` and
 writes **one padded tensor per group**. The buffer width is the size of
 the largest group, so every group is a dense `(features, buffer)`
 matrix:
@@ -200,7 +200,7 @@ observations, not a feature mask and not a causal triangle.
 
 ## Ungrouped batches
 
-With no `group_key`, there are no pad slots. Every column is a real
+With no `group_name`, there are no pad slots. Every column is a real
 observation. Mixers still accept a plain `x` (the unmasked method).
 `n_attn_layers=0` on `MLPAttn` is that encoder plus a linear head: a
 ResNet ablation, including `MaskedBatchNorm` with `valid = nothing`,

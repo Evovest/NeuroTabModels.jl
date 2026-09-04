@@ -39,12 +39,12 @@ function init(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing,
+    group_name=nothing,
 )
     feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
     weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
     offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
-    group_key = isnothing(group_key) ? nothing : Symbol(group_key)
+    group_name = isnothing(group_name) ? nothing : Symbol(group_name)
 
     dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     batchsize = config.batchsize
@@ -67,7 +67,7 @@ function init(
         scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
     end
 
-    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
+    dfg = isnothing(group_name) ? df : groupby(df, group_name; sort=true)
     data = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize) |> dev
 
     # Build chain: optional embeddings + architecture backbone
@@ -88,7 +88,7 @@ function init(
         :target_name => target_name,
         :weight_name => weight_name,
         :offset_name => offset_name,
-        :group_key => group_key,
+        :group_name => group_name,
         :target_levels => target_levels,
         :target_isordered => target_isordered,
         :scalers => scalers,
@@ -123,8 +123,8 @@ end
         target_name,
         weight_name=nothing,
         offset_name=nothing,
-        group_key=nothing,
-        eval_group_key=group_key,
+        group_name=nothing,
+        eval_group_name=group_name,
         deval=nothing,
         print_every_n=9999,
         verbosity=1,
@@ -143,9 +143,9 @@ Training function of NeuroTabModels' internal API.
 - `target_name`: Required. A `Symbol` or `String` indicating the name of the target variable.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
 - `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
-- `group_key=nothing`: Optional. Column used to group training data in the dataloader.
-- `eval_group_key=group_key`: Optional. Column used to group evaluation data when computing metrics.
-  Defaults to `group_key`. Set independently to compute groupby eval metrics while training on the
+- `group_name=nothing`: Optional. Column used to group training data in the dataloader.
+- `eval_group_name=group_name`: Optional. Column used to group evaluation data when computing metrics.
+  Defaults to `group_name`. Set independently to compute groupby eval metrics while training on the
   regular (ungrouped) dataloader.
 - `deval=nothing`: Optional. Evaluation data (`<:AbstractDataFrame`) for tracking metrics and early stopping.
 - `print_every_n=9999`: Integer. Logs training progress to the console every `N` epochs.
@@ -160,19 +160,19 @@ function fit(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing,
-    eval_group_key=group_key,
+    group_name=nothing,
+    eval_group_name=group_name,
     deval=nothing,
     print_every_n=9999,
     verbosity=1,
 )
-    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_key)
-    m.info[:eval_group_key] = isnothing(eval_group_key) ? nothing : Symbol(eval_group_key)
+    m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_name)
+    m.info[:eval_group_name] = isnothing(eval_group_name) ? nothing : Symbol(eval_group_name)
 
     logger = nothing
     if !isnothing(deval)
         cb = CallBack(
-            config, deval, cache, m; feature_names, target_name, weight_name, offset_name, eval_group_key
+            config, deval, cache, m; feature_names, target_name, weight_name, offset_name, eval_group_name
         )
         logger = init_logger(config)
         cb(logger, 0, cache[:train_state])

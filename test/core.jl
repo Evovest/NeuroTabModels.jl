@@ -219,7 +219,7 @@ end
     learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, early_stopping_rounds=5, lr=1e-2, batchsize=64)
 
     m = NeuroTabModels.fit(
-        learner, dtrain; target_name, feature_names, deval, group_key="grp", print_every_n=5
+        learner, dtrain; target_name, feature_names, deval, group_name="grp", print_every_n=5
     )
 
     p = m(deval)
@@ -337,7 +337,7 @@ end
     learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, early_stopping_rounds=5, lr=1e-2, batchsize=64)
 
     m = NeuroTabModels.fit(
-        learner, dtrain; target_name, feature_names, deval, group_key="grp", print_every_n=5
+        learner, dtrain; target_name, feature_names, deval, group_name="grp", print_every_n=5
     )
 
     p = m(deval)
