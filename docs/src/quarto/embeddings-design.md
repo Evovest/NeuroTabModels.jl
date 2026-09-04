@@ -317,5 +317,5 @@ columns the matrix has), not `temp.index`. `x_train` is
 
 For hyperparameter search, a `Dict` is accepted: `:embedding_type`
 selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`,
-`:identity`), and `:temporal => Dict(:index => 2, ...)` builds `temp`.
+`:layernorm`, `:identity`), and `:temporal => Dict(:index => 2, ...)` builds `temp`.
 Unknown keys are ignored.

@@ -4,6 +4,10 @@ Embeddings transform raw input columns before they reach a model backbone. Numer
 embeddings operate column-wise, while temporal embeddings reserve one column for
 time features and concatenate that branch with the remaining numerical features.
 
+They do not consume the grouped padding mask: embeddings map each observation
+independently, and `MaskedModel` only reattaches `w` at the `*Attn` core. See
+[Grouped padding and masks](@ref).
+
 ## Available Embeddings
 
 - `IdentityEmbedding`: leaves numerical features unchanged.
@@ -11,6 +15,7 @@ time features and concatenate that branch with the remaining numerical features.
 - `PeriodicEmbeddings`: expands each feature with learned sinusoidal terms before projection.
 - `PiecewiseLinearEmbeddings`: computes feature bins from the training data and embeds the resulting piecewise-linear encoding.
 - `BatchNormEmbeddings`: batch-normalizes raw numerical features without expanding them.
+- `LayerNormEmbeddings`: layer-normalizes raw numerical features without expanding them.
 - `TemporalEmbeddings`: embeds one time column with Fourier features and an optional trend term.
 
 ## Configuration

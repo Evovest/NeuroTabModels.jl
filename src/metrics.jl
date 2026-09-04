@@ -158,15 +158,15 @@ function gaussian_mle(m, x, y, w, offset; agg=mean)
 end
 
 """
-    correlation(m, x, y; agg=mean)
-    correlation(m, x, y, w; agg=mean)
-    correlation(m, x, y, w, offset; agg=mean)
+    pearson(m, x, y; agg=mean)
+    pearson(m, x, y, w; agg=mean)
+    pearson(m, x, y, w, offset; agg=mean)
 
 Uses the first output (`μ` when `gaussian_mle` returns `size(p, 1) == 2`).
 """
 _corr_pred(p) = vec(view(p, 1, :))
 
-function correlation(m, x, y; agg=mean)
+function pearson(m, x, y; agg=mean)
     p = _corr_pred(m(x))
     y = vec(y)
     p_mean = mean(p)
@@ -176,7 +176,7 @@ function correlation(m, x, y; agg=mean)
     py_mean = mean(p .* y)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * length(y)
 end
-function correlation(m, x, y, w; agg=mean)
+function pearson(m, x, y, w; agg=mean)
     p = _corr_pred(m(x))
     y = vec(y)
     w = vec(w)
@@ -187,7 +187,7 @@ function correlation(m, x, y, w; agg=mean)
     py_mean = w' * (p .* y) / sum(w)
     return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
 end
-function correlation(m, x, y, w, offset; agg=mean)
+function pearson(m, x, y, w, offset; agg=mean)
     p = _corr_pred(m(x) .+ offset)
     y = vec(y)
     w = vec(w)
@@ -245,7 +245,7 @@ const metric_dict = Dict(
     :mlogloss => mlogloss,
     :gaussian_mle => gaussian_mle,
     :tweedie => tweedie,
-    :correlation => correlation,
+    :pearson => pearson,
 )
 
 is_maximise(::typeof(mse)) = false
@@ -254,6 +254,6 @@ is_maximise(::typeof(logloss)) = false
 is_maximise(::typeof(mlogloss)) = false
 is_maximise(::typeof(gaussian_mle)) = true
 is_maximise(::typeof(tweedie)) = false
-is_maximise(::typeof(correlation)) = true
+is_maximise(::typeof(pearson)) = true
 
 end

@@ -37,27 +37,26 @@ function _forward_reduce(chain, x, ps, st)
 end
 
 # Assemble raw predictions into final structure (no transforms)
-_assemble(::Type{<:MLogLoss}, raw_preds) = reduce(hcat, raw_preds)
-_assemble(::Type{<:GaussianMLE}, raw_preds) = reduce(hcat, raw_preds)
-_assemble(::Type, raw_preds) = vcat([vec(p) for p in raw_preds]...)
+_assemble(::MLogLoss, raw_preds) = reduce(hcat, raw_preds)
+_assemble(::GaussianMLE, raw_preds) = reduce(hcat, raw_preds)
+_assemble(::LossType, raw_preds) = vcat([vec(p) for p in raw_preds]...)
 
 # Apply inverse link to convert from model scale to natural scale
-_inverse_link(::Type{<:LogLoss}, pred) = sigmoid.(pred)
-_inverse_link(::Type{<:Tweedie}, pred) = exp.(pred)
-_inverse_link(::Type{<:Union{MSE,MAE,Correlation}}, pred) = pred
-_inverse_link(::Type{<:MLogLoss}, pred) = Matrix(softmax(pred; dims=1)')
-function _inverse_link(::Type{<:GaussianMLE}, pred)
+_inverse_link(::LogLoss, pred) = sigmoid.(pred)
+_inverse_link(::Tweedie, pred) = exp.(pred)
+_inverse_link(::Union{MSE,MAE,Pearson}, pred) = pred
+_inverse_link(::MLogLoss, pred) = Matrix(softmax(pred; dims=1)')
+function _inverse_link(::GaussianMLE, pred)
     p = Matrix(pred')
-    @views p[:, 1] .= p[:, 1]
     @views p[:, 2] .= exp.(p[:, 2])
     return p
 end
 
-_scaler(::Type{<:LossType}, p, scalers) = p
-_scaler(::Type{<:Union{MSE,MAE,Correlation}}, p, scalers::NamedTuple) = p .* scalers[:sigma] .+ scalers[:mu]
-function _scaler(::Type{<:GaussianMLE}, p, scalers::NamedTuple)
+_scaler(::LossType, p, scalers) = p
+_scaler(::Union{MSE,MAE,Pearson}, p, scalers::NamedTuple) = p .* scalers[:sigma] .+ scalers[:mu]
+function _scaler(::GaussianMLE, p, scalers::NamedTuple)
     @views p[:, 1] .= p[:, 1] .* scalers[:sigma] .+ scalers[:mu]
-    @views p[:, 2] .= exp.(p[:, 2]) .* scalers[:sigma]
+    @views p[:, 2] .= p[:, 2] .* scalers[:sigma]
     return p
 end
 
@@ -73,10 +72,14 @@ function _infer_loop(::Val, chain, data, x0, dev, cdev, ps, st)
 end
 
 # Grouped variant: each batch is `(x, mask)`; `mask` selects real rows from padded groups.
-function _infer_grp_loop(::Val, chain, data, x0, dev, cdev, ps, st)
+# Architectures that mix across observations also receive `mask` as a key-padding mask.
+function _infer_grp_loop(::Val, chain, data, x0, mask0, dev, cdev, ps, st)
     preds = Vector{AbstractArray}()
+    use_mask = uses_batch_mask(chain)
     for (x, mask) in data
-        pred = _forward_reduce(chain, dev(x), ps, st)
+        xd = dev(x)
+        xin = use_mask ? (xd, dev(mask)) : xd
+        pred = _forward_reduce(chain, xin, ps, st)
         push!(preds, cdev(pred)[:, mask])
     end
     return preds
@@ -112,10 +115,10 @@ function infer(
     x0 = first(data)
     preds = _infer_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
 
-    p_raw = _assemble(L, preds)
+    p_raw = _assemble(m.loss, preds)
     proj || return p_raw
-    p = _inverse_link(L, p_raw)
-    return _scaler(L, p, scalers)
+    p = _inverse_link(m.loss, p_raw)
+    return _scaler(m.loss, p, scalers)
 end
 
 function infer_grp(
@@ -130,16 +133,12 @@ function infer_grp(
     scalers = m.info[:scalers]
 
     (x0, mask0) = first(data)
-    # @info typeof("mask0") mask0
-    # data = data |> dev
-    # (x0, mask0) = first(data)
-    # @info typeof("mask0-dev") mask0
-    preds = _infer_grp_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
+    preds = _infer_grp_loop(Val(backend), m.chain, data, x0, mask0, dev, cdev, ps, st)
 
-    p_raw = _assemble(L, preds)
+    p_raw = _assemble(m.loss, preds)
     proj || return p_raw
-    p = _inverse_link(L, p_raw)
-    return _scaler(L, p, scalers)
+    p = _inverse_link(m.loss, p_raw)
+    return _scaler(m.loss, p, scalers)
 end
 
 """
@@ -161,12 +160,12 @@ Run inference on tabular data and return predictions.
 function infer(
     m::NeuroTabModel, df::AbstractDataFrame; device=:cpu, backend=get(m.info, :backend, :zygote), proj::Bool=true
 )
-    group_key = m.info[:group_key]
-    if isnothing(group_key)
+    group_name = m.info[:group_name]
+    if isnothing(group_name)
         dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
         p = infer(m, dinfer; device, backend, proj)
     else
-        dfg = groupby(df, group_key; sort=true)
+        dfg = groupby(df, group_name; sort=true)
         dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
         p = infer_grp(m, dinfer; device, backend, proj)
     end

@@ -1,5 +1,6 @@
 using Test
 using NeuroTabModels
+using Lux
 using Tables
 using DataFrames
 using Statistics: mean

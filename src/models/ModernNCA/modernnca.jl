@@ -46,13 +46,13 @@ end
 """
     ModernNCAModel
 
-Lux wrapper holding the backbone encoder, config, output size, and loss type.
+Lux wrapper holding the backbone encoder, config, output size, and loss.
 """
-struct ModernNCAModel{B,LT} <: LuxCore.AbstractLuxWrapperLayer{:backbone}
+struct ModernNCAModel{B,L<:LossType} <: LuxCore.AbstractLuxWrapperLayer{:backbone}
     backbone::B
     cfg::ModernNCAConfig
     outsize::Int
-    loss_type::Type{LT}
+    loss::L
 end
 
 """
@@ -117,8 +117,8 @@ function _backbone(cfg::ModernNCAConfig, ins::Int)
     return Chain(layers...)
 end
 
-function (cfg::ModernNCAConfig)(; ins, outsize, loss_type::Type{<:LossType}=MSE)
-    return ModernNCAModel(_backbone(cfg, ins), cfg, Int(outsize), loss_type)
+function (cfg::ModernNCAConfig)(; ins, outsize, loss::LossType=MSE(), kwargs...)
+    return ModernNCAModel(_backbone(cfg, ins), cfg, Int(outsize), loss)
 end
 
 Base.length(l::ModernNCALoader) = fld(size(l.full_x, 2), l.batchsize)
@@ -146,14 +146,14 @@ weights to zero during training.
 """
 _mask_diag(d::AbstractMatrix) = _diag_inf.(reshape(1:size(d, 1), :, 1), reshape(1:size(d, 2), 1, :), d)
 
-_to_output(::Type{<:Union{MSE,MAE}}, α, cy, _) = reshape(α' * cy, 1, :)
+_to_output(::Union{MSE,MAE}, α, cy, _) = reshape(α' * cy, 1, :)
 
-function _to_output(::Type{<:LogLoss}, α, cy, _)
+function _to_output(::LogLoss, α, cy, _)
     p = clamp.(reshape(α' * cy, 1, :), 1.0f-6, 1.0f0 - 1.0f-6)
     return log.(p ./ (1.0f0 .- p))
 end
 
-function _to_output(::Type{<:MLogLoss}, α, cy, outsize::Int)
+function _to_output(::MLogLoss, α, cy, outsize::Int)
     oh = ((k, c) -> ifelse(k == c, 1.0f0, 0.0f0)).(reshape(UInt32(1):UInt32(outsize), :, 1), reshape(cy, 1, :))
     return log.(clamp.(oh * α, 1.0f-7, Inf32))
 end
@@ -168,7 +168,7 @@ function _nca_logits(m::ModernNCAModel, zq, zk, cy; mask_self::Bool=false)
     d = _pairwise_dist(zq, zk, m.cfg.eps) ./ max(m.cfg.temperature, m.cfg.eps)
     mask_self && (d = _mask_diag(d))
     α = softmax(-d; dims=1)
-    return _to_output(m.loss_type, α, cy, m.outsize)
+    return _to_output(m.loss, α, cy, m.outsize)
 end
 
 """
@@ -260,21 +260,21 @@ function Base.iterate(l::ModernNCALoader, state=nothing)
 end
 
 """
-    build_corpus(df, feature_names, target_name, loss_type, scalers)
+    build_corpus(df, feature_names, target_name, loss, scalers)
 
 Return `(full_x, full_y)`: the corpus feature matrix `(ins, N)` as `Float32`
 and the encoded target vector, ready for `ModernNCALoader`.
 """
-function build_corpus(df::AbstractDataFrame, feature_names, target_name, loss_type::Type{<:LossType}, scalers)
+function build_corpus(df::AbstractDataFrame, feature_names, target_name, loss::LossType, scalers)
     full_x = permutedims(Matrix{Float32}(select(df, collect(feature_names))))
-    full_y = _encode_targets(df, target_name, loss_type, scalers)
+    full_y = _encode_targets(df, target_name, loss, scalers)
     return full_x, full_y
 end
 
 """
-    _encode_targets(df, target_name, loss_type, scalers)
+    _encode_targets(df, target_name, loss, scalers)
 
-Encode targets for each loss type:
+Encode targets for each loss:
 - `MLogLoss`: 1-based `UInt32` class codes.
 - `LogLoss`: `Float32` in `{0, 1}`.
 - `MSE / MAE`: `Float32`, standardised when `scalers` is provided.
@@ -282,12 +282,12 @@ Encode targets for each loss type:
 # Arguments
 - `df`: source data frame.
 - `target_name`: target column.
-- `loss_type`: target encoding dispatch.
+- `loss`: target encoding dispatch.
 - `scalers`: optional target scaler `(mu, sigma)`.
 """
-_encode_targets(df, target_name, ::Type{<:MLogLoss}, _) = UInt32.(CategoricalArrays.levelcode.(df[!, target_name]))
+_encode_targets(df, target_name, ::MLogLoss, _) = UInt32.(CategoricalArrays.levelcode.(df[!, target_name]))
 
-function _encode_targets(df, target_name, ::Type{<:LogLoss}, _)
+function _encode_targets(df, target_name, ::LogLoss, _)
     col = df[!, target_name]
     eltype(col) <: CategoricalValue || return Float32.(col)
     levels = CategoricalArrays.levels(col)
@@ -295,7 +295,7 @@ function _encode_targets(df, target_name, ::Type{<:LogLoss}, _)
     return Float32.(CategoricalArrays.levelcode.(col) .- 1)
 end
 
-function _encode_targets(df, target_name, ::Type{<:Union{MSE,MAE,GaussianMLE}}, scalers)
+function _encode_targets(df, target_name, ::Union{MSE,MAE,GaussianMLE}, scalers)
     y = Float32.(df[!, target_name])
     isnothing(scalers) || (y .= (y .- scalers.mu) ./ scalers.sigma)
     return y
@@ -324,7 +324,7 @@ before the cap; `batchsize == N` gives `n_cand = 0`.
 - `df`: training data frame.
 - `feature_names`
 - `target_name`
-- `loss_type` 
+- `loss`
 - `scalers`
 - `batchsize`
 - `dev`: device
@@ -337,14 +337,14 @@ function Models.train_dataloader(
     df;
     feature_names,
     target_name,
-    loss_type,
+    loss,
     scalers,
     batchsize,
     dev,
     rng,
     kwargs...,
 )
-    cx, cy = build_corpus(df, feature_names, target_name, loss_type, scalers)
+    cx, cy = build_corpus(df, feature_names, target_name, loss, scalers)
     m.info[:nca_ref] = (cx=cx, cy=cy)
     n = size(cx, 2)
     batchsize = min(batchsize, n)

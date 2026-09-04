@@ -40,7 +40,7 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 device = :gpu
 backend = :reactant
 loss = :mse
-metric = :correlation
+metric = :pearson
 
 embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => "identity")
 
@@ -48,8 +48,8 @@ learner = NeuroTabRegressor(
     arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=20, lr=1e-4, batchsize=0, device, backend
 )
 
-group_key = "grp"
-@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_key, print_every_n=5);
+group_name = "grp"
+@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, group_name, print_every_n=5);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]

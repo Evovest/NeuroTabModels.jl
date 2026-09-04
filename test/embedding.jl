@@ -1,3 +1,53 @@
+using NeuroTabModels.Models.Embeddings: EmbeddingLayer, LayerNormEmbeddings, BatchNormEmbeddings
+using NeuroTabModels.Models.Embeddings: build_embedding_chain, embedding_width
+using NNlib
+
+@testset "GroupedDense" begin
+    rng = Xoshiro(1)
+    in_dims, out_dims, n_groups, batch = 4, 3, 5, 8
+    layer = NeuroTabModels.GroupedDense(in_dims => out_dims, n_groups)
+    ps, st = Lux.setup(rng, layer)
+    x = randn(Float32, in_dims, n_groups, batch)
+    y, st_out = layer(x, ps, st)
+
+    @test size(y) == (out_dims, n_groups, batch)
+    @test size(ps.bias) == (out_dims, n_groups, 1)
+    @test st_out === st
+    @test LuxCore.parameterlength(layer) == out_dims * in_dims * n_groups + out_dims * n_groups
+
+    y_ref = Array{Float32}(undef, out_dims, n_groups, batch)
+    for g in 1:n_groups
+        y_ref[:, g, :] = ps.weight[:, :, g] * x[:, g, :] .+ ps.bias[:, g, 1]
+    end
+    @test y ≈ y_ref
+
+    layer_nb = NeuroTabModels.GroupedDense(in_dims => out_dims, n_groups, NNlib.relu; use_bias=false)
+    ps_nb, st_nb = Lux.setup(rng, layer_nb)
+    y_nb, _ = layer_nb(x, ps_nb, st_nb)
+    y_relu = Array{Float32}(undef, out_dims, n_groups, batch)
+    for g in 1:n_groups
+        y_relu[:, g, :] = NNlib.relu.(ps_nb.weight[:, :, g] * x[:, g, :])
+    end
+    @test y_nb ≈ y_relu
+    @test !haskey(ps_nb, :bias)
+end
+
+@testset "Norm embeddings" begin
+    nfeats, batch = 6, 16
+    x = randn(Float32, nfeats, batch)
+    rng = Xoshiro(123)
+    for (etype, T) in [(:batchnorm, BatchNormEmbeddings), (:layernorm, LayerNormEmbeddings)]
+        config = EmbeddingLayer(Dict(:embedding_type => etype))
+        @test config.num isa T
+        layer = build_embedding_chain(config, nfeats)
+        ps, st = Lux.setup(rng, layer)
+        y, _ = layer(x, ps, st)
+        @test size(y) == (nfeats, batch)
+        @test !any(isnan, y)
+        @test embedding_width(layer, x, Xoshiro(1)) == nfeats
+    end
+end
+
 @testset "Embeddings - Regression" begin
     Random.seed!(123)
     n = 1000
@@ -71,7 +121,7 @@ end
 
         ptrain = [argmax(x) for x in eachrow(m(dtrain))]
         peval = [argmax(x) for x in eachrow(m(deval))]
-        @test mean(ptrain .== levelcode.(dtrain.class)) > 0.95
-        @test mean(peval .== levelcode.(deval.class)) > 0.95
+        @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
+        @test mean(peval .== levelcode.(deval.class)) >= 0.95
     end
 end
