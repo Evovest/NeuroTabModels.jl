@@ -80,12 +80,6 @@ end
 import ..Losses: masked_input
 masked_input(::MaskedModel, x, w) = (x, w)
 
-include("maskednorm.jl")
-import .MaskedNorm: MaskedBatchNorm, CarryMask, MaskSkip
-
-include("groupeddense.jl")
-using .GroupedDenseLayer: GroupedDense
-
 """
     train_dataloader(arch, m, default, df; kwargs...)
 
@@ -144,30 +138,24 @@ struct NeuroTabModel{L<:LossType,C}
     chain::C
     info::Dict{Symbol,Any}
 end
-# @functor NeuroTabModel (chain,)
+
+include("layers/layers.jl")
+using .Layers: MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense
+
 include("embeddings/embeddings.jl")
 using .Embeddings
-
-include("NeuroTree/neurotrees.jl")
-using .NeuroTrees
-
-include("MOETree/moetrees.jl")
-using .MOETrees
-
-include("TabM/TabM.jl")
-using .TabM
 
 include("MLP/mlp.jl")
 using .MLP
 
-include("MLPAttn/mlp.jl")
-using .MLPAttn
-
-include("NeuroTreeAttn/neurotreeattn.jl")
-using .NeuroTreeAttn
-
 include("ResNet/resnet.jl")
 using .ResNet
+
+include("NeuroTree/neurotrees.jl")
+using .NeuroTrees
+
+include("TabM/TabM.jl")
+using .TabM
 
 include("ModernNCA/modernnca.jl")
 using .ModernNCA

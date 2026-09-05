@@ -373,7 +373,7 @@ end
     @test y2t[:, 1:3] ≈ y1t
 end
 
-@testset "NeuroTreeAttn encoder is k-ensembles, not leaves" begin
+@testset "NeuroTreeAttn encoder is k-channels, not shared routing" begin
     rng = Random.Xoshiro(123)
     nfeats, hsize, nheads, depth, ntrees = 6, 16, 4, 3, 4
     @test 2^depth != hsize
@@ -388,11 +388,54 @@ end
     @test tree.outs == 1
     @test tree.leaves == 2^depth
     @test size(ps.encoder.layer_1.layer_1.p) == (1, 2^depth, ntrees, hsize)
+    @test chain.head isa Dense
 
     x = randn(Float32, nfeats, 5)
     z, _ = chain.encoder(x, ps.encoder, Lux.testmode(st).encoder)
     z = z isa Tuple ? z[1] : z
     @test size(z) == (hsize, 5)
+
+    y, _ = chain(x, ps, Lux.testmode(st))
+    @test size(y) == (1, 5)
+
+    # Hidden channels are independent ensembles: perturbing one k-slice of leaf
+    # values moves only that channel.
+    ps_e = deepcopy(ps)
+    ps_e.encoder.layer_1.layer_1.p[:, :, :, 3] .+= 1
+    z2, _ = chain.encoder(x, ps_e.encoder, Lux.testmode(st).encoder)
+    z2 = z2 isa Tuple ? z2[1] : z2
+    @test z[1:2, :] ≈ z2[1:2, :]
+    @test z[4:end, :] ≈ z2[4:end, :]
+    @test !(z[3:3, :] ≈ z2[3:3, :])
+end
+
+@testset "MOETree router softmax mix" begin
+    rng = Random.Xoshiro(123)
+    nfeats, n_experts, depth, ntrees, batch = 6, 4, 3, 4, 5
+    arch = NeuroTabModels.MOETreeConfig(; k=n_experts, depth, ntrees)
+    chain = arch(; ins=nfeats, outsize=1)
+    NT = NeuroTabModels.Models.NeuroTrees
+    @test chain isa NT.MOETree
+    @test chain.router isa NT.NeuroTree
+    @test chain.experts isa NT.NeuroTree
+    @test chain.router.outs == n_experts
+    @test chain.router.k == 1
+    @test chain.experts.outs == 1
+    @test chain.experts.k == n_experts
+
+    ps, st = Lux.setup(rng, chain)
+    x = randn(Float32, nfeats, batch)
+    y, _ = chain(x, ps, st)
+    @test size(y) == (1, 1, batch)
+
+    r, _ = chain.router(x, ps.router, st.router)
+    e, _ = chain.experts(x, ps.experts, st.experts)
+    @test size(r) == (n_experts, 1, batch)
+    @test size(e) == (1, n_experts, batch)
+    wr = exp.(r .- maximum(r; dims=1))
+    gates = wr ./ sum(wr; dims=1)
+    @test all(sum(gates; dims=1) .≈ 1)
+    @test y ≈ sum(e .* permutedims(gates, (2, 1, 3)); dims=2)
 end
 
 @testset "Backend/device - reactant is a backend" begin

@@ -69,9 +69,9 @@ sort!(dtest, :grp)
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
-#     depth=5,
-#     ntrees=8,
-#     stack_size=1,
+#     k=8,
+#     depth=4,
+#     ntrees=16,
 #     init_scale=0.1,
 # )
 

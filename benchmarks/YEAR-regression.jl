@@ -48,23 +48,23 @@ dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
 dtest = df_tot[(end - 51630 + 1):end, :];
 
-arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary,
-    actA=:identity,
-    k=8,
-    ntrees=16,
-    depth=4,
-    stack_size=1,
-    hidden_size=16,
-    init_scale=0.1,
-    scaler=true,
-)
+# arch = NeuroTabModels.NeuroTreeConfig(;
+#     tree_type=:binary,
+#     actA=:identity,
+#     k=8,
+#     ntrees=16,
+#     depth=4,
+#     stack_size=1,
+#     hidden_size=16,
+#     init_scale=0.1,
+#     scaler=true,
+# )
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
-#     depth=5,
-#     ntrees=8,
-#     stack_size=1,
+#     k=8,
+#     depth=4,
+#     ntrees=32,
 #     init_scale=0.1,
 # )
 
@@ -93,18 +93,17 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     attn_dropout=0.1,
 # )
 
-# arch = NeuroTabModels.NeuroTreeAttnConfig(;
-#     tree_type=:binary,
-#     actA=:identity,
-#     depth=4,
-#     ntrees=32,
-#     stack_size=1,
-#     hidden_size=32,
-#     nheads=1,
-#     n_attn_layers=1,
-#     dropout=0.2,
-#     attn_dropout=0.1,
-# )
+arch = NeuroTabModels.NeuroTreeAttnConfig(;
+    tree_type=:binary,
+    depth=4,
+    ntrees=32,
+    stack_size=1,
+    hidden_size=32,
+    nheads=1,
+    n_attn_layers=1,
+    dropout=0.5,
+    attn_dropout=0.2,
+)
 
 # arch = NeuroTabModels.ResNetConfig(; stack_size=2, hidden_size=64, act=:relu, dropout=0.2)
 
@@ -131,7 +130,7 @@ learner = NeuroTabRegressor(
     nrounds=200,
     early_stopping_rounds=2,
     lr=3e-4,
-    batchsize=1024,
+    batchsize=1024,  
     device,
     backend,
 )

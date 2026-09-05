@@ -1,14 +1,15 @@
 module NeuroTrees
 
-export NeuroTreeConfig
+export NeuroTreeConfig, NeuroTreeAttnConfig, MOETreeConfig
 
 using Lux
 using LuxCore
 using Random: AbstractRNG
 using Statistics: mean, std
-using NNlib: tanh_fast, hardtanh, tanhshrink
+using NNlib: tanh_fast, hardtanh, tanhshrink, softmax
 
-import ..Models: Architecture
+import ..Models: Architecture, uses_batch_mask, MaskedBatchNorm, CarryMask, MaskSkip
+import ..Layers: _untuple, _valid_tokens, _attn_blocks, _pred_head
 
 include("model.jl")
 
@@ -109,7 +110,6 @@ function _tree_kwargs(config::NeuroTreeConfig)
         config.tree_type,
         config.depth,
         trees=config.ntrees,
-        # k=config.k,
         actA=act_dict[config.actA],
         config.scaler,
         config.init_scale,
@@ -173,5 +173,8 @@ Supported keys: `:identity`, `:tanh`, `:hardtanh`, `:tanhshrink`.
 const act_dict = Dict(
     :identity => _identity_act, :tanh => _tanh_act, :hardtanh => _hardtanh_act, :tanhshrink => _tanhshrink_act
 )
+
+include("neurotreeattn.jl")
+include("moetree.jl")
 
 end

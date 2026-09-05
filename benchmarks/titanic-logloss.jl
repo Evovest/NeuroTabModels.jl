@@ -42,11 +42,9 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
-#     k=1,
+#     k=8,
 #     depth=3,
 #     ntrees=8,
-#     stack_size=1,
-#     hidden_size=8,
 #     init_scale=1.0,
 # )
 # arch = NeuroTabModels.TabMConfig(;

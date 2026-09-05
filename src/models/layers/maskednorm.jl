@@ -1,10 +1,3 @@
-module MaskedNorm
-
-export MaskedBatchNorm, CarryMask, MaskSkip
-
-using LuxCore
-using Random: AbstractRNG
-
 _is_training(st) = st.training === Val(true) || st.training === true
 
 """
@@ -116,6 +109,4 @@ end
 function (l::MaskedBatchNorm)((x, valid)::Tuple, ps, st)
     y, st_ = _bn_apply(l, x, valid, ps, st)
     return (y, valid), st_
-end
-
 end

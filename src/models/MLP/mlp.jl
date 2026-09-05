@@ -1,11 +1,12 @@
 module MLP
 
-export MLPConfig
+export MLPConfig, MLPAttnConfig
 
 using Lux
 using LuxCore
 
-import ..Models: Architecture, get_activation
+import ..Models: Architecture, get_activation, uses_batch_mask, MaskedBatchNorm, CarryMask, MaskSkip
+import ..Layers: _untuple, _valid_tokens, _attn_blocks, _pred_head
 
 """
     MLPConfig(; kwargs...)
@@ -90,5 +91,7 @@ function (config::MLPConfig)(; ins, outsize, kwargs...)
 
     return chain
 end
+
+include("mlpattn.jl")
 
 end

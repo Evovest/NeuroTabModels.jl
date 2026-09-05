@@ -1,12 +1,3 @@
-module GroupedDenseLayer
-
-export GroupedDense, rsqrt_uniform_grouped, glorot_uniform_grouped
-
-using LuxCore
-using Lux: zeros32
-using LuxLib: batched_matmul
-using Random: AbstractRNG
-
 """
     rsqrt_uniform_grouped(rng, out, in, groups)
 
@@ -122,6 +113,4 @@ function (l::GroupedDense)(x::AbstractArray{T,3}, ps, st::NamedTuple) where {T}
         y = l.activation.(y)
     end
     return y, st
-end
-
 end
