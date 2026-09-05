@@ -96,12 +96,12 @@ dtest = df_tot[(end - 51630 + 1):end, :];
 arch = NeuroTabModels.NeuroTreeAttnConfig(;
     tree_type=:binary,
     depth=4,
-    ntrees=16,
+    ntrees=8,
     stack_size=1,
-    hidden_size=32,
+    hidden_size=16,
     nheads=1,
     n_attn_layers=1,
-    dropout=0.0,
+    dropout=0.2,
     attn_dropout=0.1,
 )
 
