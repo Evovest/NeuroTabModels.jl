@@ -1,29 +1,30 @@
 """
     NeuroTreeAttn
 
-NeuroTree encoder (per-observation numerical embeddings) followed by a shared-QK
-peer-attention residual, then a linear prediction head.
+NeuroTree encoder (per-observation numerical embeddings) followed by a
+per-channel peer-attention residual, then a prediction head.
 
 Intended to sit after the usual embedding layer: `Chain(embed, NeuroTreeAttn(...))`.
 Same role as `MLPAttn`: a per-row map into `hidden_size`, peer attention over the
-batch / group, then `Dense` to the task output.
+batch / group. For a scalar head the `k` ensembles are kept through the loss,
+same layout as `NeuroTreeConfig`.
 
 The encoder width is NeuroTree's `k` axis, not `outs`:
 `NeuroTree(ins => 1; k = hidden_size)`. Each hidden channel is its own
 ensemble (independent splits and leaf values). Putting `hidden_size` on `outs`
 with `k = 1` would share one routing among all channels. Native layout is
-`(1, k, batch)`; `FlattenLayer` only drops the singleton `outs` axis so
-BatchNorm / attention / `Dense` see `(hidden_size, batch)`. The hidden width is
-**not** the number of leaves (`2^depth`). This `k` is a feature axis, not a
-prediction ensemble: the head is still `Dense`.
+`(1, k, batch)`; `FlattenLayer` only drops the singleton `outs` axis so attention sees
+`(hidden_size, batch)`. After attention, the `k` axis is restored to
+`(1, k, batch)` so the loss trains each channel as an independent predictor,
+same as `NeuroTreeConfig`. A Dense+BatchNorm head would collapse that axis.
 
 Those tokens are the sequence of a single batch / group, identical to MLPAttn.
 
 # Forward signatures
 - `(x, ps, st)` with `x` of shape `(features, batch)`: all observations are valid tokens.
 - `((x, w), ps, st)`: `w` is a weight / boolean mask over the batch. Zero (or `false`)
-  positions are treated as padded group-buffer slots and are ignored by encoder
-  BatchNorm and by attention via a rectangular key-padding mask.
+  positions are treated as padded group-buffer slots and are ignored by
+  attention via a rectangular key-padding mask.
 """
 struct NeuroTreeAttn{N,B,H} <: LuxCore.AbstractLuxContainerLayer{(:encoder, :blocks, :head)}
     encoder::N
@@ -55,10 +56,12 @@ uses_batch_mask(::NeuroTreeAttn) = true
 Configuration for a NeuroTree encoder plus batch-level transformer attention.
 
 The tree stem is `NeuroTree(ins => 1; k = hidden_size)`: `hidden_size`
-independent ensembles (own splits per channel), then BatchNorm. `FlattenLayer`
-reshapes `(1, k, batch) → (k, batch)` so the tensor matches MLPAttn tokens.
-Shared Q=K attention (values = encoder tokens) is residual-added, then a linear
-head produces the per-observation prediction. There is no transformer FFN.
+independent ensembles (own splits per channel). `FlattenLayer` reshapes
+`(1, k, batch) → (k, batch)` for attention, then the head restores
+`(1, k, batch)` so MSE trains each ensemble against `y` (inference means
+over `k`). Peer attention is **per ensemble channel** (one head per `k`, no
+Dense QK mixing), residual-added with `attn_scale` (default `0`). There is no
+transformer FFN.
 
 When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
 the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel`.
@@ -70,19 +73,23 @@ the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel
 - `depth::Int`: Tree depth (default `4`). Controls the number of leaves (`2^depth`),
   which is an internal routing axis — not the hidden width.
 - `ntrees::Int`: Number of trees averaged in each of the `k` hidden ensembles (default `32`).
-- `hidden_size::Int`: Encoding / attention dimension (default `64`). Must be divisible
-  by `nheads`. Equals encoder NeuroTree `k` (`outs = 1`), so each channel has its
-  own splits.
+- `hidden_size::Int`: Encoding / attention dimension (default `64`). Equals encoder
+  NeuroTree `k` (`outs = 1`), so each channel has its own splits. Peer attention
+  uses one head per channel (`nheads` is ignored).
 - `stack_size::Int`: Encoder depth (default `1`). `0` is a no-op (embedding width must
-  equal `hidden_size`). `1` is a single `NeuroTree` + flatten + BatchNorm. Each extra
+  equal `hidden_size`). `1` is a single `NeuroTree` + flatten. Each extra
   layer is a residual `NeuroTree` of width `hidden_size`, with optional dropout.
 - `scaler::Bool`: Apply softplus scaling on tree logits (default `true`).
 - `init_scale::Float32`: Leaf weight init scale (default `0.1`).
-- `dropout::Float64`: Dropout after extra encoder layers and on the attention residual
-  (default `0.0`).
-- `nheads::Int`: Number of attention heads (default `4`).
+- `dropout::Float64`: Dropout after extra encoder layers only (`stack_size ≥ 2`).
+  Not applied to the attention residual (those tokens are the `k` predictions).
+- `nheads::Int`: Ignored. Peer attention uses one head per ensemble channel.
 - `n_attn_layers::Int`: Number of attention residuals (default `1`). `0` skips attention.
 - `attn_dropout::Float64`: Dropout on attention scores (default `0.0`).
+- `attn_scale::Float32`: Initial value of the learned attention residual scale
+  (default `0.0`). Mixing is `x + scale * Attn` with **one head per ensemble
+  channel** (config `nheads` is not used). Default `0` so `n_attn_layers=1`
+  starts as `n_attn_layers=0`. Raise it if grouped peers should mix.
 """
 struct NeuroTreeAttnConfig <: Architecture
     tree_type::Symbol
@@ -97,6 +104,7 @@ struct NeuroTreeAttnConfig <: Architecture
     nheads::Int
     n_attn_layers::Int
     attn_dropout::Float64
+    attn_scale::Float32
 end
 
 function NeuroTreeAttnConfig(; kwargs...)
@@ -113,6 +121,7 @@ function NeuroTreeAttnConfig(; kwargs...)
         :nheads => 4,
         :n_attn_layers => 1,
         :attn_dropout => 0.0,
+        :attn_scale => 0.0f0,
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -140,6 +149,7 @@ function NeuroTreeAttnConfig(; kwargs...)
         args[:nheads],
         args[:n_attn_layers],
         args[:attn_dropout],
+        Float32(args[:attn_scale]),
     )
 end
 
@@ -159,12 +169,20 @@ end
 
 One NeuroTree encoder block: `k = hsize` independent ensembles, `outs = 1`
 (scalar per leaf, own splits per channel). `FlattenLayer` only drops the
-singleton `outs` axis (`(1, k, batch) → (k, batch)`) so BatchNorm / attention
-see a 2D token matrix. Wrapped in `CarryMask` so a padding flag still reaches
-BatchNorm.
+singleton `outs` axis (`(1, k, batch) → (k, batch)`) so attention sees a 2D
+token matrix. Wrapped in `CarryMask` so a padding flag still reaches attention
+after the encoder.
 """
 function _tree_attn_block(ins::Int, hsize::Int, tree_kwargs)
     return CarryMask(Chain(NeuroTree(ins => 1; k=hsize, tree_kwargs...), FlattenLayer()))
+end
+
+# Restore NeuroTree layout `(1, k, batch)` so the loss trains each ensemble.
+_k_as_ensemble(x::AbstractMatrix) = reshape(x, 1, size(x, 1), size(x, 2))
+
+function _tree_attn_head(hsize::Int, outsize::Int)
+    outsize == 1 && return WrappedFunction(_k_as_ensemble)
+    return _pred_head(hsize, outsize)
 end
 
 """
@@ -177,7 +195,7 @@ reshapes to `(hsize, batch)`. Same adapter as stacked NeuroTree hidden layers.
 
 - `stack_size == 0`: `NoOpLayer`. Requires `ins == hsize` so the NeuroTab embedding
   block can be the sole numerical embedding.
-- `stack_size == 1`: `_tree_attn_block(ins, hsize)` + `MaskedBatchNorm`. No encoder dropout.
+- `stack_size == 1`: `_tree_attn_block(ins, hsize)`. No encoder dropout.
 - `stack_size >= 2`: that stem, then `stack_size - 1` residual `NeuroTree` blocks
   of width `hsize`, with optional dropout after each residual.
 """
@@ -189,10 +207,9 @@ function _tree_attn_encoder(ins::Int, hsize::Int, stack_size::Int, dropout::Floa
         )
         return NoOpLayer()
     end
-    layers = Any[_tree_attn_block(ins, hsize, tree_kwargs), MaskedBatchNorm(hsize)]
+    layers = Any[_tree_attn_block(ins, hsize, tree_kwargs)]
     for _ in 2:stack_size
         push!(layers, MaskSkip(_tree_attn_block(hsize, hsize, tree_kwargs)))
-        push!(layers, MaskedBatchNorm(hsize))
         dropout > 0 && push!(layers, CarryMask(Dropout(dropout)))
     end
     return Chain(layers...)
@@ -200,17 +217,12 @@ end
 
 function _build_neurotree_attn(ins::Int, outsize::Int, config::NeuroTreeAttnConfig)
     hsize = config.hidden_size
-    nheads = config.nheads
     config.n_attn_layers >= 0 || error("`n_attn_layers` must be ≥ 0, got $(config.n_attn_layers).")
-    if config.n_attn_layers > 0
-        nheads > 0 || error("`nheads` must be ≥ 1 when `n_attn_layers` > 0, got $nheads.")
-        hsize % nheads == 0 || error("`hidden_size` ($hsize) must be divisible by `nheads` ($nheads).")
-    end
 
     encoder = _tree_attn_encoder(ins, hsize, config.stack_size, config.dropout, _attn_tree_kwargs(config))
-    blocks = _attn_blocks(hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout)
+    blocks = _tree_attn_blocks(hsize, config.n_attn_layers, config.attn_dropout, config.attn_scale)
 
-    return NeuroTreeAttn(encoder, blocks, _pred_head(hsize, outsize))
+    return NeuroTreeAttn(encoder, blocks, _tree_attn_head(hsize, outsize))
 end
 
 """

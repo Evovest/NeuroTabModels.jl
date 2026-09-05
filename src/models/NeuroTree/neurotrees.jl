@@ -8,8 +8,8 @@ using Random: AbstractRNG
 using Statistics: mean, std
 using NNlib: tanh_fast, hardtanh, tanhshrink, softmax
 
-import ..Models: Architecture, uses_batch_mask, MaskedBatchNorm, CarryMask, MaskSkip
-import ..Layers: _untuple, _valid_tokens, _attn_blocks, _pred_head
+import ..Models: Architecture, uses_batch_mask, CarryMask, MaskSkip
+import ..Layers: _untuple, _valid_tokens, _attn_blocks, _tree_attn_blocks, _pred_head
 
 include("model.jl")
 

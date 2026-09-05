@@ -49,8 +49,10 @@ Item-wise residual encoder with peer attention over the batch / group.
 
 The encoder is a BatchNorm residual MLP like [`ResNetConfig`](@ref), but each BN
 restricts mean/var to valid tokens when a padding mask is passed (grouped loaders).
-Attention is shared Q=K via `NNlib.dot_product_attention`, values = encoder tokens, residual-added. The head is
-Glorot `Dense` like ResNet. `n_attn_layers=0` should track ResNet on ungrouped data.
+Attention is shared Q=K via `NNlib.dot_product_attention`, values = encoder tokens,
+residual-added with a learned scalar (`attn_scale`, default `0.1`) so peer mixing
+starts small. The head is Glorot `Dense` like ResNet. `n_attn_layers=0` should track
+ResNet on ungrouped data.
 
 When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
 the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel`.
@@ -64,6 +66,8 @@ the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel
 - `nheads::Int`: Number of attention heads (default `4`).
 - `n_attn_layers::Int`: Number of attention residuals (default `1`). `0` is encoder + head only.
 - `attn_dropout::Float64`: Dropout on attention scores (default `0.0`).
+- `attn_scale::Float32`: Initial value of the learned attention residual scale
+  (default `0.1`). Mixing is `x + scale * Attn`.
 """
 struct MLPAttnConfig <: Architecture
     act::Symbol
@@ -73,6 +77,7 @@ struct MLPAttnConfig <: Architecture
     nheads::Int
     n_attn_layers::Int
     attn_dropout::Float64
+    attn_scale::Float32
 end
 
 function MLPAttnConfig(; kwargs...)
@@ -84,6 +89,7 @@ function MLPAttnConfig(; kwargs...)
         :nheads => 4,
         :n_attn_layers => 1,
         :attn_dropout => 0.0,
+        :attn_scale => 0.1f0,
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -106,6 +112,7 @@ function MLPAttnConfig(; kwargs...)
         args[:nheads],
         args[:n_attn_layers],
         args[:attn_dropout],
+        Float32(args[:attn_scale]),
     )
 end
 
@@ -157,7 +164,7 @@ function _build_mlp_attn(ins::Int, outsize::Int, config::MLPAttnConfig)
 
     act = get_activation(config.act)
     encoder = _mlp_encoder(ins, hsize, act, config.stack_size, config.dropout)
-    blocks = _attn_blocks(hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout)
+    blocks = _attn_blocks(hsize, nheads, config.n_attn_layers, config.dropout, config.attn_dropout, config.attn_scale)
 
     return MLPAttn(encoder, blocks, _pred_head(hsize, outsize))
 end

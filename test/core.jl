@@ -286,6 +286,8 @@ end
     st = Lux.testmode(st)
 
     @test haskey(ps.blocks.layer_1, :qk_proj)
+    @test haskey(ps.blocks.layer_1, :scale)
+    @test ps.blocks.layer_1.scale.s ≈ Float32[0.1]
     @test !haskey(ps.blocks.layer_1, :norm)
     @test !haskey(ps.blocks.layer_1, :fuse)
     @test !haskey(ps.blocks.layer_1, :v_proj)
@@ -299,6 +301,14 @@ end
     @test size(y) == (1, 5)
     @test !any(isnan, y)
     @test !iszero(y)
+
+    arch_id = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, n_attn_layers=1, attn_scale=0.0f0)
+    chain_id = arch_id(; ins=nfeats, outsize=1)
+    ps_id, st_id = Lux.setup(rng, chain_id)
+    st_id = Lux.testmode(st_id)
+    z_id, _ = chain_id.encoder(x, ps_id.encoder, st_id.encoder)
+    z_mix_id, _ = chain_id.blocks(z_id, ps_id.blocks, st_id.blocks)
+    @test z_mix_id ≈ z_id
 
     arch0 = NeuroTabModels.MLPAttnConfig(; hidden_size=hsize, nheads, stack_size=1, n_attn_layers=0)
     chain0 = arch0(; ins=nfeats, outsize=1)
@@ -350,7 +360,7 @@ end
     rng = Random.Xoshiro(123)
     nfeats, hsize, nheads = 6, 16, 4
     arch = NeuroTabModels.NeuroTreeAttnConfig(;
-        hidden_size=hsize, nheads, stack_size=1, dropout=0.0, depth=3, ntrees=4
+        hidden_size=hsize, nheads, stack_size=1, dropout=0.0, depth=3, ntrees=4, attn_scale=0.1f0
     )
     chain = arch(; ins=nfeats, outsize=1)
     ps, st = Lux.setup(rng, chain)
@@ -363,14 +373,14 @@ end
     w = reshape(Float32[1, 1, 1, 0, 0], 1, 1, 5)
     y2, _ = chain((x_pad, w), ps, st)
 
-    @test size(y1, 2) == 3
-    @test size(y2, 2) == 5
-    @test y2[:, 1:3] ≈ y1
+    @test size(y1) == (1, hsize, 3)
+    @test size(y2) == (1, hsize, 5)
+    @test selectdim(y2, 3, 1:3) ≈ y1
 
     st_tr = Lux.trainmode(st)
     y1t, _ = chain(x_real, ps, st_tr)
     y2t, _ = chain((x_pad, w), ps, st_tr)
-    @test y2t[:, 1:3] ≈ y1t
+    @test selectdim(y2t, 3, 1:3) ≈ y1t
 end
 
 @testset "NeuroTreeAttn encoder is k-channels, not shared routing" begin
@@ -388,7 +398,7 @@ end
     @test tree.outs == 1
     @test tree.leaves == 2^depth
     @test size(ps.encoder.layer_1.layer_1.p) == (1, 2^depth, ntrees, hsize)
-    @test chain.head isa Dense
+    @test ps.blocks.layer_1.scale.s ≈ Float32[0]
 
     x = randn(Float32, nfeats, 5)
     z, _ = chain.encoder(x, ps.encoder, Lux.testmode(st).encoder)
@@ -396,10 +406,14 @@ end
     @test size(z) == (hsize, 5)
 
     y, _ = chain(x, ps, Lux.testmode(st))
-    @test size(y) == (1, 5)
+    @test size(y) == (1, hsize, 5)
+    @test chain.blocks[1].nheads == hsize
+    @test chain.blocks[1].qk_proj isa NoOpLayer
+    z_mix, _ = chain.blocks(z, ps.blocks, Lux.testmode(st).blocks)
+    @test z_mix ≈ z  # default attn_scale=0 is identity
 
     # Hidden channels are independent ensembles: perturbing one k-slice of leaf
-    # values moves only that channel.
+    # values moves only that encoder channel (attention may mix them afterward).
     ps_e = deepcopy(ps)
     ps_e.encoder.layer_1.layer_1.p[:, :, :, 3] .+= 1
     z2, _ = chain.encoder(x, ps_e.encoder, Lux.testmode(st).encoder)
