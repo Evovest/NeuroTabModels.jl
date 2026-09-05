@@ -77,8 +77,7 @@ function init(
     x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
     embed_chain = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
     ins = Models.Embeddings.embedding_width(embed_chain, randn(Float32, nfeats, 2), default_rng())
-    core_chain = config.arch(; ins, outsize, loss_type=L)
-    chain = Chain(embed_chain, core_chain)
+    chain = Models.build_chain(config.arch, embed_chain; ins, outsize, loss_type=L)
 
     info = Dict(
         :nrounds => 0,
@@ -98,9 +97,10 @@ function init(
 
     rng = Xoshiro(config.seed)
     ps, st = Lux.setup(rng, m.chain) |> dev
-    # data = Models.train_dataloader(
-    #     config.arch, m, data, df; feature_names, target_name, loss_type=L, scalers, batchsize, dev, rng
-    # ) # FIXME: wrapper only needed bacause of ModernNCA
+    data = Models.train_dataloader(
+        config.arch, m, data, df;
+        feature_names, target_name, weight_name, offset_name, group_key,
+        loss_type=L, scalers, batchsize, dev, rng, backend=config.backend)
     opt = OptimiserChain(NAdam(config.lr), WeightDecay(config.wd))
     ts = Training.TrainState(m.chain, ps, st, opt)
 

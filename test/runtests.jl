@@ -15,3 +15,4 @@ using Zygote
 include("core.jl")
 include("embedding.jl")
 include("MLJ.jl")
+include("modernnca.jl")
