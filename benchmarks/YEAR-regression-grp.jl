@@ -55,17 +55,17 @@ sort!(dtrain, :grp)
 sort!(deval, :grp)
 sort!(dtest, :grp)
 
-# arch = NeuroTabModels.NeuroTreeConfig(;
-#     tree_type=:binary,
-#     actA=:identity,
-#     k=1,
-#     ntrees=32,
-#     depth=4,
-#     stack_size=1,
-#     hidden_size=16,
-#     init_scale=0.1,
-#     scaler=true,
-# )
+arch = NeuroTabModels.NeuroTreeConfig(;
+    tree_type=:binary,
+    actA=:identity,
+    k=1,
+    ntrees=32,
+    depth=4,
+    stack_size=1,
+    hidden_size=16,
+    init_scale=0.1,
+    scaler=true,
+)
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
@@ -95,9 +95,9 @@ sort!(dtest, :grp)
 #     MLE_tree_split=false
 # )
 
-arch = NeuroTabModels.MLPAttnConfig(;
-    act=:relu, stack_size=1, hidden_size=64, nheads=1, n_attn_layers=1, dropout=0.2, attn_dropout=0.1
-)
+# arch = NeuroTabModels.MLPAttnConfig(;
+#     act=:relu, stack_size=1, hidden_size=64, nheads=1, n_attn_layers=1, dropout=0.2, attn_dropout=0.1
+# )
 
 device = :gpu
 backend = :reactant
@@ -107,7 +107,7 @@ metric = :pearson
 
 # embedding_config = Dict(:embedding_type => "batchnorm")
 embedding_config = Dict(:embedding_type => "linear", :d_embedding => 1, :activation => "identity")
-embedding_config = Dict(:embedding_type => "linear", :d_embedding => 8, :activation => "relu")
+# embedding_config = Dict(:embedding_type => "linear", :d_embedding => 8, :activation => "relu")
 # embedding_config = Dict(
 #     :embedding_type => :piecewise, :d_embedding => 8, :bins => 16, :version => "B"
 # )

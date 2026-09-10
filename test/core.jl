@@ -162,7 +162,7 @@ end
     ("MLPAttn", NeuroTabModels.MLPAttnConfig(; hidden_size=32, nheads=1, stack_size=1, dropout=0.5)),
     (
         "NeuroTreeAttn",
-        NeuroTabModels.NeuroTreeAttnConfig(; hidden_size=8, nheads=1, stack_size=1, depth=3, ntrees=8, dropout=0.5),
+        NeuroTabModels.NeuroTreeAttnConfig(; hidden_size=8, nheads=1, depth=3, ntrees=4, dropout=0.2, init_scale=10),
     ),
     ("ResNet", NeuroTabModels.ResNetConfig(; hidden_size=32, stack_size=1, dropout=0.5)),
 ]
@@ -189,7 +189,7 @@ end
         lr=3e-3,
     )
 
-    m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5)
+    m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5);
 
     ptrain = [argmax(x) for x in eachrow(m(dtrain))]
     peval = [argmax(x) for x in eachrow(m(deval))]
@@ -218,9 +218,7 @@ end
     arch = NeuroTabModels.MLPAttnConfig(; hidden_size=32, nheads=4, stack_size=1, n_attn_layers=1)
     learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, early_stopping_rounds=5, lr=1e-2, batchsize=64)
 
-    m = NeuroTabModels.fit(
-        learner, dtrain; target_name, feature_names, deval, group_name="grp", print_every_n=5
-    )
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, deval, group_name="grp", print_every_n=5)
 
     p = m(deval)
     @test size(p, 1) == nrow(deval)
@@ -346,9 +344,7 @@ end
     )
     learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, early_stopping_rounds=5, lr=1e-2, batchsize=64)
 
-    m = NeuroTabModels.fit(
-        learner, dtrain; target_name, feature_names, deval, group_name="grp", print_every_n=5
-    )
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, deval, group_name="grp", print_every_n=5)
 
     p = m(deval)
     @test size(p, 1) == nrow(deval)
@@ -387,9 +383,7 @@ end
     rng = Random.Xoshiro(123)
     nfeats, hsize, nheads, depth, ntrees = 6, 16, 4, 3, 4
     @test 2^depth != hsize
-    arch = NeuroTabModels.NeuroTreeAttnConfig(;
-        hidden_size=hsize, nheads, stack_size=1, dropout=0.0, depth, ntrees
-    )
+    arch = NeuroTabModels.NeuroTreeAttnConfig(; hidden_size=hsize, nheads, stack_size=1, dropout=0.0, depth, ntrees)
     chain = arch(; ins=nfeats, outsize=1)
     ps, st = Lux.setup(rng, chain)
     tree = chain.encoder[1].layer[1]
