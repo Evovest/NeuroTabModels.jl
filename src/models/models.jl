@@ -1,7 +1,7 @@
 module Models
 
 export NeuroTabModel, Architecture, uses_batch_mask, MaskedModel
-export MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense
+export MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense, AttnResidual, ResidualScale
 export Embeddings, EmbeddingLayer
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
 export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
@@ -17,13 +17,14 @@ using NNlib
 """
     Architecture
 
-Abstract supertype for backbone configuration objects.
+Abstract type for architecture **configs** (`MLPConfig`, `ResNetConfig`, …).
 
-Subtypes are functors: call with `(config)(; nfeats, outsize)` to build a `Lux.Chain`.
+A config holds hyperparameters. Calling `(config)(; ins, outsize)` instantiates
+the Lux architecture: a `Chain` or other `AbstractLuxLayer`. Learners
+(`NeuroTabRegressor`, `NeuroTabClassifier`) take the config, not the
+instantiated layer.
 """
 abstract type Architecture end
-
-_broadcast_relu(x) = NNlib.relu.(x)
 
 const activation_dict = Dict{Symbol,Function}(
     :relu => NNlib.relu, :gelu => NNlib.gelu, :sigmoid => NNlib.sigmoid_fast, :tanh => NNlib.tanh_fast
@@ -140,7 +141,7 @@ struct NeuroTabModel{L<:LossType,C}
 end
 
 include("layers/layers.jl")
-using .Layers: MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense
+using .Layers: MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense, AttnResidual, ResidualScale
 
 include("embeddings/embeddings.jl")
 using .Embeddings

@@ -4,7 +4,7 @@
 ResNet-style encoder (BatchNorm residual MLP) plus a thin peer-attention residual,
 then a linear head.
 
-Scale: BatchNorm on the item stream (same recipe as [`ResNetConfig`](@ref)).
+Scale: BatchNorm on the item stream (same recipe as [`ResNetConfig`](@ref NeuroTabModels.Models.ResNet.ResNetConfig)).
 `n_attn_layers=0` is that encoder plus a Glorot head — the ResNet ablation.
 
 Intended to sit after the usual embedding layer: `Chain(embed, MLPAttn(...))`.
@@ -47,7 +47,7 @@ uses_batch_mask(::MLPAttn) = true
 
 Item-wise residual encoder with peer attention over the batch / group.
 
-The encoder is a BatchNorm residual MLP like [`ResNetConfig`](@ref), but each BN
+The encoder is a BatchNorm residual MLP like [`ResNetConfig`](@ref NeuroTabModels.Models.ResNet.ResNetConfig), but each BN
 restricts mean/var to valid tokens when a padding mask is passed (grouped loaders).
 Attention is shared Q=K via `NNlib.dot_product_attention`, values = encoder tokens,
 residual-added with a learned scalar (`attn_scale`, default `0.1`) so peer mixing

@@ -2,7 +2,7 @@ module Layers
 
 export MaskedBatchNorm, CarryMask, MaskSkip
 export GroupedDense, rsqrt_uniform_grouped, glorot_uniform_grouped
-export AttnResidual
+export AttnResidual, ResidualScale
 
 using Lux
 using Lux: StatefulLuxLayer, zeros32

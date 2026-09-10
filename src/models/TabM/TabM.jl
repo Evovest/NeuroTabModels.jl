@@ -6,7 +6,7 @@ using Lux
 using LuxCore
 using Random: AbstractRNG, rand, randn
 
-import ..Models: Architecture, _broadcast_relu
+import ..Models: Architecture
 using ..Layers: GroupedDense, rsqrt_uniform_grouped
 
 include("layers.jl")
@@ -20,7 +20,7 @@ function _batch_ensemble_backbone(; d_in::Int, n_blocks::Int, d_block::Int, drop
         else
             push!(layers, LinearBatchEnsemble(d_in_i, d_block; k, scaling_init=:ones))
         end
-        push!(layers, WrappedFunction(_broadcast_relu))
+        push!(layers, WrappedFunction(relu))
         dropout > 0 && push!(layers, Dropout(dropout))
     end
     return layers
@@ -41,7 +41,7 @@ function _packed_ensemble_backbone(; d_in::Int, n_blocks::Int, d_block::Int, dro
     for i in 1:n_blocks
         d_in_i = (i == 1) ? d_in : d_block
         push!(layers, LinearEnsemble(d_in_i, d_block, k))
-        push!(layers, WrappedFunction(_broadcast_relu))
+        push!(layers, WrappedFunction(relu))
         dropout > 0 && push!(layers, Dropout(dropout))
     end
     return layers

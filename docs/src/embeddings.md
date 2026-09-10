@@ -45,4 +45,6 @@ built. Use `needs_x_train` to check that requirement for a config.
 
 ```@autodocs
 Modules = [NeuroTabModels.Models.Embeddings]
+Private = false
+Order = [:type, :function]
 ```
