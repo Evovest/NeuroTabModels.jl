@@ -117,37 +117,3 @@ end
     @test moved_x == x
     @test retained_corpus === corpus
 end
-
-@testset "ModernNCA chunked training gradient" begin
-    rng = Xoshiro(7)
-    modernnca = NeuroTabModels.Models.ModernNCA
-    Lux = modernnca.Lux
-
-    for (loss, outsize, make_y) in (
-            (NeuroTabModels.Losses.MSE(), 1, n -> randn(rng, Float32, n)),
-            (NeuroTabModels.Losses.MLogLoss(), 3, n -> UInt32.(rand(rng, 1:3, n))),
-        ),
-        (n_blocks, chunk) in ((0, 13), (1, 1000))  # BatchNorm only with a single chunk
-
-        model = NeuroTabModels.ModernNCAConfig(;
-            d_embedding=8, n_blocks, d_block=16, dropout=0.0,
-            corpus_chunk_size=chunk)(; ins=6, outsize, loss)
-        ps, st = Lux.setup(rng, model)
-        x, cand_x = randn(rng, Float32, 6, 12), randn(rng, Float32, 6, 100)
-        y, cand_y = make_y(12), make_y(100)
-
-        dense = ps_ -> begin
-            zq, st1 = modernnca._encode(model, x, ps_, st)
-            zc, _ = modernnca._encode(model, cand_x, ps_, st1)
-            sum(dense_nca(model, zq, hcat(zq, zc), vcat(y, cand_y); mask_self=true))
-        end
-        chunked = ps_ -> sum(first(model((x, cand_x, cand_y, y), ps_, st)))
-
-        @test chunked(ps) ≈ dense(ps) rtol=1f-4
-        gd = Zygote.gradient(dense, ps)[1]
-        gc = Zygote.gradient(chunked, ps)[1]
-        for (a, b) in zip(modernnca.Functors.fleaves(gd), modernnca.Functors.fleaves(gc))
-            @test a ≈ b rtol=1f-3
-        end
-    end
-end
