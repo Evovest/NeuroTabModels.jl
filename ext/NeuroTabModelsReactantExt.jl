@@ -16,12 +16,17 @@ function _get_device(::Val{:reactant}, ::Val{D}; gpuID::Integer=0) where {D}
     return reactant_device()
 end
 
+_same_shape(a::AbstractArray, b::AbstractArray) = size(a) == size(b)
+_same_shape(a::Tuple, b::Tuple) =
+    length(a) == length(b) && all(_same_shape(ai, bi) for (ai, bi) in zip(a, b))
+_same_shape(_, _) = false
+
 function _infer_loop(::Val{:reactant}, chain, data, x0, dev, cdev, ps, st)
     compiled = @compile _forward_reduce(chain, dev(x0), ps, st)
 
     preds = Vector{AbstractArray}()
     for x in data
-        if size(x) == size(x0)
+        if _same_shape(x, x0)
             pred = compiled(chain, dev(x), ps, st)
         else
             pred = Reactant.@jit _forward_reduce(chain, dev(x), ps, st)
@@ -31,12 +36,16 @@ function _infer_loop(::Val{:reactant}, chain, data, x0, dev, cdev, ps, st)
     return preds
 end
 
-function _infer_grp_loop(::Val{:reactant}, chain, data, x0, dev, cdev, ps, st)
-    compiled = @compile _forward_reduce(chain, dev(x0), ps, st)
+function _infer_grp_loop(::Val{:reactant}, chain, data, x0, mask0, dev, cdev, ps, st)
+    use_mask = NeuroTabModels.Models.uses_batch_mask(chain)
+    x0d = use_mask ? (dev(x0), dev(mask0)) : dev(x0)
+    compiled = @compile _forward_reduce(chain, x0d, ps, st)
 
     preds = Vector{AbstractArray}()
     for (x, mask) in data
-        pred = compiled(chain, dev(x), ps, st)
+        xd = dev(x)
+        xin = use_mask ? (xd, dev(mask)) : xd
+        pred = compiled(chain, xin, ps, st)
         push!(preds, cdev(pred)[:, mask])
     end
     return preds

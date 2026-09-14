@@ -10,18 +10,17 @@ sigmoid(x::AbstractVector) = sigmoid.(x)
             MLJTestInterface.make_regression()...;
             mod=@__MODULE__,
             verbosity=0, # bump to debug
-            throw=true # set to true to debug
+            throw=true, # set to true to debug
         )
         @test isempty(failures)
     end
     @testset "NeuroTabClassifier" begin
-
         failures, summary = MLJTestInterface.test(
             [NeuroTabClassifier],
             MLJTestInterface.make_binary()...;
             mod=@__MODULE__,
             verbosity=0, # bump to debug
-            throw=true # set to true to debug
+            throw=true, # set to true to debug
         )
         @test isempty(failures)
 
@@ -30,10 +29,9 @@ sigmoid(x::AbstractVector) = sigmoid.(x)
             MLJTestInterface.make_multiclass()...;
             mod=@__MODULE__,
             verbosity=0, # bump to debug
-            throw=true # set to true to debug
+            throw=true, # set to true to debug
         )
         @test isempty(failures)
-
     end
 end
 
@@ -41,7 +39,6 @@ end
 ### Regression
 ##################################################
 @testset "MLJ - regression" begin
-
     features = rand(1_000) .* 5 .- 2
     X = reshape(features, (size(features)[1], 1))
     Y = sin.(features) .* 0.5 .+ 0.5
@@ -95,12 +92,7 @@ end
 @testset "MLJ - classification" begin
     X, y = @load_crabs
 
-    tree_model = NeuroTabClassifier(;
-        arch_name="NeuroTreeConfig",
-        lr=0.1,
-        nrounds=20,
-        batchsize=64
-    )
+    tree_model = NeuroTabClassifier(; arch_name="NeuroTreeConfig", lr=0.1, nrounds=20, batchsize=64)
 
     # @load EvoTreeRegressor
     mach = machine(tree_model, X, y)

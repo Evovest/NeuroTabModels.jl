@@ -1,11 +1,12 @@
 module MLP
 
-export MLPConfig
+export MLPConfig, MLPAttnConfig
 
 using Lux
 using LuxCore
 
-import ..Models: Architecture, get_activation
+import ..Models: Architecture, get_activation, uses_batch_mask, MaskedBatchNorm, CarryMask, MaskSkip
+import ..Layers: _untuple, _valid_tokens, _attn_blocks, _pred_head
 
 """
     MLPConfig(; kwargs...)
@@ -29,11 +30,7 @@ end
 
 function MLPConfig(; kwargs...)
     args = Dict{Symbol,Any}(
-        :act => :relu,
-        :hidden_size => 64,
-        :stack_size => 1,
-        :dropout => 0.0,
-        :MLE_tree_split => false,
+        :act => :relu, :hidden_size => 64, :stack_size => 1, :dropout => 0.0, :MLE_tree_split => false
     )
 
     args_ignored = setdiff(keys(kwargs), keys(args))
@@ -48,19 +45,11 @@ function MLPConfig(; kwargs...)
         args[arg] = kwargs[arg]
     end
 
-    return MLPConfig(
-        Symbol(args[:act]),
-        args[:hidden_size],
-        args[:stack_size],
-        args[:dropout],
-        args[:MLE_tree_split],
-    )
+    return MLPConfig(Symbol(args[:act]), args[:hidden_size], args[:stack_size], args[:dropout], args[:MLE_tree_split])
 end
 
-function _mlp_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::Int, dropout::Float64)
-    layers = Any[
-        Dense(nfeats => hsize),
-    ]
+function _mlp_trunk(ins::Int, hsize::Int, outsize::Int, act, stack_size::Int, dropout::Float64)
+    layers = Any[Dense(ins => hsize),]
     for _ in 1:stack_size
         push!(layers, BatchNorm(hsize, act))
         push!(layers, Dense(hsize => hsize))
@@ -71,18 +60,18 @@ function _mlp_trunk(nfeats::Int, hsize::Int, outsize::Int, act, stack_size::Int,
 end
 
 """
-    (config::MLPConfig)(; nfeats, outsize)
+    (config::MLPConfig)(; ins, outsize)
 
 Build a `Lux.Chain` from `config`.
 
 # Arguments
-- `nfeats::Int`: Number of input features.
+- `ins::Int`: Number of input features.
 - `outsize::Int`: Number of output units.
 
 # Returns
 A `Lux.Chain` of `Dense` → `BatchNorm` → `Dense` blocks with optional dropout.
 """
-function (config::MLPConfig)(; nfeats, outsize, kwargs...)
+function (config::MLPConfig)(; ins, outsize, kwargs...)
     act = get_activation(config.act)
     hsize = config.hidden_size
 
@@ -92,15 +81,17 @@ function (config::MLPConfig)(; nfeats, outsize, kwargs...)
         chain = Chain(
             Parallel(
                 vcat,
-                _mlp_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
-                _mlp_trunk(nfeats, hsize, head_outsize, act, config.stack_size, config.dropout),
+                _mlp_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
+                _mlp_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
             ),
         )
     else
-        chain = _mlp_trunk(nfeats, hsize, outsize, act, config.stack_size, config.dropout)
+        chain = _mlp_trunk(ins, hsize, outsize, act, config.stack_size, config.dropout)
     end
 
     return chain
 end
+
+include("mlpattn.jl")
 
 end
