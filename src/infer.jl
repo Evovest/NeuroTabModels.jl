@@ -168,8 +168,28 @@ function infer(
         dfg = groupby(df, group_name; sort=true)
         dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
         p = infer_grp(m, dinfer; device, backend, proj)
+        p = _ungroup(m.loss, p, sortperm(df[!, group_name]), proj)
     end
     return p
+end
+
+# `groupby(df, group_name; sort=true)` hands out groups in key order, so grouped predictions
+# arrive in that order rather than in the row order of `df`. A stable sort of the group column
+# reproduces that order, which sends each prediction back to the row it came from.
+# Observations are rows once `_inverse_link` has run, and columns while `proj=false` leaves a
+# multi-parameter output in model layout.
+_ungroup(::LossType, p, rows, ::Bool) = _scatter_obs(p, rows, 1)
+_ungroup(::Union{MLogLoss,GaussianMLE}, p, rows, proj::Bool) = _scatter_obs(p, rows, proj ? 1 : 2)
+
+function _scatter_obs(p::AbstractVector, rows, ::Int)
+    out = similar(p)
+    out[rows] = p
+    return out
+end
+function _scatter_obs(p::AbstractMatrix, rows, obsdim::Int)
+    out = similar(p)
+    obsdim == 1 ? (out[rows, :] = p) : (out[:, rows] = p)
+    return out
 end
 
 """
