@@ -225,6 +225,34 @@ end
     @test !any(isnan, p)
 end
 
+@testset "Regression - grouped inference row order" begin
+    Random.seed!(123)
+    nobs = 200
+    X = randn(Float32, nobs, 4)
+    y = X[:, 1] .+ 0.5f0 .* X[:, 2] .+ 0.1f0 .* randn(Float32, nobs)
+    df = DataFrame(X, :auto)
+    df[!, :y] = y
+    df[!, :grp] = repeat(1:10, inner=20)
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name, "grp"])
+
+    dtrain = sort(df[1:160, :], :grp)
+    # the caller's frame is deliberately not in group order
+    deval = df[161:end, :][randperm(40), :]
+
+    arch = NeuroTabModels.MLPConfig(; hidden_size=32)
+    learner = NeuroTabRegressor(arch; loss=:mse, nrounds=40, lr=1e-2, batchsize=32)
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, group_name="grp")
+
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    # predictions must vary, or a misalignment would compare equal anyway
+    @test std(p) > 0.5
+    # one row per call cannot be reordered by grouping, so it pins each row's own prediction
+    p_row = [m(deval[i:i, :])[1] for i in 1:nrow(deval)]
+    @test maximum(abs.(p .- p_row)) < 1e-5
+end
+
 @testset "MaskedBatchNorm" begin
     rng = Random.Xoshiro(123)
     l = NeuroTabModels.MaskedBatchNorm(4)
