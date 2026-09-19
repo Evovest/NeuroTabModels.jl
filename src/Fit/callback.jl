@@ -7,6 +7,8 @@ using ..Learners: LearnerTypes
 using ...Infer: reduce_pred, _get_device
 using ..Data: get_df_loader_train
 using ..Metrics
+using ...Models
+using ...Losses: masked_input
 
 using Lux: Training, testmode
 
@@ -26,12 +28,13 @@ end
 function CallBack(
     config::LearnerTypes,
     df::AbstractDataFrame,
-    cache;
+    cache,
+    m;
     feature_names,
     target_name,
     weight_name=nothing,
     offset_name=nothing,
-    group_key=nothing
+    eval_group_name=nothing,
 )
     dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     ts = cache[:train_state]
@@ -39,10 +42,14 @@ function CallBack(
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
 
-    dfg = isnothing(group_key) ? df : groupby(df, group_key; sort=true)
-    deval = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false) |> dev
+    dfg = isnothing(eval_group_name) ? df : groupby(df, eval_group_name; sort=true)
+    deval =
+        get_df_loader_train(
+            dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false
+        ) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
+    deval = Models.eval_dataloader(m.chain, m.info, deval, dev, ps, st)
     d0 = first(deval)
     eval_compiled = _build_eval_step(ts.model, feval, d0, ps, st; reactant=config.backend == :reactant)
 
@@ -58,14 +65,16 @@ function _build_eval_step(chain, feval, d0, ps, st; reactant::Bool)
         return reactant ? _compile_eval_step(Val(:reactant), _step2, d0[1], d0[2], ps, st) : _step2
     elseif length(d0) == 3
         function _step3(x, y, w, ps, st)
+            xin = masked_input(chain, x, w)
             m = x -> reduce_pred(first(chain(x, ps, st)))
-            return feval(m, x, y, w; agg=sum), sum(w)
+            return feval(m, xin, y, w; agg=sum), sum(w)
         end
         return reactant ? _compile_eval_step(Val(:reactant), _step3, d0[1], d0[2], d0[3], ps, st) : _step3
     else
         function _step4(x, y, w, offset, ps, st)
+            xin = masked_input(chain, x, w)
             m = x -> reduce_pred(first(chain(x, ps, st)))
-            return feval(m, x, y, w, offset; agg=sum), sum(w)
+            return feval(m, xin, y, w, offset; agg=sum), sum(w)
         end
         return reactant ? _compile_eval_step(Val(:reactant), _step4, d0[1], d0[2], d0[3], d0[4], ps, st) : _step4
     end
@@ -94,13 +103,12 @@ function update_logger!(logger; iter, metric)
     if iter == 0
         logger[:best_metric] = metric
     else
-        if (logger[:maximise] && metric > logger[:best_metric]) ||
-           (!logger[:maximise] && metric < logger[:best_metric])
+        if (logger[:maximise] && metric > logger[:best_metric]) || (!logger[:maximise] && metric < logger[:best_metric])
             logger[:best_metric] = metric
             logger[:best_iter] = iter
             logger[:iter_since_best] = 0
         else
-            logger[:iter_since_best] += logger[:metrics][:iter][end] - logger[:metrics][:iter][end-1]
+            logger[:iter_since_best] += logger[:metrics][:iter][end] - logger[:metrics][:iter][end - 1]
         end
     end
 end

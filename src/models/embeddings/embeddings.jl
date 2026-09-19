@@ -1,23 +1,26 @@
 module Embeddings
 
 using Lux
-using Lux: BatchNorm, Chain, Dense, FlattenLayer
 using LuxCore
+using Random
 using NNlib
-using Random: AbstractRNG, rand, randn
-using Statistics: quantile
+import Statistics: mean, quantile, std
 
-export NLinear, LinearEmbeddings
-export Periodic, PeriodicEmbeddings
-export PiecewiseLinearEncoding, PiecewiseLinearEmbeddings
-export compute_bins, EmbeddingConfig
+export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractEmbedding
+export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
+export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
+export EmbeddingLayer, build_embedding_chain, needs_x_train, temporal_out_dim
+export embedding_width
+
+using ..Layers: GroupedDense
 
 include("compute_bins.jl")
-include("nlinear.jl")
 include("linear.jl")
 include("periodic.jl")
 include("piecewise_linear.jl")
 include("batchnorm.jl")
+include("layernorm.jl")
+include("temporal.jl")
 include("config.jl")
 
 end

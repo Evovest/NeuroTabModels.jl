@@ -4,10 +4,10 @@ using DataFrames
 using Statistics: mean, std
 using StatsBase: tiedrank
 
-using CUDA, cuDNN
+# using CUDA, cuDNN
 using Enzyme
 using Reactant
-using Zygote
+# using Zygote
 
 using NeuroTabModels
 using AWS: AWSCredentials, AWSConfig, @service
@@ -18,16 +18,16 @@ aws_config = AWSConfig(; creds=aws_creds, region="ca-central-1")
 
 path = "share/data/year/year.csv"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
-df = DataFrame(CSV.File(raw, header=false))
+df = DataFrame(CSV.File(raw; header=false))
 df_tot = copy(df)
 
 path = "share/data/year/year-train-idx.txt"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
-train_idx = DataFrame(CSV.File(raw, header=false))[:, 1] .+ 1
+train_idx = DataFrame(CSV.File(raw; header=false))[:, 1] .+ 1
 
 path = "share/data/year/year-eval-idx.txt"
 raw = S3.get_object("jeremiedb", path, Dict("response-content-type" => "application/octet-stream"); aws_config)
-eval_idx = DataFrame(CSV.File(raw, header=false))[:, 1] .+ 1
+eval_idx = DataFrame(CSV.File(raw; header=false))[:, 1] .+ 1
 
 target_name = "y"
 rename!(df_tot, "Column1" => target_name)
@@ -46,25 +46,25 @@ transform!(df_tot, feature_names .=> norm .=> feature_names)
 
 dtrain = df_tot[train_idx, :];
 deval = df_tot[eval_idx, :];
-dtest = df_tot[(end-51630+1):end, :];
+dtest = df_tot[(end - 51630 + 1):end, :];
 
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
     actA=:identity,
-    k=1,
-    ntrees=32,
+    k=8,
+    ntrees=16,
     depth=4,
     stack_size=1,
     hidden_size=16,
-    init_scale=0.1,
+    # init_scale=0.1,
     scaler=true,
 )
 
 # arch = NeuroTabModels.MOETreeConfig(;
 #     tree_type=:binary,
-#     depth=5,
-#     ntrees=8,
-#     stack_size=1,
+#     k=8,
+#     depth=4,
+#     ntrees=32,
 #     init_scale=0.1,
 # )
 
@@ -74,36 +74,53 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     d_block=64,
 #     n_blocks=3,
 #     dropout=0.1,
-#     # scaling_init=:normal,
 # )
 
 # arch = NeuroTabModels.MLPConfig(;
 #     act=:relu,
 #     stack_size=2,
-#     hidden_size=128,
+#     hidden_size=64,
 #     dropout=0.2
 # )
 
-arch = NeuroTabModels.ResNetConfig(;
-    stack_size=2,
-    hidden_size=128,
-    act=:relu,
-    dropout=0.5,
+# arch = NeuroTabModels.MLPAttnConfig(;
+#     act=:relu,
+#     stack_size=1,
+#     hidden_size=64,
+#     nheads=1,
+#     n_attn_layers=1,
+#     dropout=0.2,
+#     attn_dropout=0.1,
+# )
+
+arch = NeuroTabModels.NeuroTreeAttnConfig(;
+    tree_type=:binary,
+    depth=4,
+    ntrees=8,
+    stack_size=1,
+    hidden_size=16,
+    nheads=1,
+    n_attn_layers=1,
+    dropout=0.2,
+    attn_dropout=0.1,
 )
+
+# arch = NeuroTabModels.ResNetConfig(; stack_size=2, hidden_size=64, act=:relu, dropout=0.2)
 
 device = :gpu
 backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
-# metric = :correlation # :mse :gaussian_mle :tweedie
+# metric = :pearson # :mse :gaussian_mle :tweedie
 
+# embedding_config = Dict(:embedding_type => :linear, :d_embedding => 8, :activation => :relu)
+embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => :identity)
+# embedding_config = Dict(:embedding_type => :piecewise, :d_embedding => 8, :activation => "relu", :nbins => 16)
 # embedding_config = Dict(
-#     :embedding_type => :piecewise,
-#     :d_embedding => 8,
-#     :activation => nothing,
-#     :bins => 16,
-#     :frequencies => 16,
+#     :embedding_type => :periodic, :d_embedding => 8, :activation => "relu", :frequencies => 16, :lite => true
 # )
-embedding_config = Dict(:embedding_type => :batchnorm)
+# embedding_config = Dict(:embedding_type => :identity)
+# embedding_config = Dict(:embedding_type => :batchnorm)
+# embedding_config = Dict(:embedding_type => :layernorm)
 
 learner = NeuroTabRegressor(
     arch;
@@ -112,20 +129,13 @@ learner = NeuroTabRegressor(
     # metric,
     nrounds=200,
     early_stopping_rounds=2,
-    lr=1e-3,
-    batchsize=1024,
+    lr=3e-4,
+    batchsize=1024,  
     device,
-    backend
+    backend,
 )
 
-@time m = NeuroTabModels.fit(
-    learner,
-    dtrain;
-    deval,
-    target_name,
-    feature_names,
-    print_every_n=5,
-);
+@time m = NeuroTabModels.fit(learner, dtrain; deval, target_name, feature_names, print_every_n=5);
 
 p_eval = m(deval; device=:cpu);
 p_eval = p_eval[:, 1]

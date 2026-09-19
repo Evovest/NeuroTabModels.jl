@@ -2,27 +2,34 @@ module Learners
 
 import MLJModelInterface as MMI
 import MLJModelInterface: fit, update, predict, schema
-import Random
+using Random: Random
 
 using ..Models
-using ..Models: EmbeddingConfig
+using ..Models: AbstractEmbedding, IdentityEmbedding, EmbeddingLayer
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
 
+_to_embedding(::Nothing) = IdentityEmbedding()
+_to_embedding(e::AbstractEmbedding) = e
+_to_embedding(d::AbstractDict) = EmbeddingLayer(d)
+function _to_embedding(x)
+    error("`embedding_config` must be `nothing`, an `AbstractDict`, or an `AbstractEmbedding`; got $(typeof(x)).")
+end
+
 mutable struct NeuroTabRegressor <: MMI.Deterministic
-  loss::Symbol
-  metric::Symbol
-  arch::Architecture
-  embedding_config::Union{Nothing,EmbeddingConfig}
-  nrounds::Int
-  early_stopping_rounds::Int
-  lr::Float32
-  wd::Float32
-  batchsize::Int
-  seed::Int
-  scale_target::Bool
-  backend::Symbol
-  device::Symbol
-  gpuID::Int
+    loss::Symbol
+    metric::Symbol
+    arch::Architecture
+    embedding_config::AbstractEmbedding
+    nrounds::Int
+    early_stopping_rounds::Int
+    lr::Float32
+    wd::Float32
+    batchsize::Int
+    seed::Int
+    scale_target::Bool
+    backend::Symbol
+    device::Symbol
+    gpuID::Int
 end
 
 """
@@ -33,22 +40,25 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 
 # Hyper-parameters
 
-- `loss=:mse`:              Loss to be be minimized during training. One of:
+- `loss=:mse`:              Loss to be minimized during training. One of:
   - `:mse`
   - `:mae`
   - `:logloss`
-  - `:mlogloss`
+  - `:tweedie`
   - `:gaussian_mle`
-- `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
+  - `:pearson`
+- `nrounds=10`:             Max number of rounds (epochs).
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `lr` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
 - `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
-- `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
-  E.g. `embedding_config=Dict(:embedding_type => :periodic, :d_embedding => 24)`.
+- `embedding_config=nothing`: Optional numerical/temporal embeddings. Accepts `nothing` (no-op),
+  an `AbstractEmbedding` (e.g. `EmbeddingLayer(num=PeriodicEmbeddings(d_embedding=24))`), or an
+  `AbstractDict` selecting the type via `:embedding_type` (e.g.
+  `Dict(:embedding_type => :periodic, :d_embedding => 24)`).
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
@@ -56,7 +66,7 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 # Internal API
 
 Do `config = NeuroTabRegressor()` to construct an instance with default hyper-parameters.
-Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabRegressor(loss=:logistic, depth=5, ...)`.
+Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabRegressor(loss=:mse, nrounds=10, ...)`.
 
 ## Training model
 
@@ -68,7 +78,7 @@ m = fit(config, dtrain; feature_names, target_name, kwargs...)
 
 ## Inference
 
-Models act as a functor. returning predictions when called as a function with features as argument:
+Models act as a functor, returning predictions when called as a function with features as argument:
 
 ```julia
 m(data)
@@ -119,7 +129,7 @@ The fields of `report(mach)` are:
 
 ```julia
 using NeuroTabModels, DataFrames
-config = NeuroTabRegressor(depth=5, nrounds=10)
+config = NeuroTabRegressor(NeuroTreeConfig(; depth=5); nrounds=10)
 nobs, nfeats = 1_000, 5
 dtrain = DataFrame(randn(nobs, nfeats), :auto)
 dtrain.y = rand(nobs)
@@ -132,7 +142,7 @@ p = m(dtrain)
 
 ```julia
 using MLJBase, NeuroTabModels
-m = NeuroTabRegressor(depth=5, nrounds=10)
+m = NeuroTabRegressor(NeuroTreeConfig(; depth=5); nrounds=10)
 X, y = @load_boston
 mach = machine(m, X, y) |> fit!
 p = predict(mach, X)
@@ -140,107 +150,103 @@ p = predict(mach, X)
 """
 function NeuroTabRegressor(arch::Architecture; kwargs...)
 
-  # defaults arguments
-  args = Dict{Symbol,Any}(
-    :loss => :mse,
-    :metric => nothing,
-    :nrounds => 10,
-    :early_stopping_rounds => typemax(Int),
-    :lr => 1.0f-2,
-    :wd => 0.0f0,
-    :batchsize => 2048,
-    :seed => 123,
-    :backend => :zygote,
-    :device => :gpu,
-    :gpuID => 0,
-    :embedding_config => nothing,
-    :scale_target => true
-  )
+    # defaults arguments
+    args = Dict{Symbol,Any}(
+        :loss => :mse,
+        :metric => nothing,
+        :nrounds => 10,
+        :early_stopping_rounds => typemax(Int),
+        :lr => 1.0f-2,
+        :wd => 0.0f0,
+        :batchsize => 2048,
+        :seed => 123,
+        :backend => :zygote,
+        :device => :gpu,
+        :gpuID => 0,
+        :embedding_config => nothing,
+        :scale_target => true,
+    )
 
-  args_ignored = setdiff(keys(kwargs), keys(args))
-  args_ignored_str = join(args_ignored, ", ")
-  length(args_ignored) > 0 &&
-    @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
+    args_ignored = setdiff(keys(kwargs), keys(args))
+    args_ignored_str = join(args_ignored, ", ")
+    length(args_ignored) > 0 &&
+        @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
 
-  args_default = setdiff(keys(args), keys(kwargs))
-  args_default_str = join(args_default, ", ")
-  length(args_default) > 0 &&
-    @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
+    args_default = setdiff(keys(args), keys(kwargs))
+    args_default_str = join(args_default, ", ")
+    length(args_default) > 0 &&
+        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
 
-  args_override = intersect(keys(args), keys(kwargs))
-  for arg in args_override
-    args[arg] = kwargs[arg]
-  end
+    args_override = intersect(keys(args), keys(kwargs))
+    for arg in args_override
+        args[arg] = kwargs[arg]
+    end
 
-  loss = Symbol(args[:loss])
-  loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle] && error("The provided kwarg `loss`: $loss is not supported.")
+    loss = Symbol(args[:loss])
+    loss ∉ [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :pearson] &&
+        error("The provided kwarg `loss`: $loss is not supported.")
 
-  _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :correlation]
-  if isnothing(args[:metric])
-    metric = loss
-  else
-    metric = Symbol(args[:metric])
-  end
-  if metric ∉ _metric_list
-    error("Invalid metric. Must be one of: $_metric_list")
-  end
+    _metric_list = [:mse, :mae, :logloss, :tweedie, :gaussian_mle, :pearson]
+    if isnothing(args[:metric])
+        metric = loss
+    else
+        metric = Symbol(args[:metric])
+    end
+    if metric ∉ _metric_list
+        error("Invalid metric. Must be one of: $_metric_list")
+    end
 
-  backend = Symbol(args[:backend])
-  device = Symbol(args[:device])
-  if device == :reactant
-    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
-  end
-  if backend == :enzyme && device == :gpu
-    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
-  end
+    backend = Symbol(args[:backend])
+    device = Symbol(args[:device])
+    if device == :reactant
+        error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+    end
+    if backend == :enzyme && device == :gpu
+        @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
+    end
 
-  # Build EmbeddingConfig from Dict if needed
-  embed = args[:embedding_config]
-  if embed isa AbstractDict
-    embed = EmbeddingConfig(; embed...)
-  end
+    embed = _to_embedding(args[:embedding_config])
 
-  config = NeuroTabRegressor(
-    loss,
-    metric,
-    arch,
-    embed,
-    args[:nrounds],
-    args[:early_stopping_rounds],
-    Float32(args[:lr]),
-    Float32(args[:wd]),
-    args[:batchsize],
-    args[:seed],
-    args[:scale_target],
-    backend,
-    device,
-    args[:gpuID]
-  )
+    config = NeuroTabRegressor(
+        loss,
+        metric,
+        arch,
+        embed,
+        args[:nrounds],
+        args[:early_stopping_rounds],
+        Float32(args[:lr]),
+        Float32(args[:wd]),
+        args[:batchsize],
+        args[:seed],
+        args[:scale_target],
+        backend,
+        device,
+        args[:gpuID],
+    )
 
-  return config
+    return config
 end
 
 function NeuroTabRegressor(; arch_name="NeuroTreeConfig", arch_config::AbstractDict=Dict(), kwargs...)
-  arch_type = eval(Meta.parse(arch_name))
-  arch = arch_type(; arch_config...)
-  return NeuroTabRegressor(arch; kwargs...)
+    arch_type = eval(Meta.parse(arch_name))
+    arch = arch_type(; arch_config...)
+    return NeuroTabRegressor(arch; kwargs...)
 end
 
-
 mutable struct NeuroTabClassifier <: MMI.Probabilistic
-  loss::Symbol
-  metric::Symbol
-  arch::Architecture
-  embedding_config::Union{Nothing,EmbeddingConfig}
-  nrounds::Int
-  early_stopping_rounds::Int
-  lr::Float32
-  wd::Float32
-  batchsize::Int
-  seed::Int
-  backend::Symbol
-  device::Symbol
-  gpuID::Int
+    loss::Symbol
+    metric::Symbol
+    arch::Architecture
+    embedding_config::AbstractEmbedding
+    nrounds::Int
+    early_stopping_rounds::Int
+    lr::Float32
+    wd::Float32
+    batchsize::Int
+    seed::Int
+    backend::Symbol
+    device::Symbol
+    gpuID::Int
 end
 
 """
@@ -251,15 +257,16 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 
 # Hyper-parameters
 
-- `nrounds=100`:             Max number of rounds (epochs).
-- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `eta` results in slower learning, typically requiring a higher `nrounds`.
+- `nrounds=10`:             Max number of rounds (epochs).
+- `lr=1.0f-2`:              Learning rate. Must be > 0. A lower `lr` results in slower learning, typically requiring a higher `nrounds`.
 - `wd=0.f0`:                Weight decay applied to the gradients by the optimizer.
 - `batchsize=2048`:         Batch size.
 - `seed=123`:               An integer used as a seed to the random number generator.
 - `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
-- `embedding_config=nothing`: Optional `Dict` or `EmbeddingConfig` for numerical feature embeddings.
+- `embedding_config=nothing`: Optional numerical/temporal embeddings. Accepts `nothing` (no-op),
+  an `AbstractEmbedding`, or an `AbstractDict` selecting the type via `:embedding_type`.
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
@@ -267,7 +274,7 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 # Internal API
 
 Do `config = NeuroTabClassifier()` to construct an instance with default hyper-parameters.
-Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(depth=5, ...)`.
+Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(nrounds=10, ...)`.
 
 ## Training model
 
@@ -279,7 +286,7 @@ m = fit(config, dtrain; feature_names, target_name, kwargs...)
 
 ## Inference
 
-Models act as a functor. returning predictions when called as a function with features as argument:
+Models act as a functor, returning predictions when called as a function with features as argument:
 
 ```julia
 m(data)
@@ -294,7 +301,7 @@ NeuroTabClassifier = @load NeuroTabClassifier pkg=NeuroTabModels
 ```
 
 Do `model = NeuroTabClassifier()` to construct an instance with default hyper-parameters.
-Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(loss=...)`.
+Provide keyword arguments to override hyper-parameter defaults, as in `NeuroTabClassifier(nrounds=...)`.
 
 ## Training model
 
@@ -330,7 +337,7 @@ The fields of `report(mach)` are:
 
 ```julia
 using NeuroTabModels, DataFrames, CategoricalArrays, Random
-config = NeuroTabClassifier(depth=5, nrounds=10)
+config = NeuroTabClassifier(NeuroTreeConfig(; depth=5); nrounds=10)
 nobs, nfeats = 1_000, 5
 dtrain = DataFrame(randn(nobs, nfeats), :auto)
 dtrain.y = categorical(rand(1:2, nobs))
@@ -343,7 +350,7 @@ p = m(dtrain)
 
 ```julia
 using MLJBase, NeuroTabModels
-m = NeuroTabClassifier(depth=5, nrounds=10)
+m = NeuroTabClassifier(NeuroTreeConfig(; depth=5); nrounds=10)
 X, y = @load_crabs
 mach = machine(m, X, y) |> fit!
 p = predict(mach, X)
@@ -351,74 +358,70 @@ p = predict(mach, X)
 """
 function NeuroTabClassifier(arch::Architecture; kwargs...)
 
-  # defaults arguments
-  args = Dict{Symbol,Any}(
-    :metric => nothing,
-    :nrounds => 10,
-    :early_stopping_rounds => typemax(Int),
-    :lr => 1.0f-2,
-    :wd => 0.0f0,
-    :batchsize => 2048,
-    :seed => 123,
-    :backend => :zygote,
-    :device => :gpu,
-    :gpuID => 0,
-    :embedding_config => nothing,
-  )
+    # defaults arguments
+    args = Dict{Symbol,Any}(
+        :metric => nothing,
+        :nrounds => 10,
+        :early_stopping_rounds => typemax(Int),
+        :lr => 1.0f-2,
+        :wd => 0.0f0,
+        :batchsize => 2048,
+        :seed => 123,
+        :backend => :zygote,
+        :device => :gpu,
+        :gpuID => 0,
+        :embedding_config => nothing,
+    )
 
-  args_ignored = setdiff(keys(kwargs), keys(args))
-  args_ignored_str = join(args_ignored, ", ")
-  length(args_ignored) > 0 &&
-    @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
+    args_ignored = setdiff(keys(kwargs), keys(args))
+    args_ignored_str = join(args_ignored, ", ")
+    length(args_ignored) > 0 &&
+        @info "Following $(length(args_ignored)) provided arguments will be ignored: $(args_ignored_str)."
 
-  args_default = setdiff(keys(args), keys(kwargs))
-  args_default_str = join(args_default, ", ")
-  length(args_default) > 0 &&
-    @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
+    args_default = setdiff(keys(args), keys(kwargs))
+    args_default_str = join(args_default, ", ")
+    length(args_default) > 0 &&
+        @info "Following $(length(args_default)) arguments were not provided and will be set to default: $(args_default_str)."
 
-  args_override = intersect(keys(args), keys(kwargs))
-  for arg in args_override
-    args[arg] = kwargs[arg]
-  end
+    args_override = intersect(keys(args), keys(kwargs))
+    for arg in args_override
+        args[arg] = kwargs[arg]
+    end
 
-  backend = Symbol(args[:backend])
-  device = Symbol(args[:device])
-  if device == :reactant
-    error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
-  end
-  if backend == :enzyme && device == :gpu
-    @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
-  end
+    backend = Symbol(args[:backend])
+    device = Symbol(args[:device])
+    if device == :reactant
+        error("Use `backend=:reactant` with `device=:cpu` or `device=:gpu` instead of `device=:reactant`.")
+    end
+    if backend == :enzyme && device == :gpu
+        @warn "`backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models. Prefer `backend=:zygote` on GPU, `backend=:reactant` for Reactant, or `backend=:enzyme` on CPU."
+    end
 
-  # Build EmbeddingConfig from Dict if needed
-  embed = args[:embedding_config]
-  if embed isa AbstractDict
-    embed = EmbeddingConfig(; embed...)
-  end
+    embed = _to_embedding(args[:embedding_config])
 
-  config = NeuroTabClassifier(
-    :mlogloss,
-    :mlogloss,
-    arch,
-    embed,
-    args[:nrounds],
-    args[:early_stopping_rounds],
-    Float32(args[:lr]),
-    Float32(args[:wd]),
-    args[:batchsize],
-    args[:seed],
-    backend,
-    device,
-    args[:gpuID]
-  )
+    config = NeuroTabClassifier(
+        :mlogloss,
+        :mlogloss,
+        arch,
+        embed,
+        args[:nrounds],
+        args[:early_stopping_rounds],
+        Float32(args[:lr]),
+        Float32(args[:wd]),
+        args[:batchsize],
+        args[:seed],
+        backend,
+        device,
+        args[:gpuID],
+    )
 
-  return config
+    return config
 end
 
 function NeuroTabClassifier(; arch_name="NeuroTreeConfig", arch_config::AbstractDict=Dict(), kwargs...)
-  arch_type = eval(Meta.parse(arch_name))
-  arch = arch_type(; arch_config...)
-  return NeuroTabClassifier(arch; kwargs...)
+    arch_type = eval(Meta.parse(arch_name))
+    arch = arch_type(; arch_config...)
+    return NeuroTabClassifier(arch; kwargs...)
 end
 
 const LearnerTypes = Union{NeuroTabRegressor,NeuroTabClassifier}

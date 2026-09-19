@@ -47,14 +47,6 @@ function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B
     return (x, y, w, offset)
 end
 
-# for GroupedDataFrame
-function getindex(data::ContainerTrain{A,B,C,D}, idx::Int) where {A<:Vector,B,C<:Vector,D<:Nothing}
-    x = data.x[idx]
-    y = data.y[idx]
-    w = data.w[idx]
-    return (x, y, w)
-end
-
 function get_df_loader_train(
     df::AbstractDataFrame;
     feature_names,
@@ -63,8 +55,8 @@ function get_df_loader_train(
     offset_name=nothing,
     batchsize,
     scalers=nothing,
-    shuffle=true)
-
+    shuffle=true,
+)
     feature_names = Symbol.(feature_names)
     x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
 
@@ -83,13 +75,25 @@ function get_df_loader_train(
     offset = if isnothing(offset_name)
         nothing
     else
-        isa(offset_name, String) ? Float32.(df[!, offset_name]) : Matrix{Float32}(Matrix{Float32}(df[!, offset_name])')
+        if isa(offset_name, String)
+            Float32.(df[!, offset_name])
+        else
+            Matrix{Float32}(Matrix{Float32}(df[!, offset_name])')
+        end
     end
 
     container = ContainerTrain(x, y, w, offset)
     batchsize = min(batchsize, length(container))
     dtrain = DataLoader(container; shuffle, batchsize, partial=false, parallel=false)
     return dtrain
+end
+
+# for GroupedDataFrame
+function getindex(data::ContainerTrain{A,B,C,D}, idx::Integer) where {A<:Vector,B<:Vector,C<:Vector,D<:Nothing}
+    x = data.x[idx]
+    y = data.y[idx]
+    w = data.w[idx]
+    return (x, y, w)
 end
 
 function get_df_loader_train(
@@ -100,25 +104,27 @@ function get_df_loader_train(
     offset_name=nothing,
     batchsize=0,
     scalers=nothing,
-    shuffle=true)
-
+    shuffle=true,
+)
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
+    # bs=2048 # FIXME: stress test for reactant memory issue
+    @info "group train bs: $bs"
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
-    y = [zeros(Float32, bs) for _ in 1:n]
-    w = [zeros(Float32, bs) for _ in 1:n]
+    y = [zeros(Float32, 1, 1, bs) for _ in 1:n]
+    w = [zeros(Float32, 1, 1, bs) for _ in 1:n]
 
     for i in 1:n
         df = dfg[i]
-        x[i][:, 1:nrow(df)] .= Matrix(df[!, feature_names])'
+        x[i][:, 1:nrow(df)] .= Matrix(df[:, feature_names])'
         if isnothing(scalers)
-            y[i][1:nrow(df)] .= df[!, target_name]
+            y[i][1, 1, 1:nrow(df)] .= df[:, target_name]
         else
-            y[i][1:nrow(df)] .= (df[!, target_name] .- scalers[:mu]) ./ scalers[:sigma]
+            y[i][1, 1, 1:nrow(df)] .= (df[:, target_name] .- scalers[:mu]) ./ scalers[:sigma]
         end
-        w[i][1:nrow(df)] .= 1.0
+        w[i][1, 1, 1:nrow(df)] .= 1.0
     end
     offset = nothing
 
@@ -126,7 +132,6 @@ function get_df_loader_train(
     dtrain = DataLoader(container; shuffle, batchsize=0, partial=false, parallel=false)
     return dtrain
 end
-
 
 """
     ContainerInfer
@@ -141,11 +146,7 @@ function getindex(data::ContainerInfer, idx::AbstractVector)
     return x
 end
 
-function get_df_loader_infer(
-    df::AbstractDataFrame;
-    feature_names,
-    batchsize
-)
+function get_df_loader_infer(df::AbstractDataFrame; feature_names, batchsize)
     feature_names = Symbol.(feature_names)
     x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
 
@@ -170,15 +171,17 @@ function getindex(data::ContainerInferGrp, idx::Int)
     mask = data.mask[idx]
     return (x, mask)
 end
+# function getindex(data::ContainerInferGrp, idx::AbstractVector)
+#     x = data.x[first(idx)]
+#     mask = data.mask[first(idx)]
+#     return (x, mask)
+# end
 
-function get_df_loader_infer(
-    dfg::GroupedDataFrame;
-    feature_names,
-    batchsize=0
-)
+function get_df_loader_infer(dfg::GroupedDataFrame; feature_names, batchsize=0)
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
+    @info "group infer bs: $bs"
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     mask = [zeros(Bool, bs) for _ in 1:n]

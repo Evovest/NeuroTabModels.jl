@@ -63,7 +63,7 @@ m = NeuroTabModels.fit(
     target_name,
     feature_names,
     weight_name,
-    group_key=:date,
+    group_name=:date,
     print_every_n=2,
 );
 p_train_grp = m(dtrain; device=:gpu);
