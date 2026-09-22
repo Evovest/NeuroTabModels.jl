@@ -13,7 +13,7 @@ pages = [
         "ResNet" => "models/resnet.md",
         "NeuroTrees" => ["design" => "design.md", "API" => "models/neurotrees.md"],
         "TabM" => "models/tabM.md",
-        "ModernNCA" => "models/modernnca.md",
+        "ModernNCA" => ["design" => "models/modernnca-design.md", "API" => "models/modernnca.md"],
     ],
     "Layers" => "models/layers.md",
     "Padding and masks" => "models/padding-mask.md",
