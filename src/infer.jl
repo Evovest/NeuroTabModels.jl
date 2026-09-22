@@ -36,18 +36,18 @@ function _forward_reduce(chain, x, ps, st)
     return reduce_pred(pred)
 end
 
-# Assemble raw predictions into final structure (no transforms)
-_assemble(::MLogLoss, raw_preds) = reduce(hcat, raw_preds)
-_assemble(::GaussianMLE, raw_preds) = reduce(hcat, raw_preds)
+# Assemble raw predictions into final structure (no transforms), observations along the first dimension
+_assemble(::MLogLoss, raw_preds) = Matrix(reduce(hcat, raw_preds)')
+_assemble(::GaussianMLE, raw_preds) = Matrix(reduce(hcat, raw_preds)')
 _assemble(::LossType, raw_preds) = vcat([vec(p) for p in raw_preds]...)
 
 # Apply inverse link to convert from model scale to natural scale
 _inverse_link(::LogLoss, pred) = sigmoid.(pred)
 _inverse_link(::Tweedie, pred) = exp.(pred)
 _inverse_link(::Union{MSE,MAE,Pearson}, pred) = pred
-_inverse_link(::MLogLoss, pred) = Matrix(softmax(pred; dims=1)')
+_inverse_link(::MLogLoss, pred) = softmax(pred; dims=2)
 function _inverse_link(::GaussianMLE, pred)
-    p = Matrix(pred')
+    p = copy(pred)
     @views p[:, 2] .= exp.(p[:, 2])
     return p
 end
@@ -168,8 +168,23 @@ function infer(
         dfg = groupby(df, group_name; sort=true)
         dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
         p = infer_grp(m, dinfer; device, backend, proj)
+        p = _ungroup(p, sortperm(df[!, group_name]))
     end
     return p
+end
+
+# `groupby(df, group_name; sort=true)` hands out groups in key order, so grouped predictions
+# arrive in that order rather than in the row order of `df`. A stable sort of the group column
+# reproduces that order, which sends each prediction back to the row it came from.
+function _ungroup(p::AbstractVector, rows)
+    out = similar(p)
+    out[rows] = p
+    return out
+end
+function _ungroup(p::AbstractMatrix, rows)
+    out = similar(p)
+    out[rows, :] = p
+    return out
 end
 
 """
