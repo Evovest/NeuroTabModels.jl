@@ -280,6 +280,33 @@ end
     end
 end
 
+@testset "Classification - grouped" begin
+    Random.seed!(123)
+    nobs = 360
+    X = randn(Float32, nobs, 4)
+    score = X[:, 1] .+ 0.5f0 .* X[:, 2] .+ 0.2f0 .* randn(Float32, nobs)
+    df = DataFrame(X, :auto)
+    df[!, :class] = categorical(ifelse.(score .> 0.5, "hi", ifelse.(score .< -0.5, "lo", "mid")))
+    # unequal group sizes, so the grouped loader pads
+    df[!, :grp] = rand(1:12, nobs)
+    target_name = "class"
+    feature_names = setdiff(names(df), [target_name, "grp"])
+    dtrain = df[1:280, :]
+    deval = df[281:end, :]
+
+    arch = NeuroTabModels.MLPConfig(; hidden_size=32)
+    learner = NeuroTabClassifier(arch; nrounds=40, lr=1e-2, batchsize=32)
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, deval, group_name="grp")
+
+    p = m(deval)
+    @test size(p) == (nrow(deval), 3)
+    @test maximum(abs.(sum(p; dims=2) .- 1)) < 1e-5
+    @test mean(argmax.(eachrow(p)) .== levelcode.(deval.class)) > 0.6
+    # the eval metric is scored on the padded groups, so it must match the rows alone
+    mlogloss = mean(-log(p[i, levelcode(deval.class[i])]) for i in 1:nrow(deval))
+    @test m.info[:logger][:metrics][:metric][end] ≈ mlogloss rtol = 1e-4
+end
+
 @testset "MaskedBatchNorm" begin
     rng = Random.Xoshiro(123)
     l = NeuroTabModels.MaskedBatchNorm(4)

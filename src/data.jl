@@ -122,10 +122,14 @@ function get_df_loader_train(
     for i in 1:n
         df = dfg[i]
         x[i][:, 1:nrow(df)] .= Matrix(df[:, feature_names])'
+        target = df[!, target_name]
+        if eltype(target) <: CategoricalValue
+            target = CategoricalArrays.levelcode.(target)
+        end
         if isnothing(scalers)
-            y[i][1, 1, 1:nrow(df)] .= df[:, target_name]
+            y[i][1, 1, 1:nrow(df)] .= target
         else
-            y[i][1, 1, 1:nrow(df)] .= (df[:, target_name] .- scalers[:mu]) ./ scalers[:sigma]
+            y[i][1, 1, 1:nrow(df)] .= (target .- scalers[:mu]) ./ scalers[:sigma]
         end
         w[i][1, 1, 1:nrow(df)] .= 1.0
     end
