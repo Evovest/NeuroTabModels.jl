@@ -109,6 +109,8 @@ function get_df_loader_train(
     shuffle=true,
     rng=default_rng(),
 )
+    isnothing(offset_name) ||
+        error("`offset_name` is not supported with grouped data (`group_name` or `eval_group_name`).")
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
@@ -127,7 +129,15 @@ function get_df_loader_train(
         else
             y[i][1, 1, 1:nrow(df)] .= (df[:, target_name] .- scalers[:mu]) ./ scalers[:sigma]
         end
-        w[i][1, 1, 1:nrow(df)] .= 1.0
+        if isnothing(weight_name)
+            w[i][1, 1, 1:nrow(df)] .= 1.0
+        else
+            # a weight of zero marks a padded slot, so real rows need a positive one
+            wi = Float32.(df[!, weight_name])
+            all(v -> isfinite(v) && v > 0, wi) ||
+                error("Weights in `$weight_name` must be positive and finite.")
+            w[i][1, 1, 1:nrow(df)] .= wi
+        end
     end
     offset = nothing
 

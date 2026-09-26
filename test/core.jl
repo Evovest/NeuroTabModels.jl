@@ -754,3 +754,46 @@ end
     @test all(-1.0001 .<= metrics_eval .<= 1.0001)
     @test last(metrics_eval) > first(metrics_eval)
 end
+
+@testset "Regression - grouped loader honours weights" begin
+    # real rows carry their weights, and the pad of the shorter group keeps zero
+    df = DataFrame(x1=Float32[1, 2, 3, 4, 5, 6, 7], y=Float32[1, 2, 3, 4, 5, 6, 7],
+        w=Float32[0.5, 2, 1, 3, 1, 1, 4], grp=[1, 1, 1, 2, 2, 2, 2])
+    dfg = groupby(df, :grp; sort=true)
+    loader = NeuroTabModels.Data.get_df_loader_train(
+        dfg; feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0, shuffle=false
+    )
+    ws = [vec(w) for (_, _, w) in loader]
+    @test ws[1] == Float32[0.5, 2, 1, 0]
+    @test ws[2] == Float32[3, 1, 1, 4]
+    bad = copy(df)
+    bad.w = -df.w
+    @test_throws "positive and finite" NeuroTabModels.Data.get_df_loader_train(
+        groupby(bad, :grp); feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0
+    )
+    @test_throws "not supported" NeuroTabModels.Data.get_df_loader_train(
+        dfg; feature_names=[:x1], target_name=:y, offset_name=:w, batchsize=0
+    )
+
+    # and they reach the fit. Odd rows follow y = 2 x1 and even rows y = -x1, so weighting odd
+    # rows 9 to 1 gives a least-squares slope of 1.7 against 0.5 unweighted
+    Random.seed!(123)
+    nobs = 400
+    X = randn(Float32, nobs, 4)
+    odd = isodd.(1:nobs)
+    y = ifelse.(odd, 2 .* X[:, 1], .-X[:, 1]) .+ 0.1f0 .* randn(Float32, nobs)
+    d = DataFrame(X, :auto)
+    d[!, :y] = y
+    d[!, :w] = Float32.(ifelse.(odd, 9, 1))
+    d[!, :grp] = repeat(1:20, inner=20)
+    feature_names = ["x1", "x2", "x3", "x4"]
+    arch = NeuroTabModels.MLPConfig(; hidden_size=32)
+    learner = NeuroTabRegressor(arch; loss=:mse, nrounds=40, lr=1e-2, batchsize=32)
+    x1 = Float64.(X[:, 1])
+    slope(p) = sum((p .- mean(p)) .* (x1 .- mean(x1))) / sum((x1 .- mean(x1)) .^ 2)
+    pw = Float64.(NeuroTabModels.fit(learner, d; target_name="y", feature_names, group_name="grp", weight_name="w")(d))
+    pu = Float64.(NeuroTabModels.fit(learner, d; target_name="y", feature_names, group_name="grp")(d))
+    # over data seeds 1 to 5: 1.44 to 1.69 weighted, 0.18 to 0.55 unweighted
+    @test slope(pw) > 1.2
+    @test slope(pw) > slope(pu) + 0.5
+end
