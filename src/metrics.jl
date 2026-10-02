@@ -5,7 +5,7 @@ export metric_dict, is_maximise, get_metric
 import Statistics: mean, std
 import StatsBase: tiedrank, denserank
 import NNlib: logsigmoid, logsoftmax, softmax, relu, hardsigmoid
-import ..Losses: _pearson_value
+import ..Losses: _pearson_value, _poisson_dev
 using Lux
 
 """
@@ -104,6 +104,23 @@ function tweedie(m, x, y, w, offset; agg=mean)
         w .* 2 .*
         (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
     )
+end
+
+"""
+    poisson(m, x, y; agg=mean)
+    poisson(m, x, y, w; agg=mean)
+    poisson(m, x, y, w, offset; agg=mean)
+
+Poisson deviance of the log-scale prediction.
+"""
+function poisson(m, x, y; agg=mean)
+    return agg(_poisson_dev.(vec(m(x)), vec(y)))
+end
+function poisson(m, x, y, w; agg=mean)
+    return agg(_poisson_dev.(vec(m(x)), vec(y)) .* vec(w))
+end
+function poisson(m, x, y, w, offset; agg=mean)
+    return agg(_poisson_dev.(vec(m(x)) .+ vec(offset), vec(y)) .* vec(w))
 end
 
 """
@@ -227,6 +244,7 @@ const metric_dict = Dict(
     :mlogloss => mlogloss,
     :gaussian_mle => gaussian_mle,
     :tweedie => tweedie,
+    :poisson => poisson,
     :pearson => pearson,
 )
 
@@ -236,6 +254,7 @@ is_maximise(::typeof(logloss)) = false
 is_maximise(::typeof(mlogloss)) = false
 is_maximise(::typeof(gaussian_mle)) = true
 is_maximise(::typeof(tweedie)) = false
+is_maximise(::typeof(poisson)) = false
 is_maximise(::typeof(pearson)) = true
 
 end

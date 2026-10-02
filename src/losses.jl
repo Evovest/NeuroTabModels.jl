@@ -1,6 +1,6 @@
 module Losses
 
-export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie, Pearson
+export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie, Poisson, Pearson
 export masked_input
 
 import Statistics: mean
@@ -27,6 +27,7 @@ struct LogLoss <: LossType end
 struct MLogLoss <: LossType end
 struct GaussianMLE <: LossType end
 struct Tweedie <: LossType end
+struct Poisson <: LossType end
 struct Pearson <: LossType end
 
 LossType(loss::LossType) = loss
@@ -38,10 +39,11 @@ LossType(::Val{:logloss}) = LogLoss()
 LossType(::Val{:mlogloss}) = MLogLoss()
 LossType(::Val{:gaussian_mle}) = GaussianMLE()
 LossType(::Val{:tweedie}) = Tweedie()
+LossType(::Val{:poisson}) = Poisson()
 LossType(::Val{:pearson}) = Pearson()
 function LossType(::Val{s}) where {s}
     error(
-        "Unknown loss `:$s`. Supported: :mse, :mae, :logloss, :mlogloss, :gaussian_mle, :tweedie, :pearson.",
+        "Unknown loss `:$s`. Supported: :mse, :mae, :logloss, :mlogloss, :gaussian_mle, :tweedie, :poisson, :pearson.",
     )
 end
 
@@ -115,6 +117,11 @@ function _pointwise(::Tweedie, pred, y)
     ep = exp.(pred)
     2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+ ep .^ (2 - rho) / (2 - rho))
 end
+
+# Poisson deviance with a log link: `η` is the log-mean. `y log y` is taken as 0 at `y = 0`.
+_poisson_dev(η, y) = 2 * (y * log(max(y, oftype(y, 1e-30))) - y * η + exp(η) - y)
+
+_pointwise(::Poisson, pred, y) = _poisson_dev.(pred, y)
 
 function _pointwise(::GaussianMLE, pred, y)
     μ = pred[1:1, :, :]
