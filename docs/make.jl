@@ -21,6 +21,7 @@ pages = [
         "Regression - Boston" => "tutorials/regression-boston.md",
         "Logistic - Titanic" => "tutorials/logistic-titanic.md",
         "Classification - IRIS" => "tutorials/classification-iris.md",
+        "Embeddings - Insurance claims" => "tutorials/insurance-embeddings.md",
     ],
 ]
 
