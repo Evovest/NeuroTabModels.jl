@@ -144,6 +144,8 @@ Training function of NeuroTabModels' internal API.
 - `feature_names`: Required. A `Vector{Symbol}` or `Vector{String}` of the feature names to use.
 - `target_name`: Required. A `Symbol` or `String` indicating the name of the target variable.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
+  With `group_name`, weights must be positive and finite, and they act within each group: each step
+  is normalised by its group's own weight sum.
 - `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
 - `group_name=nothing`: Optional. Column used to group training data in the dataloader.
 - `eval_group_name=group_name`: Optional. Column used to group evaluation data when computing metrics.

@@ -104,6 +104,13 @@ function getindex(data::ContainerTrain{A,B,C,D}, idx::Integer) where {A<:Vector,
     w = data.w[idx]
     return (x, y, w)
 end
+function getindex(data::ContainerTrain{A,B,C,D}, idx::Integer) where {A<:Vector,B<:Vector,C<:Vector,D<:Vector}
+    x = data.x[idx]
+    y = data.y[idx]
+    w = data.w[idx]
+    offset = data.offset[idx]
+    return (x, y, w, offset)
+end
 
 function get_df_loader_train(
     dfg::GroupedDataFrame;
@@ -125,6 +132,9 @@ function get_df_loader_train(
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     y = [zeros(Float32, 1, 1, bs) for _ in 1:n]
     w = [zeros(Float32, 1, 1, bs) for _ in 1:n]
+    # one row per offset column, as in the ungrouped (K, N) offset, and zero on pads
+    offset_names = offset_name isa Union{String,Symbol} ? [offset_name] : offset_name
+    offset = isnothing(offset_name) ? nothing : [zeros(Float32, length(offset_names), 1, bs) for _ in 1:n]
 
     for i in 1:n
         df = dfg[i]
@@ -138,9 +148,19 @@ function get_df_loader_train(
         else
             y[i][1, 1, 1:nrow(df)] .= (target .- scalers[:mu]) ./ scalers[:sigma]
         end
-        w[i][1, 1, 1:nrow(df)] .= 1.0
+        if isnothing(weight_name)
+            w[i][1, 1, 1:nrow(df)] .= 1.0
+        else
+            # a weight of zero marks a padded slot, so real rows need a positive one
+            wi = Float32.(df[!, weight_name])
+            all(v -> isfinite(v) && v > 0, wi) ||
+                error("Weights in `$weight_name` must be positive and finite.")
+            w[i][1, 1, 1:nrow(df)] .= wi
+        end
+        if !isnothing(offset)
+            offset[i][:, 1, 1:nrow(df)] .= Matrix(df[:, offset_names])'
+        end
     end
-    offset = nothing
 
     container = ContainerTrain(x, y, w, offset)
     dtrain = DataLoader(container; shuffle, batchsize=0, partial=false, parallel=false, rng)

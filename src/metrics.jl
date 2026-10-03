@@ -106,6 +106,12 @@ function tweedie(m, x, y, w, offset; agg=mean)
     )
 end
 
+# offset in the (K, B) layout of `m(x)`: a vector or a grouped (1, 1, B) for one row,
+# a (K, B) matrix or a grouped (K, 1, B) for K
+_offset_2d(offset::AbstractVector) = reshape(offset, 1, :)
+_offset_2d(offset::AbstractMatrix) = offset
+_offset_2d(offset::AbstractArray{T,3}) where {T} = reshape(offset, size(offset, 1), :)
+
 """
     mlogloss(m, x, y; agg=mean)
     mlogloss(m, x, y, w; agg=mean)
@@ -126,7 +132,7 @@ function mlogloss(m, x, y, w; agg=mean)
     return agg(vec(-sum(y_oh .* lsm; dims=1)) .* vec(w))
 end
 function mlogloss(m, x, y, w, offset; agg=mean)
-    p = m(x) .+ offset
+    p = m(x) .+ _offset_2d(offset)
     k = size(p, 1)
     y_oh = (UInt32(1):UInt32(k)) .== reshape(y, 1, :)
     lsm = logsoftmax(p; dims=1)
@@ -153,7 +159,7 @@ function gaussian_mle(m, x, y, w; agg=mean)
     return metric
 end
 function gaussian_mle(m, x, y, w, offset; agg=mean)
-    p = m(x) .+ offset
+    p = m(x) .+ _offset_2d(offset)
     metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
     return metric
 end
@@ -177,7 +183,7 @@ function pearson(m, x, y, w; agg=mean)
     return _pearson_value(p, y, w) * sum(w)
 end
 function pearson(m, x, y, w, offset; agg=mean)
-    p = _corr_pred(m(x) .+ offset)
+    p = _corr_pred(m(x) .+ _offset_2d(offset))
     return _pearson_value(p, y, w) * sum(w)
 end
 

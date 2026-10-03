@@ -860,3 +860,103 @@ end
     @test all(-1.0001 .<= metrics_eval .<= 1.0001)
     @test last(metrics_eval) > first(metrics_eval)
 end
+
+@testset "Regression - grouped loader honours weights" begin
+    # real rows carry their weights, and the pad of the shorter group keeps zero
+    df = DataFrame(x1=Float32[1, 2, 3, 4, 5, 6, 7], y=Float32[1, 2, 3, 4, 5, 6, 7],
+        w=Float32[0.5, 2, 1, 3, 1, 1, 4], grp=[1, 1, 1, 2, 2, 2, 2])
+    dfg = groupby(df, :grp; sort=true)
+    loader = NeuroTabModels.Data.get_df_loader_train(
+        dfg; feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0, shuffle=false
+    )
+    ws = [vec(w) for (_, _, w) in loader]
+    @test ws[1] == Float32[0.5, 2, 1, 0]
+    @test ws[2] == Float32[3, 1, 1, 4]
+    bad = copy(df)
+    bad.w = -df.w
+    @test_throws "positive and finite" NeuroTabModels.Data.get_df_loader_train(
+        groupby(bad, :grp); feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0
+    )
+
+    # and they reach the fit. Odd rows follow y = 2 x1 and even rows y = -x1, so weighting odd
+    # rows 9 to 1 gives a least-squares slope of 1.7 against 0.5 unweighted
+    Random.seed!(123)
+    nobs = 400
+    X = randn(Float32, nobs, 4)
+    odd = isodd.(1:nobs)
+    y = ifelse.(odd, 2 .* X[:, 1], .-X[:, 1]) .+ 0.1f0 .* randn(Float32, nobs)
+    d = DataFrame(X, :auto)
+    d[!, :y] = y
+    d[!, :w] = Float32.(ifelse.(odd, 9, 1))
+    d[!, :grp] = repeat(1:20, inner=20)
+    feature_names = ["x1", "x2", "x3", "x4"]
+    arch = NeuroTabModels.MLPConfig(; hidden_size=32)
+    learner = NeuroTabRegressor(arch; loss=:mse, nrounds=40, lr=1e-2, batchsize=32)
+    x1 = Float64.(X[:, 1])
+    slope(p) = sum((p .- mean(p)) .* (x1 .- mean(x1))) / sum((x1 .- mean(x1)) .^ 2)
+    pw = Float64.(NeuroTabModels.fit(learner, d; target_name="y", feature_names, group_name="grp", weight_name="w")(d))
+    pu = Float64.(NeuroTabModels.fit(learner, d; target_name="y", feature_names, group_name="grp")(d))
+    # over data seeds 1 to 5: 1.44 to 1.69 weighted, 0.18 to 0.55 unweighted
+    @test slope(pw) > 1.2
+    @test slope(pw) > slope(pu) + 0.5
+end
+
+@testset "Regression - grouped loader honours offsets" begin
+    # real rows carry their offsets, and the pad of the shorter group keeps zero
+    df = DataFrame(x1=Float32[1, 2, 3, 4, 5, 6, 7], y=Float32[1, 2, 3, 4, 5, 6, 7],
+        off=Float32[0.5, -1, 2, 3, 1, -2, 4], grp=[1, 1, 1, 2, 2, 2, 2])
+    dfg = groupby(df, :grp; sort=true)
+    for name in ("off", :off)
+        loader = NeuroTabModels.Data.get_df_loader_train(
+            dfg; feature_names=[:x1], target_name=:y, offset_name=name, batchsize=0, shuffle=false
+        )
+        offs = [o for (_, _, _, o) in loader]
+        @test size(offs[1]) == (1, 1, 4)
+        @test vec(offs[1]) == Float32[0.5, -1, 2, 0]
+        @test vec(offs[2]) == Float32[3, 1, -2, 4]
+    end
+    # several offset columns give one row each
+    _, _, _, o2 = first(NeuroTabModels.Data.get_df_loader_train(
+        dfg; feature_names=[:x1], target_name=:y, offset_name=[:off, :x1], batchsize=0, shuffle=false
+    ))
+    @test o2[:, 1, :] == Float32[0.5 -1 2 0; 1 2 3 0]
+
+    # the metrics add each row's own offset, as a vector, a (K, B) matrix or a grouped (K, 1, B)
+    M = NeuroTabModels.Metrics
+    p = Float32[0.3 -1.2 0.8 2.0 -0.4; 1.1 0.2 -0.7 0.5 0.9]
+    o = Float32[0.5 -1 2 0 3; 1 0 -0.5 2 1]
+    y = Float32[1 0 2 3 -1]
+    c = UInt32[1 2 2 1 2]
+    w = Float32[1, 2, 1, 1, 3]
+    for off in (o[1, :], reshape(o[1, :], 1, 1, :))
+        @test M.pearson(_ -> p[1:1, :], p, y, w, off) ≈ M.pearson(_ -> p[1:1, :] .+ o[1:1, :], p, y, w)
+    end
+    for off in (o, reshape(o, 2, 1, :))
+        @test M.gaussian_mle(_ -> p, p, y, w, off) ≈ M.gaussian_mle(_ -> p .+ o, p, y, w)
+        @test M.mlogloss(_ -> p, p, c, w, off) ≈ M.mlogloss(_ -> p .+ o, p, c, w)
+    end
+
+    # and they reach the fit and its eval. The target is x1 + 2 x2 and the offset carries 2 x2,
+    # so with it the model is left to learn x1 alone
+    Random.seed!(123)
+    nobs = 400
+    X = randn(Float32, nobs, 4)
+    d = DataFrame(X, :auto)
+    d[!, :off] = 2 .* X[:, 2]
+    d[!, :y] = X[:, 1] .+ d.off .+ 0.1f0 .* randn(Float32, nobs)
+    d[!, :grp] = repeat(1:20, inner=20)
+    feature_names = ["x1", "x2", "x3", "x4"]
+    arch = NeuroTabModels.MLPConfig(; hidden_size=32)
+    learner = NeuroTabRegressor(arch; loss=:mse, metric=:pearson, nrounds=40, lr=1e-2, batchsize=32, scale_target=false)
+    x2 = Float64.(X[:, 2])
+    slope(p) = sum((p .- mean(p)) .* (x2 .- mean(x2))) / sum((x2 .- mean(x2)) .^ 2)
+    mo = NeuroTabModels.fit(learner, d; target_name="y", feature_names, group_name="grp", offset_name="off", deval=d)
+    po = Float64.(mo(d))
+    pn = Float64.(NeuroTabModels.fit(learner, d; target_name="y", feature_names, group_name="grp")(d))
+    # slope on x2 over data seeds 1 to 12: -0.04 to 0.07 with the offset, 1.84 to 2.16 without
+    @test abs(slope(po)) < 0.5
+    @test slope(pn) > 1.5
+    # the eval metric is the mean over groups of the correlation of prediction plus offset with y
+    r = [cor(po[g] .+ d.off[g], Float64.(d.y[g])) for g in ((20 * (i - 1) + 1):(20 * i) for i in 1:20)]
+    @test last(mo.info[:logger][:metrics][:metric]) ≈ mean(r) rtol = 1e-4
+end

@@ -22,10 +22,11 @@ one group, 3 real rows, buffer = 5
 
    x  =  [  x₁   x₂   x₃   0    0  ]     (nfeats × buffer)
    y  =  [  y₁   y₂   y₃   0    0  ]
-   w  =  [  1    1    1    0    0  ]     1 = real row, 0 = pad slot
+   w  =  [  w₁   w₂   w₃   0    0  ]     row weight (1 without weight_name), 0 = pad slot
+   o  =  [  o₁   o₂   o₃   0    0  ]     offset, with offset_name
 ```
 
-Train/eval use `w` as that 0/1 flag (shape `(1, 1, buffer)`). Infer uses a
+Train/eval use `w` as the row weight, 0 on pads (shape `(1, 1, buffer)`). Infer uses a
 boolean `mask` of length `buffer` and, after the forward, keeps only
 `pred[:, mask]`.
 
@@ -100,9 +101,9 @@ Chain:         masked_input(model, x, w) = x
 MaskedModel:   masked_input(model, x, w) = (x, w)
 ```
 
-Loss, eval, and infer all go through that hook. The loader always produces
-`(x, y, w)` for grouped data; only mask-aware chains unpack `w` as a model
-input.
+Loss, eval, and infer all go through that hook. The grouped loader produces
+`(x, y, w)`, or `(x, y, w, offset)` with `offset_name`; only mask-aware chains
+unpack `w` as a model input.
 
 Pad columns are still forwarded. After `embed(x)` the core keeps a rectangular
 `(hidden, buffer)` stream: attention and `MaskedBatchNorm` drop pads from
@@ -196,5 +197,5 @@ ordinary BatchNorm.
 
 If an ungrouped loader also carries sample weights, `*Attn` chains receive
 `(x, w)` because `masked_input(::MaskedModel, x, w) = (x, w)`. Zero weights
-are then treated as padded keys. Keep sample weights strictly positive, or
-use grouped `w` only as a 0/1 pad flag (as the grouped loader does).
+are then treated as padded keys. Keep sample weights strictly positive; the grouped
+loader rejects non-positive or non-finite weights for this reason.
