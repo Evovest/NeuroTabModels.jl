@@ -51,6 +51,9 @@ function init(
     nfeats = length(feature_names)
     loss = LossType(config.loss)
 
+    target_name in feature_names && error("Target `$target_name` is also listed in `feature_names`.")
+    any(v -> ismissing(v) || (v isa AbstractFloat && isnan(v)), df[!, target_name]) &&
+        error("Target `$target_name` has missing or NaN values.")
     outsize = noutputs(loss)
     target_levels = nothing
     target_isordered = false
@@ -65,6 +68,8 @@ function init(
     scalers = nothing
     if hasproperty(config, :scale_target) && config.scale_target && scales_target(loss)
         scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
+        iszero(scalers.sigma) &&
+            error("Target `$target_name` is constant and cannot be scaled; drop it or set `scale_target=false`.")
     end
 
     # one rng drives both parameter init and batch order, so `seed` makes a fit reproducible;

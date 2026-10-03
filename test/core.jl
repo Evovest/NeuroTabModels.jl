@@ -628,6 +628,21 @@ end
     @test p_scaled[:, 2] ≈ p[:, 2] .* 2
 end
 
+@testset "Target input checks" begin
+    Random.seed!(123)
+    n = 200
+    df = DataFrame(randn(Float32, n, 3), :auto)
+    df.y = df.x1 .+ 0.1f0 .* randn(Float32, n)
+    learner = NeuroTabRegressor(NeuroTabModels.TabMConfig(; k=2, d_block=16, n_blocks=1); nrounds=1)
+    fit1(d; feature_names=["x1", "x2", "x3"]) = NeuroTabModels.fit(learner, d; target_name="y", feature_names)
+
+    @test_throws "feature_names" fit1(df; feature_names=["x1", "y"])
+    dflat = copy(df); dflat.y .= 1
+    @test_throws "constant" fit1(dflat)
+    dnan = copy(df); dnan.y[5] = NaN32
+    @test_throws "missing or NaN" fit1(dnan)
+end
+
 @testset "Pearson loss and metric" begin
     L = NeuroTabModels.Losses
     M = NeuroTabModels.Metrics

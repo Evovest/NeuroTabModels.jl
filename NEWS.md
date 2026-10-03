@@ -32,6 +32,8 @@ Dropped from the embeddings export list: `NLinear`, `Periodic`, `PiecewiseLinear
 
 **NeuroTree leaf init.** Leaf values start with std `init_scale · √(trees · leaves)`, so each NeuroTree output starts near unit variance and `init_scale` is now a gain (default `1.0`, was `0.1`). An explicit `init_scale` from v0.4 gives much larger leaves than before; drop it to use the default. In `NeuroTreeConfig`, the final tree layer starts at zero leaves, so predictions start neutral.
 
+**Target checks.** `fit` now raises an error when the target is constant (with `scale_target=true`), has missing or NaN values, or is also listed in `feature_names`. These inputs used to train silently, usually into NaN predictions.
+
 ## Added
 
 - Architectures: `ModernNCAConfig`, `MLPAttnConfig`, `NeuroTreeAttnConfig`.
