@@ -36,6 +36,6 @@ Dropped from the embeddings export list: `NLinear`, `Periodic`, `PiecewiseLinear
 
 - Architectures: `ModernNCAConfig`, `MLPAttnConfig`, `NeuroTreeAttnConfig`.
 - Embeddings: `TemporalEmbeddings`, `LayerNormEmbeddings`, `IdentityEmbedding`, `EmbeddingLayer`.
-- Loss / metric: Pearson (`:pearson`).
+- Loss / metric: Pearson (`:pearson`), Poisson (`:poisson`).
 - Mask-aware grouped training and inference (padding masks, `MaskedModel`); grouped predictions are returned in the caller’s row order.
 - Attention residual layers and grouped dense building blocks used by the new architectures.

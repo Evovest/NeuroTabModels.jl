@@ -628,6 +628,66 @@ end
     @test p_scaled[:, 2] ≈ p[:, 2] .* 2
 end
 
+@testset "Poisson loss and metric" begin
+    L = NeuroTabModels.Losses
+    M = NeuroTabModels.Metrics
+    idm = (x, ps, st) -> (x, st)
+
+    @test L.LossType(:poisson) === L.Poisson()
+    @test !M.is_maximise(M.poisson)
+
+    y = Float32[0, 1, 3, 7]
+    η = Float32[0.2, -0.5, 1.0, 2.0]
+    μ = exp.(Float64.(η))
+    yd = Float64.(y)
+    dev = 2 .* (ifelse.(yd .> 0, yd .* log.(yd), 0.0) .- yd .* log.(μ) .+ μ .- yd)
+
+    val, _, _ = L.Poisson()(idm, (;), (;), (reshape(η, 1, :), y))
+    @test val ≈ mean(dev) rtol = 1e-5
+    @test M.poisson(identity, reshape(η, 1, :), y; agg=sum) ≈ sum(dev) rtol = 1e-5
+
+    w = Float32[1, 2, 1, 0.5]
+    valw, _, _ = L.Poisson()(idm, (;), (;), (reshape(η, 1, :), y, w))
+    @test valw ≈ sum(dev .* w) / sum(w) rtol = 1e-5
+
+    offset = Float32[0.1, 0.1, 0.1, 0.1]
+    @test M.poisson(identity, reshape(η, 1, :), y, w, offset; agg=sum) ≈
+          M.poisson(identity, reshape(η .+ offset, 1, :), y, w; agg=sum)
+end
+
+@testset "Regression - Poisson" begin
+    Random.seed!(123)
+    X = randn(Float32, 1000, 10)
+    μ = exp.(0.5f0 .* X[:, 1] .- 0.3f0 .* X[:, 2])
+    # Knuth's sampler: count uniform draws until their product falls below exp(-μ).
+    rpois(λ) = (k = 0; p = rand(); while p > exp(-λ); k += 1; p *= rand(); end; k)
+    df = DataFrame(X, :auto)
+    df[!, :y] = Float32.(rpois.(μ))
+    target_name = "y"
+    feature_names = setdiff(names(df), [target_name])
+
+    train_indices = randperm(nrow(df))[1:800]
+    dtrain = df[train_indices, :]
+    deval = df[setdiff(1:nrow(df), train_indices), :]
+
+    learner = NeuroTabRegressor(;
+        arch_name="NeuroTreeConfig",
+        arch_config=Dict(:depth => 3),
+        loss=:poisson,
+        nrounds=20,
+        early_stopping_rounds=2,
+        lr=1e-1,
+    )
+    m = NeuroTabModels.fit(learner, dtrain; target_name, feature_names, deval, print_every_n=5)
+
+    p = m(deval)
+    @test size(p, 1) == nrow(deval)
+    dev(μ̂, y) = 2 * ((y > 0 ? y * log(y / μ̂) : 0.0) + μ̂ - y)
+    dev_model = mean(dev.(p, deval.y))
+    dev_baseline = mean(dev.(mean(dtrain.y), deval.y))
+    @test dev_model < dev_baseline
+end
+
 @testset "Pearson loss and metric" begin
     L = NeuroTabModels.Losses
     M = NeuroTabModels.Metrics

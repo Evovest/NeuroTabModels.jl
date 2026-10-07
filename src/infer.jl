@@ -43,7 +43,7 @@ _assemble(::LossType, raw_preds) = vcat([vec(p) for p in raw_preds]...)
 
 # Apply inverse link to convert from model scale to natural scale
 _inverse_link(::LogLoss, pred) = sigmoid.(pred)
-_inverse_link(::Tweedie, pred) = exp.(pred)
+_inverse_link(::Union{Tweedie,Poisson}, pred) = exp.(pred)
 _inverse_link(::Union{MSE,MAE,Pearson}, pred) = pred
 _inverse_link(::MLogLoss, pred) = softmax(pred; dims=2)
 function _inverse_link(::GaussianMLE, pred)
