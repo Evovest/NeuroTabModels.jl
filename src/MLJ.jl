@@ -32,12 +32,22 @@ function fit(model::LearnerTypes, verbosity::Int, A, y, w=nothing)
     end
 
     _sync_params_to_model!(fitresult, cache)
+    cache[:model] = _snapshot(model)
     report = (features=fitresult.info[:feature_names],)
     return fitresult, cache, report
 end
 
+# The learner as fitted, kept so `update` can tell what MLJ changed since. Its field values are
+# immutable, so sharing them is enough; a deep copy would give the vectors of a temporal embedding
+# config new identities, and an unchanged model would then no longer compare equal.
+_snapshot(model::T) where {T<:LearnerTypes} = T((getfield(model, f) for f in fieldnames(T))...)
+
+# Training can only go on from the fitted parameters, so continuing is valid when the model
+# differs from the fitted one in `nrounds` alone and asks for at least as many rounds. Any other
+# change, such as `lr`, `batchsize` or the architecture, needs a fresh fit.
 function okay_to_continue(model, fitresult, cache)
-    return model.nrounds - fitresult.info[:nrounds] >= 0
+    return MMI.is_same_except(model, cache[:model], :nrounds) &&
+           model.nrounds >= fitresult.info[:nrounds]
 end
 
 MMI.iteration_parameter(::Type{<:LearnerTypes}) = :nrounds
@@ -48,6 +58,7 @@ function update(model::LearnerTypes, verbosity::Integer, fitresult, cache, A, y,
             fit_iter!(fitresult, cache)
         end
         _sync_params_to_model!(fitresult, cache)
+        cache[:model] = _snapshot(model)
         report = (features=fitresult.info[:feature_names],)
     else
         fitresult, cache, report = fit(model, verbosity, A, y, w)
