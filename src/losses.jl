@@ -87,7 +87,7 @@ _apply_offset(pred, ::Nothing) = pred
 _apply_offset(pred, offset) = pred .+ _reshape_3d(offset)
 
 _reduce(loss) = mean(loss)
-_reduce(loss, w) = sum(mean(loss; dims=2) .* w) / sum(w)
+_reduce(loss, w) = sum(mean(loss; dims=(1, 2)) .* w) / sum(w)
 
 _aggregate(loss, pred, y, ::Nothing) = _reduce(_pointwise(loss, pred, y))
 _aggregate(loss, pred, y, w) = _reduce(_pointwise(loss, pred, y), _reshape_3d(w))
@@ -116,14 +116,15 @@ function _pointwise(::Tweedie, pred, y)
     2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* ep .^ (1 - rho) / (1 - rho) .+ ep .^ (2 - rho) / (2 - rho))
 end
 
+# Rows interleave per target, as in EvoTrees: odd rows are μ and even rows log-σ.
 function _pointwise(::GaussianMLE, pred, y)
-    μ = pred[1:1, :, :]
-    σ = pred[2:2, :, :]
+    μ = pred[1:2:end, :, :]
+    σ = pred[2:2:end, :, :]
     σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ)))
 end
 
 # First output channel (`μ` when the head is 2-wide), mean over the ensemble axis.
-_corr_from_pred(pred) = vec(mean(view(pred, 1, :, :); dims=1))
+_corr_from_pred(pred, t=1) = vec(mean(view(pred, t, :, :); dims=1))
 
 function _pearson_value(p, y, w)
     p = vec(p)
@@ -141,13 +142,15 @@ function _pearson_value(p, y, w)
     return cov / (sqrt(max(p_var, ϵ)) * sqrt(max(y_var, ϵ)))
 end
 
-function _aggregate(::Pearson, pred, y, ::Nothing)
-    p = _corr_from_pred(pred)
-    return -_pearson_value(p, y, one.(p))
+# With several targets, target `t` correlates against output row `t` and the loss takes the
+# mean over targets, as EvoTrees does for its Pearson metric.
+function _pearson_targets(pred, y, w)
+    T = size(y, 1)
+    T == 1 && return _pearson_value(_corr_from_pred(pred), y, w)
+    return sum(t -> _pearson_value(_corr_from_pred(pred, t), selectdim(y, 1, t), w), 1:T) / T
 end
-function _aggregate(::Pearson, pred, y, w)
-    p = _corr_from_pred(pred)
-    return -_pearson_value(p, y, w)
-end
+
+_aggregate(::Pearson, pred, y, ::Nothing) = -_pearson_targets(pred, y, one.(_corr_from_pred(pred)))
+_aggregate(::Pearson, pred, y, w) = -_pearson_targets(pred, y, w)
 
 end

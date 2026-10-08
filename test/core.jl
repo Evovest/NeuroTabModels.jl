@@ -643,6 +643,139 @@ end
     @test_throws "missing or NaN" fit1(dnan)
 end
 
+@testset "Output shape contract" begin
+    nfeats, outsize, B = 5, 3, 7
+    x = randn(Float32, nfeats, B)
+    M = NeuroTabModels.Models
+    for arch in (
+        M.NeuroTreeConfig(), M.MLPConfig(), M.ResNetConfig(), M.TabMConfig(), M.MOETreeConfig(),
+        M.MLPAttnConfig(), M.NeuroTreeAttnConfig(),
+    )
+        chain = arch(; ins=nfeats, outsize)
+        ps, st = Lux.setup(Random.Xoshiro(1), chain)
+        y, _ = chain(x, ps, Lux.testmode(st))
+        @test ndims(y) in (2, 3) && size(y, 1) == outsize && size(y, ndims(y)) == B
+    end
+end
+
+@testset "Multiple targets" begin
+    Random.seed!(123)
+    n = 500
+    X = randn(Float32, n, 4)
+    df = DataFrame(X, :auto)
+    df.y1, df.y2, df.y3 = X[:, 1], X[:, 2] .- X[:, 3], sin.(X[:, 4])
+    df.b1, df.b2 = Float32.(X[:, 1] .> 0), Float32.(X[:, 2] .> 0)
+    df.c1, df.c2 = round.(exp.(0.5f0 .* X[:, 1])), round.(exp.(-0.5f0 .* X[:, 2]))
+    df.offset = fill(0.1f0, n)
+    feature_names = ["x1", "x2", "x3", "x4"]
+    arch = NeuroTabModels.TabMConfig(; k=4, d_block=32, n_blocks=1, dropout=0.0)
+    fit_mt(loss, target_name; kw...) = NeuroTabModels.fit(
+        NeuroTabRegressor(arch; loss, nrounds=3, lr=1e-2, batchsize=128), df;
+        feature_names, target_name, deval=df, kw...,
+    )
+
+    @test size(fit_mt(:mse, ["y1", "y2", "y3"])(df)) == (n, 3)
+    # Mixed column types promote to one concrete element type.
+    df.yint = round.(Int, 10 .* df.y1)
+    @test isconcretetype(eltype(fit_mt(:mse, ["yint", "y2"])(df)))
+
+    # Gaussian columns interleave per target, as in EvoTrees: μ₁, σ₁, μ₂, σ₂.
+    p = fit_mt(:gaussian_mle, ["y1", "y2"])(df)
+    @test size(p) == (n, 4)
+    @test all(>(0), p[:, 2:2:end])
+    # each pair is unscaled by its own target's scaler: raw (μ, log-σ) per target
+    NI, G = NeuroTabModels.Infer, NeuroTabModels.Losses.GaussianMLE()
+    raw = Float32[1 0 2 log(2)]
+    @test NI._scaler(G, NI._inverse_link(G, raw), (mu=Float32[10, 20], sigma=Float32[2, 3])) ≈ Float32[12 2 26 6]
+
+    @test all(x -> 0 < x < 1, fit_mt(:logloss, ["b1", "b2"])(df))
+
+    # Log link with one offset shared by both targets.
+    @test all(>(0), fit_mt(:tweedie, ["c1", "c2"]; offset_name="offset")(df))
+
+    # One offset per target: `e_t = exp(o_t)` is fully explained by its own offset, so predictions,
+    # which leave the offset out, stay near 1 only if each target is paired with its own column.
+    df.o1, df.o2 = fill(1.5f0, n), fill(-1.5f0, n)
+    df.e1, df.e2 = exp.(df.o1), exp.(df.o2)
+    p = NeuroTabModels.fit(
+        NeuroTabRegressor(arch; loss=:tweedie, nrounds=5, lr=1e-2, batchsize=128), df;
+        feature_names, target_name=["e1", "e2"], offset_name=["o1", "o2"],
+    )(df)
+    @test all(x -> 0.8 < x < 1.25, p)
+
+    # One offset per output for Gaussian, in the order of the predictions; the loss and the
+    # eval metric add each column to its own row, a log-σ row included.
+    MT = NeuroTabModels.Metrics
+    idg = (x, ps, st) -> (x, st)
+    pg, og = randn(Float32, 4, 1, 8), randn(Float32, 4, 8)
+    yg, wg = randn(Float32, 2, 8), rand(Float32, 8) .+ 0.5f0
+    @test first(G(idg, nothing, nothing, (pg, yg, wg, og))) ≈
+          first(G(idg, nothing, nothing, (pg .+ reshape(og, 4, 1, 8), yg, wg)))
+    pg2 = dropdims(pg; dims=2)
+    @test MT.gaussian_mle(_ -> pg2, pg2, yg, wg, og) ≈ MT.gaussian_mle(_ -> pg2 .+ og, pg2, yg, wg)
+    df.z1, df.z2 = zeros(Float32, n), zeros(Float32, n)
+    @test size(fit_mt(:gaussian_mle, ["y1", "y2"]; offset_name=["o1", "z1", "o2", "z2"])(df)) == (n, 4)
+    @test size(fit_mt(:gaussian_mle, ["y1", "y2"]; offset_name="offset")(df)) == (n, 4)
+
+    # A 2D-output architecture with weights and an eval set.
+    df.w = rand(Float32, n) .+ 0.5f0
+    mlp = NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=2, batchsize=128)
+    @test size(NeuroTabModels.fit(mlp, df; feature_names, target_name=["y1", "y2"], weight_name="w", deval=df)(df)) == (n, 2)
+
+    # Targets are averaged, not summed: unit weights leave the training loss unchanged, and
+    # the eval steps divide by every target of every observation.
+    idm = (x, ps, st) -> (x, st)
+    pred, y, w = randn(Float32, 2, 1, 8), randn(Float32, 2, 1, 8), ones(Float32, 8)
+    L = NeuroTabModels.Losses
+    @test first(L.MSE()(idm, nothing, nothing, (pred, y))) ≈ first(L.MSE()(idm, nothing, nothing, (pred, y, w)))
+    p2, y2 = dropdims(pred; dims=2), dropdims(y; dims=2)
+    CB = NeuroTabModels.Fit.CallBacks
+    for d in ((p2, y2), (p2, y2, w))
+        num, den = CB._build_eval_step(idm, NeuroTabModels.Metrics.mse, d, nothing, nothing; reactant=false)(d..., nothing, nothing)
+        @test num / den ≈ mean((p2 .- y2) .^ 2)
+    end
+
+    # Pearson, as in EvoTrees: each target correlates on its own and the loss and the eval
+    # metric take the mean over targets. With two outputs per target the metric reads the μ rows.
+    MT = NeuroTabModels.Metrics
+    P = L.Pearson()
+    pr, yr, wr = randn(Float32, 2, 1, 16), randn(Float32, 2, 16), rand(Float32, 16) .+ 0.5f0
+    ploss(t) = first(P(idm, nothing, nothing, (pr[t, :, :], yr[t:t, :], wr)))
+    @test first(P(idm, nothing, nothing, (pr, yr, wr))) ≈ (ploss(1) + ploss(2)) / 2
+    pp = dropdims(pr; dims=2)
+    peval(p, y) = /(CB._build_eval_step(idm, MT.pearson, (p, y, wr), nothing, nothing; reactant=false)(p, y, wr, nothing, nothing)...)
+    @test peval(pp, yr) ≈ (peval(pp[1:1, :], yr[1:1, :]) + peval(pp[2:2, :], yr[2:2, :])) / 2
+    pg = randn(Float32, 4, 16)
+    @test MT.pearson(_ -> pg, pg, yr, wr) ≈ MT.pearson(_ -> pg[[1, 3], :], pg, yr, wr)
+    @test size(fit_mt(:pearson, ["y1", "y2"])(df)) == (n, 2)
+
+    # Grouped data: each group's target is `(T, 1, bs)`, zero on pads, and fit and eval run.
+    dg = DataFrame(x1=Float32[1, 2, 3, 4, 5], y1=Float32[1, 2, 3, 4, 5], y2=Float32[5, 4, 3, 2, 1], g=[1, 1, 1, 2, 2])
+    _, yg, _ = first(NeuroTabModels.Data.get_df_loader_train(
+        groupby(dg, :g; sort=true); feature_names=[:x1], target_name=[:y1, :y2], batchsize=0, shuffle=false
+    ))
+    @test size(yg) == (2, 1, 3) && yg[:, 1, :] == Float32[1 2 3; 5 4 3]
+    df.g = repeat(1:10; inner=n ÷ 10)
+    @test size(fit_mt(:mse, ["y1", "y2"]; group_name="g")(df)) == (n, 2)
+    @test size(fit_mt(:pearson, ["y1", "y2"]; eval_group_name="g")(df)) == (n, 2)
+
+    df.cls = categorical(rand(["a", "b"], n))
+    clf = NeuroTabClassifier(arch; nrounds=1)
+    @test_throws "Multiple targets" NeuroTabModels.fit(clf, df; feature_names, target_name=["cls", "cls"])
+    # A one-name vector is a single target, in the eval set too.
+    @test size(NeuroTabModels.fit(clf, df; feature_names, target_name=["cls"], deval=df)(df)) == (n, 2)
+    @test_throws "3 columns but the model has 2 outputs" fit_mt(:tweedie, ["c1", "c2"]; offset_name=["o1", "o2", "offset"])
+    @test_throws "2 columns but the model has 4 outputs" fit_mt(:gaussian_mle, ["y1", "y2"]; offset_name=["o1", "o2"])
+    nca = NeuroTabRegressor(NeuroTabModels.ModernNCAConfig(); nrounds=1)
+    @test_throws "`ModernNCAConfig`" NeuroTabModels.fit(nca, df; feature_names, target_name=["y1", "y2"])
+    @test_throws "duplicate" fit_mt(:mse, ["y1", "y1"])
+    @test_throws "`x1` is also listed in `feature_names`" fit_mt(:mse, ["y1", "x1"])
+    df.flat = fill(1.0f0, n)
+    @test_throws "`flat` is constant" fit_mt(:mse, ["y1", "flat"])
+    df.gap = [i == 7 ? NaN32 : 0.5f0 * i for i in 1:n]
+    @test_throws "`gap` has missing or NaN" fit_mt(:mse, ["y1", "gap"])
+end
+
 @testset "Pearson loss and metric" begin
     L = NeuroTabModels.Losses
     M = NeuroTabModels.Metrics

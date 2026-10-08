@@ -24,25 +24,25 @@ length(data::ContainerTrain{<:Vector}) = length(data.x)
 
 function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B,C<:Nothing,D<:Nothing}
     x = data.x[:, idx]
-    y = data.y[1:1, idx]
+    y = data.y[:, idx]
     return (x, y)
 end
 function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B,C<:AbstractVector,D<:Nothing}
     x = data.x[:, idx]
-    y = data.y[1:1, idx]
+    y = data.y[:, idx]
     w = data.w[idx]
     return (x, y, w)
 end
 function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B,C<:AbstractVector,D<:AbstractVector}
     x = data.x[:, idx]
-    y = data.y[1:1, idx]
+    y = data.y[:, idx]
     w = data.w[idx]
     offset = data.offset[idx]
     return (x, y, w, offset)
 end
 function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B,C<:AbstractVector,D<:AbstractMatrix}
     x = data.x[:, idx]
-    y = data.y[1:1, idx]
+    y = data.y[:, idx]
     w = data.w[idx]
     offset = data.offset[:, idx]
     return (x, y, w, offset)
@@ -62,16 +62,18 @@ function get_df_loader_train(
     feature_names = Symbol.(feature_names)
     x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
 
-    if eltype(df[!, target_name]) <: CategoricalValue
-        y = UInt32.(CategoricalArrays.levelcode.(df[!, target_name]))
+    # `(T, N)`: one row per target; per-target scalers broadcast down the rows
+    if target_name isa AbstractVector
+        y = Matrix{Float32}(Matrix{Float32}(select(df, target_name))')
+    elseif eltype(df[!, target_name]) <: CategoricalValue
+        y = reshape(UInt32.(CategoricalArrays.levelcode.(df[!, target_name])), 1, :)
     else
-        y = Float32.(df[!, target_name])
+        y = reshape(Float32.(df[!, target_name]), 1, :)
     end
     if !isnothing(scalers)
         y .= (y .- scalers[:mu]) ./ scalers[:sigma]
     end
 
-    y = reshape(y, 1, :)
     # batches carrying an offset are laid out as (x, y, w, offset), so unit weights stand in when none are given
     w = if !isnothing(weight_name)
         Float32.(df[!, weight_name])
@@ -130,7 +132,9 @@ function get_df_loader_train(
     @info "group train bs: $bs"
 
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
-    y = [zeros(Float32, 1, 1, bs) for _ in 1:n]
+    # one row per target, as in the ungrouped `(T, N)` target, and zero on pads
+    ntargets = target_name isa AbstractVector ? length(target_name) : 1
+    y = [zeros(Float32, ntargets, 1, bs) for _ in 1:n]
     w = [zeros(Float32, 1, 1, bs) for _ in 1:n]
     # one row per offset column, as in the ungrouped (K, N) offset, and zero on pads
     offset_names = offset_name isa Union{String,Symbol} ? [offset_name] : offset_name
@@ -139,14 +143,20 @@ function get_df_loader_train(
     for i in 1:n
         df = dfg[i]
         x[i][:, 1:nrow(df)] .= Matrix(df[:, feature_names])'
-        target = df[!, target_name]
-        if eltype(target) <: CategoricalValue
-            target = CategoricalArrays.levelcode.(target)
-        end
-        if isnothing(scalers)
-            y[i][1, 1, 1:nrow(df)] .= target
+        if target_name isa AbstractVector
+            target = Matrix(df[:, target_name])'
         else
-            y[i][1, 1, 1:nrow(df)] .= (target .- scalers[:mu]) ./ scalers[:sigma]
+            target = df[!, target_name]
+            if eltype(target) <: CategoricalValue
+                target = CategoricalArrays.levelcode.(target)
+            end
+            target = reshape(target, 1, :)
+        end
+        # per-target scalers are `(T,)` vectors and broadcast down the rows
+        if isnothing(scalers)
+            y[i][:, 1, 1:nrow(df)] .= target
+        else
+            y[i][:, 1, 1:nrow(df)] .= (target .- scalers[:mu]) ./ scalers[:sigma]
         end
         if isnothing(weight_name)
             w[i][1, 1, 1:nrow(df)] .= 1.0

@@ -21,19 +21,30 @@ function percent_rank(x::AbstractVector)
     return result
 end
 
+# One target is scored on flat vectors, since broadcasting over a `(1, B)` matrix loses SIMD.
+# `_flat` returns a vector or a matrix, so `_score` passes it through a function barrier.
+_flat(p) = size(p, 1) == 1 ? vec(p) : p
+_score(f, p) = f(_flat(p))
+
+# Lay `a` out like the prediction `p`: flat for one target, or one column per observation of a
+# `(T, B)` prediction, where targets keep their rows and per-row weights and a shared offset
+# become a `(1, B)` row broadcast over targets.
+_obs(a, p::AbstractVector) = vec(a)
+_obs(a, p) = reshape(a, :, size(p, 2))
+
 """
     mse(m, x, y; agg=mean)
     mse(m, x, y, w; agg=mean)
     mse(m, x, y, w, offset; agg=mean)
 """
 function mse(m, x, y; agg=mean)
-    return agg((vec(m(x)) .- vec(y)) .^ 2)
+    return _score(p -> agg((p .- _obs(y, p)) .^ 2), m(x))
 end
 function mse(m, x, y, w; agg=mean)
-    return agg((vec(m(x)) .- vec(y)) .^ 2 .* vec(w))
+    return _score(p -> agg((p .- _obs(y, p)) .^ 2 .* _obs(w, p)), m(x))
 end
 function mse(m, x, y, w, offset; agg=mean)
-    return agg((vec(m(x)) .+ vec(offset) .- vec(y)) .^ 2 .* vec(w))
+    return _score(p -> agg((p .+ _obs(offset, p) .- _obs(y, p)) .^ 2 .* _obs(w, p)), m(x))
 end
 
 """
@@ -42,13 +53,13 @@ end
     mae(m, x, y, w, offset; agg=mean)
 """
 function mae(m, x, y; agg=mean)
-    return agg(abs.(vec(m(x)) .- vec(y)))
+    return _score(p -> agg(abs.(p .- _obs(y, p))), m(x))
 end
 function mae(m, x, y, w; agg=mean)
-    return agg(abs.(vec(m(x)) .- vec(y)) .* vec(w))
+    return _score(p -> agg(abs.(p .- _obs(y, p)) .* _obs(w, p)), m(x))
 end
 function mae(m, x, y, w, offset; agg=mean)
-    return agg(abs.(vec(m(x)) .+ vec(offset) .- vec(y)) .* vec(w))
+    return _score(p -> agg(abs.(p .+ _obs(offset, p) .- _obs(y, p)) .* _obs(w, p)), m(x))
 end
 
 """
@@ -56,20 +67,19 @@ end
     logloss(m, x, y, w; agg=mean)
     logloss(m, x, y, w, offset; agg=mean)
 """
+_logloss(p, y) = (1 .- y) .* p .- logsigmoid.(p)
+
 function logloss(m, x, y; agg=mean)
-    p = vec(m(x))
-    y = vec(y)
-    return agg((1 .- y) .* p .- logsigmoid.(p))
+    return _score(p -> agg(_logloss(p, _obs(y, p))), m(x))
 end
 function logloss(m, x, y, w; agg=mean)
-    p = vec(m(x))
-    y = vec(y)
-    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* vec(w))
+    return _score(p -> agg(_logloss(p, _obs(y, p)) .* _obs(w, p)), m(x))
 end
 function logloss(m, x, y, w, offset; agg=mean)
-    p = vec(m(x)) .+ vec(offset)
-    y = vec(y)
-    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* vec(w))
+    return _score(m(x)) do p
+        p = p .+ _obs(offset, p)
+        agg(_logloss(p, _obs(y, p)) .* _obs(w, p))
+    end
 end
 
 """
@@ -77,33 +87,21 @@ end
     tweedie(m, x, y, w; agg=mean)
     tweedie(m, x, y, w, offset; agg=mean)
 """
+function _tweedie(p, y, rho)
+    return 2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho))
+end
+
 function tweedie(m, x, y; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(vec(m(x)))
-    y = vec(y)
-    return agg(
-        2 .* (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho))
-    )
+    return _score(p -> agg(_tweedie(exp.(p), _obs(y, p), rho)), m(x))
 end
 function tweedie(m, x, y, w; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(vec(m(x)))
-    y = vec(y)
-    w = vec(w)
-    return agg(
-        w .* 2 .*
-        (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
-    )
+    return _score(p -> agg(_obs(w, p) .* _tweedie(exp.(p), _obs(y, p), rho)), m(x))
 end
 function tweedie(m, x, y, w, offset; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(vec(m(x)) .+ vec(offset))
-    y = vec(y)
-    w = vec(w)
-    return agg(
-        w .* 2 .*
-        (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
-    )
+    return _score(p -> agg(_obs(w, p) .* _tweedie(exp.(p .+ _obs(offset, p)), _obs(y, p), rho)), m(x))
 end
 
 # offset in the (K, B) layout of `m(x)`: a vector or a grouped (1, 1, B) for one row,
@@ -148,20 +146,24 @@ _gaussian_mle_elt(μ, σ, y) = -σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp
 
 _gaussian_mle_elt(μ, σ, y, w) = (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7), exp(2 * σ)))) * w
 
+# Rows interleave per target, as in EvoTrees: odd rows are μ and even rows log-σ.
+# One target takes its two rows as vectors, which broadcast faster than `(1, B)` views.
+function _mu_logsigma(p)
+    size(p, 1) == 2 && return view(p, 1, :), view(p, 2, :)
+    return view(p, 1:2:size(p, 1), :), view(p, 2:2:size(p, 1), :)
+end
+
 function gaussian_mle(m, x, y; agg=mean)
-    p = m(x)
-    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y)))
-    return metric
+    μ, σ = _mu_logsigma(m(x))
+    return agg(_gaussian_mle_elt.(μ, σ, _obs(y, μ)))
 end
 function gaussian_mle(m, x, y, w; agg=mean)
-    p = m(x)
-    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
-    return metric
+    μ, σ = _mu_logsigma(m(x))
+    return agg(_gaussian_mle_elt.(μ, σ, _obs(y, μ), _obs(w, μ)))
 end
 function gaussian_mle(m, x, y, w, offset; agg=mean)
-    p = m(x) .+ _offset_2d(offset)
-    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
-    return metric
+    μ, σ = _mu_logsigma(m(x) .+ _offset_2d(offset))
+    return agg(_gaussian_mle_elt.(μ, σ, _obs(y, μ), _obs(w, μ)))
 end
 
 """
@@ -171,20 +173,31 @@ end
 
 Uses the first output (`μ` when `gaussian_mle` returns `size(p, 1) == 2`).
 A flat group (constant predictions or target, or a single row) scores 0 and keeps its weight.
+With several targets each correlates on its own and the metric is their mean, as in EvoTrees.
 """
-_corr_pred(p) = vec(view(p, 1, :))
+# Target `t` reads output row `t`, or its μ in row `2t - 1` when there are two outputs per
+# target, as with `gaussian_mle`. As in EvoTrees, the layout is read off the shapes.
+function _corr_pred(p, y, t=1)
+    stride = size(p, 1) == 2 * size(y, 1) ? 2 : 1
+    return vec(view(p, stride * (t - 1) + 1, :))
+end
 
+function _pearson_mean(p, y, w)
+    T = size(y, 1)
+    T == 1 && return _pearson_value(_corr_pred(p, y), y, w)
+    return sum(t -> _pearson_value(_corr_pred(p, y, t), selectdim(y, 1, t), w), 1:T) / T
+end
+
+# Scaled by the eval step's denominator, which counts every target, so the logged value is the mean.
 function pearson(m, x, y; agg=mean)
-    p = _corr_pred(m(x))
-    return _pearson_value(p, y, one.(p)) * length(y)
+    p = m(x)
+    return _pearson_mean(p, y, one.(_corr_pred(p, y))) * length(y)
 end
 function pearson(m, x, y, w; agg=mean)
-    p = _corr_pred(m(x))
-    return _pearson_value(p, y, w) * sum(w)
+    return _pearson_mean(m(x), y, w) * sum(w) * size(y, 1)
 end
 function pearson(m, x, y, w, offset; agg=mean)
-    p = _corr_pred(m(x) .+ _offset_2d(offset))
-    return _pearson_value(p, y, w) * sum(w)
+    return _pearson_mean(m(x) .+ _offset_2d(offset), y, w) * sum(w) * size(y, 1)
 end
 
 """

@@ -37,26 +37,31 @@ function _forward_reduce(chain, x, ps, st)
 end
 
 # Assemble raw predictions into final structure (no transforms), observations along the first dimension
-_assemble(::MLogLoss, raw_preds) = Matrix(reduce(hcat, raw_preds)')
-_assemble(::GaussianMLE, raw_preds) = Matrix(reduce(hcat, raw_preds)')
-_assemble(::LossType, raw_preds) = vcat([vec(p) for p in raw_preds]...)
+_assemble(::Union{MLogLoss,GaussianMLE}, raw_preds) = Matrix(reduce(hcat, raw_preds)')
+# A vector for a single target, an `(nobs, T)` matrix for `T` targets
+function _assemble(::LossType, raw_preds)
+    size(first(raw_preds), 1) == 1 && return reduce(vcat, vec.(raw_preds))
+    return Matrix(reduce(hcat, raw_preds)')
+end
 
 # Apply inverse link to convert from model scale to natural scale
 _inverse_link(::LogLoss, pred) = sigmoid.(pred)
 _inverse_link(::Tweedie, pred) = exp.(pred)
 _inverse_link(::Union{MSE,MAE,Pearson}, pred) = pred
 _inverse_link(::MLogLoss, pred) = softmax(pred; dims=2)
+# Columns interleave per target: odd columns are μ and even columns σ.
 function _inverse_link(::GaussianMLE, pred)
     p = copy(pred)
-    @views p[:, 2] .= exp.(p[:, 2])
+    @views p[:, 2:2:end] .= exp.(p[:, 2:2:end])
     return p
 end
 
+# Scalers are scalars for one target or per-target vectors; the adjoint lays a vector along columns.
 _scaler(::LossType, p, scalers) = p
-_scaler(::Union{MSE,MAE,Pearson}, p, scalers::NamedTuple) = p .* scalers[:sigma] .+ scalers[:mu]
+_scaler(::Union{MSE,MAE,Pearson}, p, scalers::NamedTuple) = p .* scalers[:sigma]' .+ scalers[:mu]'
 function _scaler(::GaussianMLE, p, scalers::NamedTuple)
-    @views p[:, 1] .= p[:, 1] .* scalers[:sigma] .+ scalers[:mu]
-    @views p[:, 2] .= p[:, 2] .* scalers[:sigma]
+    @views p[:, 1:2:end] .= p[:, 1:2:end] .* scalers[:sigma]' .+ scalers[:mu]'
+    @views p[:, 2:2:end] .= p[:, 2:2:end] .* scalers[:sigma]'
     return p
 end
 
