@@ -22,7 +22,7 @@ dtrain.y = Y
 target_name = "y"
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary, actA=:identity, init_scale=1.0, depth=4, ntrees=32, stack_size=1, hidden_size=1, scaler=false
+    tree_type=:binary, actA=:identity, depth=4, ntrees=32, stack_size=1, hidden_size=1, scaler=false
 )
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,

@@ -46,7 +46,6 @@ those weights.
 - `k::Int`: Number of experts (default `4`). Router `outs` and expert ensemble
   width. Must be ≥ 1.
 - `scaler::Bool`: Apply softplus scaling on tree logits (default `true`).
-- `init_scale::Float32`: Gain on the leaf value init (default `1.0`); see `NeuroTree`.
 - `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
 """
 struct MOETreeConfig <: Architecture
@@ -56,7 +55,6 @@ struct MOETreeConfig <: Architecture
     ntrees::Int
     k::Int
     scaler::Bool
-    init_scale::Float32
     MLE_tree_split::Bool
 end
 
@@ -68,7 +66,6 @@ function MOETreeConfig(; kwargs...)
         :ntrees => 32,
         :k => 4,
         :scaler => true,
-        :init_scale => 1.0,
         :MLE_tree_split => false,
     )
 
@@ -91,7 +88,6 @@ function MOETreeConfig(; kwargs...)
         args[:ntrees],
         args[:k],
         args[:scaler],
-        args[:init_scale],
         args[:MLE_tree_split],
     )
 end
@@ -103,7 +99,6 @@ function _moe_tree_kwargs(config::MOETreeConfig)
         trees=config.ntrees,
         actA=act_dict[config.actA],
         scaler=config.scaler,
-        init_scale=config.init_scale,
     )
 end
 
@@ -111,7 +106,7 @@ function _build_moe_tree(ins::Int, outsize::Int, config::MOETreeConfig)
     n_experts = config.k
     n_experts >= 1 || error("`k` (number of experts) must be ≥ 1, got $n_experts.")
     kwargs = _moe_tree_kwargs(config)
-    router = NeuroTree(ins => n_experts; k=1, kwargs...)
+    router = NeuroTree(ins => n_experts; k=1, kwargs..., init_scale=0)
     experts = NeuroTree(ins => outsize; k=n_experts, kwargs...)
     return MOETree(router, experts)
 end

@@ -80,7 +80,6 @@ the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel
   equal `hidden_size`). `1` is a single `NeuroTree` + flatten. Each extra
   layer is a residual `NeuroTree` of width `hidden_size`, with optional dropout.
 - `scaler::Bool`: Apply softplus scaling on tree logits (default `true`).
-- `init_scale::Float32`: Gain on the leaf value init (default `1.0`); see `NeuroTree`.
 - `dropout::Float64`: Dropout after extra encoder layers only (`stack_size ≥ 2`).
   Not applied to the attention residual (those tokens are the `k` predictions).
 - `nheads::Int`: Ignored. Peer attention uses one head per ensemble channel.
@@ -99,7 +98,6 @@ struct NeuroTreeAttnConfig <: Architecture
     hidden_size::Int
     stack_size::Int
     scaler::Bool
-    init_scale::Float32
     dropout::Float64
     nheads::Int
     n_attn_layers::Int
@@ -116,7 +114,6 @@ function NeuroTreeAttnConfig(; kwargs...)
         :hidden_size => 64,
         :stack_size => 1,
         :scaler => true,
-        :init_scale => 1.0,
         :dropout => 0.0,
         :nheads => 4,
         :n_attn_layers => 1,
@@ -144,7 +141,6 @@ function NeuroTreeAttnConfig(; kwargs...)
         args[:hidden_size],
         args[:stack_size],
         args[:scaler],
-        args[:init_scale],
         args[:dropout],
         args[:nheads],
         args[:n_attn_layers],
@@ -160,7 +156,6 @@ function _attn_tree_kwargs(config::NeuroTreeAttnConfig)
         trees=config.ntrees,
         actA=act_dict[config.actA],
         scaler=config.scaler,
-        init_scale=config.init_scale,
     )
 end
 

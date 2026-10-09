@@ -41,7 +41,7 @@ feature_names = setdiff(names(df), ["y_cat", "Survived"])
 eltype(dtrain[:, "y_cat"])
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    actA=:identity, init_scale=1.0, k=8, depth=4, ntrees=16, stack_size=1, hidden_size=1, scaler=true
+    actA=:identity, k=8, depth=4, ntrees=16, stack_size=1, hidden_size=1, scaler=true
 )
 
 # arch = NeuroTabModels.TabMConfig(;

@@ -26,7 +26,6 @@ dtrain.date = rand(Date("2026-01-01"):Date("2026-01-05"), nrow(dtrain))
 arch = NeuroTabModels.NeuroTreeConfig(;
     tree_type=:binary,
     actA=:identity,
-    init_scale=1.0,
     depth=4,
     ntrees=16,
     stack_size=1,

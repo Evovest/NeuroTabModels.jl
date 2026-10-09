@@ -30,7 +30,7 @@ Dropped from the embeddings export list: `NLinear`, `Periodic`, `PiecewiseLinear
 
 **Raw predictions.** With `proj=false`, `MLogLoss` and `GaussianMLE` return `(nobs, K)`, the same layout as `proj=true`, instead of `(K, nobs)`.
 
-**NeuroTree leaf init.** Leaf values start with std `init_scale · √(trees · leaves)`, so each NeuroTree output starts near unit variance and `init_scale` is now a gain (default `1.0`, was `0.1`). An explicit `init_scale` from v0.4 gives much larger leaves than before; drop it to use the default. In `NeuroTreeConfig`, the final tree layer starts at zero leaves, so predictions start neutral.
+**NeuroTree leaf init.** `init_scale` is no longer a field of `NeuroTreeConfig`, `MOETreeConfig`, or `NeuroTreeAttnConfig` (an explicit value is ignored with a warning). On a `NeuroTree` layer, leaves are still drawn with std `init_scale · √(trees · leaves)`, and that gain defaults to `1.0` (was `0.1` in v0.4). Configs fix it: the `NeuroTreeConfig` head and the `MOETree` router start at zero leaves (neutral predictions, uniform gates); hidden trees, experts, and `NeuroTreeAttn` encoders use the default gain.
 
 **Target checks.** `fit` now raises an error when the target is constant (with `scale_target=true`), has missing or NaN values, or is also listed in `feature_names`. These inputs used to train silently, usually into NaN predictions.
 

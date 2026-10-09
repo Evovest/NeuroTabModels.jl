@@ -33,7 +33,6 @@ arch = NeuroTabModels.NeuroTreeConfig(;
     depth=4,
     stack_size=1,
     hidden_size=16,
-    init_scale=0.1,
     scaler=true,
 )
 

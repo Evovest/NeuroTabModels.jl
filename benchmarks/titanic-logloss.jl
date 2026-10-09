@@ -37,7 +37,7 @@ target_name = "Survived"
 feature_names = setdiff(names(df), ["Survived"])
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary, k=1, depth=4, ntrees=16, stack_size=1, hidden_size=1, actA=:identity, init_scale=1.0, scaler=true
+    tree_type=:binary, k=1, depth=4, ntrees=16, stack_size=1, hidden_size=1, actA=:identity, scaler=true
 )
 
 # arch = NeuroTabModels.MOETreeConfig(;
@@ -45,7 +45,6 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     k=8,
 #     depth=3,
 #     ntrees=8,
-#     init_scale=1.0,
 # )
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,

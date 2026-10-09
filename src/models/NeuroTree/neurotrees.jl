@@ -20,7 +20,7 @@ end
 function StackedNeuroTree(
     (ins, outs)::Pair{<:Integer,<:Integer}; hidden_size::Int, stack_size::Int, k::Int=1, tree_kwargs...
 )
-    head_kwargs = (; tree_kwargs..., init_scale=0)  # final layer starts at zero: neutral predictions
+    head_kwargs = (; tree_kwargs..., init_scale=0)
     if stack_size == 1
         return StackedNeuroTree(NeuroTree(ins => outs; k, head_kwargs...))
     end
@@ -50,8 +50,10 @@ Configuration for differentiable neuro-tree ensembles.
 - `hidden_size::Int`: Hidden dimension for stacked trees (default `1`).
 - `stack_size::Int`: Number of stacked tree layers (default `1`).
 - `scaler::Bool`: Apply softplus scaling on tree logits (default `true`).
-- `init_scale::Float32`: Gain on the leaf value init (default `1.0`); see `NeuroTree`. The final tree layer always starts at zero leaves (neutral predictions), so this only affects hidden layers when `stack_size ≥ 2`.
 - `MLE_tree_split::Bool`: Split output head for Gaussian MLE (default `false`).
+
+The final tree layer starts at zero leaves, so predictions start neutral. Hidden
+layers (`stack_size ≥ 2`) use the [`NeuroTree`](@ref) default leaf gain of `1`.
 """
 struct NeuroTreeConfig <: Architecture
     tree_type::Symbol
@@ -62,7 +64,6 @@ struct NeuroTreeConfig <: Architecture
     hidden_size::Int
     stack_size::Int
     scaler::Bool
-    init_scale::Float32
     MLE_tree_split::Bool
 end
 
@@ -76,7 +77,6 @@ function NeuroTreeConfig(; kwargs...)
         :hidden_size => 1,
         :stack_size => 1,
         :scaler => true,
-        :init_scale => 1.0,
         :MLE_tree_split => false,
     )
 
@@ -101,7 +101,6 @@ function NeuroTreeConfig(; kwargs...)
         args[:hidden_size],
         args[:stack_size],
         args[:scaler],
-        args[:init_scale],
         args[:MLE_tree_split],
     )
 end
@@ -113,7 +112,6 @@ function _tree_kwargs(config::NeuroTreeConfig)
         trees=config.ntrees,
         actA=act_dict[config.actA],
         config.scaler,
-        config.init_scale,
     )
 end
 

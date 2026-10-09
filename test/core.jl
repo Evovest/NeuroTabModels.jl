@@ -14,7 +14,7 @@ end
     learner = NeuroTabRegressor(;
         arch_name="NeuroTreeConfig",
         arch_config=Dict(
-            :actA => :identity, :init_scale => 1.0, :depth => 4, :ntrees => 32, :stack_size => 1, :hidden_size => 1
+            :actA => :identity, :depth => 4, :ntrees => 32, :stack_size => 1, :hidden_size => 1
         ),
         loss=:mse,
         nrounds=20,
@@ -520,22 +520,43 @@ end
     @test chain.experts isa NT.NeuroTree
     @test chain.router.outs == n_experts
     @test chain.router.k == 1
+    @test chain.router.init_scale == 0
     @test chain.experts.outs == 1
     @test chain.experts.k == n_experts
+    @test chain.experts.init_scale == 1
 
     ps, st = Lux.setup(rng, chain)
     x = randn(Float32, nfeats, batch)
     y, _ = chain(x, ps, st)
     @test size(y) == (1, 1, batch)
+    @test all(iszero, ps.router.p)
 
     r, _ = chain.router(x, ps.router, st.router)
+    @test all(iszero, r)
     e, _ = chain.experts(x, ps.experts, st.experts)
     @test size(r) == (n_experts, 1, batch)
     @test size(e) == (1, n_experts, batch)
     wr = exp.(r .- maximum(r; dims=1))
     gates = wr ./ sum(wr; dims=1)
     @test all(sum(gates; dims=1) .≈ 1)
+    @test all(gates .≈ 1 / n_experts)
     @test y ≈ sum(e .* permutedims(gates, (2, 1, 3)); dims=2)
+end
+
+@testset "NeuroTree leaf init policy" begin
+    NT = NeuroTabModels.Models.NeuroTrees
+
+    single = NT.NeuroTreeConfig(; depth=3, ntrees=4, stack_size=1)(; ins=5, outsize=1)
+    @test single.layer_1.chain.init_scale == 0
+
+    stacked = NT.NeuroTreeConfig(; depth=3, ntrees=4, stack_size=2, hidden_size=2)(; ins=5, outsize=1)
+    inner = stacked.layer_1.chain
+    @test inner.layer_1.init_scale == 1
+    @test inner.layer_3.init_scale == 0
+
+    attn = NT.NeuroTreeAttnConfig(; hidden_size=4, depth=2, ntrees=2, stack_size=2)(; ins=5, outsize=1)
+    @test attn.encoder.layer_1.layer.layer_1.init_scale == 1
+    @test attn.encoder.layer_2.layer.layer.layer_1.init_scale == 1
 end
 
 @testset "Backend/device - reactant is a backend" begin
@@ -793,7 +814,7 @@ end
     deval = df[df.grp.>32, :]
     feature_names = ["x1", "x2", "x3", "x4"]
 
-    arch = NeuroTabModels.NeuroTreeConfig(; depth=3, ntrees=8, stack_size=1, init_scale=0.0)
+    arch = NeuroTabModels.NeuroTreeConfig(; depth=3, ntrees=8, stack_size=1)
     for (loss, backend) in ((:mse, :zygote), (:pearson, :zygote), (:pearson, :enzyme), (:pearson, :reactant))
         learner = NeuroTabRegressor(
             arch; loss, metric=:pearson, nrounds=12, early_stopping_rounds=4, lr=1e-2,
