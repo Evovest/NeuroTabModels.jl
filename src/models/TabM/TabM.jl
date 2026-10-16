@@ -6,7 +6,7 @@ using Lux
 using LuxCore
 using Random: AbstractRNG, rand, randn
 
-import ..Models: Architecture
+import ..Models: Architecture, interleave_heads
 using ..Layers: GroupedDense, rsqrt_uniform_grouped
 
 include("layers.jl")
@@ -122,7 +122,7 @@ function (config::TabMConfig)(; ins, outsize, kwargs...)
     head = if config.MLE_tree_split
         iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
         head_outsize = outsize ÷ 2
-        Parallel(vcat, LinearEnsemble(d_block, head_outsize, k), LinearEnsemble(d_block, head_outsize, k))
+        Parallel(interleave_heads, LinearEnsemble(d_block, head_outsize, k), LinearEnsemble(d_block, head_outsize, k))
     else
         LinearEnsemble(d_block, outsize, k)
     end

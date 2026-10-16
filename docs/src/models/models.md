@@ -38,6 +38,12 @@ lux_arch = cfg(; ins=10, outsize=1)   # a Lux.Chain
 the embedding width when embeddings are prepended). `outsize` is the
 prediction dimension (for example `1` for a scalar regression).
 
+Every Lux architecture returns an `(outsize, k, batch)` array, where `k` is
+the number of ensemble members (`1` for a single model). Losses rely on this
+shape, so an architecture with a single `(outsize, batch)` head adds the `k`
+axis itself, for example with `ReshapeLayer((outsize, 1))` after its last
+layer.
+
 Learners take the **config**, not a pre-built Lux layer:
 
 ```julia

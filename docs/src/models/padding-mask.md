@@ -131,7 +131,7 @@ GroupedDataFrame
         └── MaskedModel:    (x, w)            → embed(x) → core(z, w)
         │
         ▼
-  y  (outsize × buffer)     pad slots still have a number
+  y  (outsize × k × buffer) pad slots still have a number
         │
         ├── train/eval:  loss weighted by w  (pads drop out)
         └── infer:       pred[:, mask]       (pads dropped after forward)

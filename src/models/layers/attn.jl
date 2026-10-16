@@ -137,4 +137,4 @@ function _tree_attn_blocks(hsize::Int, n_attn_layers::Int, attn_dropout::Float64
     return Chain(blocks...)
 end
 
-_pred_head(hsize::Int, outsize::Int) = Dense(hsize => outsize)
+_pred_head(hsize::Int, outsize::Int) = Chain(Dense(hsize => outsize), ReshapeLayer((outsize, 1)))
