@@ -14,6 +14,7 @@
 # as images. `benchmark.qmd` is rendered once per dataset, from a copy named
 # `benchmark-<dataset>.qmd`, so each dataset gets its own page and figures.
 
+device="gpu"
 include(joinpath(@__DIR__, "benchmarks", "benchmarks.jl"))
 
 dest = joinpath(@__DIR__, "..", "docs", "src", "quarto")
@@ -38,7 +39,7 @@ cd(@__DIR__) do
         qmd = "benchmark-$d.qmd"
         cp("benchmark.qmd", qmd; force=true)
         try
-            render(qmd; dataset=d, device=get(ENV, "BENCHMARK_DEVICE", "cpu"))
+            render(qmd; dataset=d, device)
         finally
             rm(qmd; force=true)
         end

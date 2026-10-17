@@ -4,8 +4,9 @@ format:
   gfm:
     variant: -raw_html
 params:
-  dataset: "boston"
+  dataset: "higgs"
   device: "cpu"
+  backend: "reactant"
 ---
 
 ```{julia}
@@ -14,7 +15,7 @@ include(joinpath(@__DIR__, "benchmarks", "benchmarks.jl"))
 using NeuroTabModels.Models
 using CairoMakie
 # `device: gpu` needs CUDA and cuDNN in the quarto environment
-device == "gpu" && @eval using CUDA, cuDNN
+device == "gpu" && backend == "zygote" && @eval using CUDA, cuDNN
 ```
 
 ```{julia}
@@ -47,7 +48,7 @@ archs = [
     "NeuroTree" => NeuroTreeConfig(; depth=4, ntrees=32),
     "TabM" => TabMConfig(; k=8, d_block=128, n_blocks=2),
 ]
-settings = (; nrounds=spec.nrounds, batchsize=spec.batchsize, early_stopping_rounds=20, device=Symbol(device))
+settings = (; nrounds=spec.nrounds, batchsize=spec.batchsize, early_stopping_rounds=20, device, backend)
 ```
 
 ## Training
@@ -99,7 +100,7 @@ println(pretty_table(String, wide; backend=:markdown, column_labels=names(wide))
 ```{julia}
 #| echo: false
 #| output: asis
-println("Run on NeuroTabModels ", info.version, " (", info.commit, "), Julia ", info.julia, ", ", device, ", ", info.date, ".")
+println("Run on NeuroTabModels ", info.version, " (", info.commit, "), Julia ", info.julia, ", ", device, ", ", backend, ", ", info.date, ".")
 ```
 
 ## Learning curves

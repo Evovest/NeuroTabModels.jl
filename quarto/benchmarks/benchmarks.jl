@@ -1,7 +1,8 @@
 # Datasets, metrics and the results file shared by `benchmark.qmd` and `benchmarks.qmd`.
 
 using NeuroTabModels
-using Zygote  # the default `backend=:zygote` is a package extension
+# using Zygote  # the default `backend=:zygote` is a package extension
+using Reactant
 using DataFrames
 using CategoricalArrays
 using CSV
@@ -60,12 +61,12 @@ const DATASETS = Dict(
     ),
     "california" => (;
         description="California housing (OpenML 44977): median house value of 20,640 block groups.",
-        check=true, task=:regression, target="medianHouseValue", nrounds=200, batchsize=512,
+        check=true, task=:regression, target="medianHouseValue", nrounds=200, batchsize=1024,
         load=() -> DataFrame(OpenML.load(44977)),
     ),
     "higgs" => (;
         description="Higgs (OpenML 23512): signal vs background for 98k collision events.",
-        check=true, task=:binary, target="class", nrounds=50, batchsize=1024,
+        check=true, task=:binary, target="class", nrounds=100, batchsize=1024,
         load=_higgs,
     ),
 )
