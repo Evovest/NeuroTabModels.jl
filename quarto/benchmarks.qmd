@@ -1,0 +1,76 @@
+---
+title: "Benchmarks"
+engine: julia
+format:
+  gfm:
+    variant: -raw_html
+---
+
+```{julia}
+#| echo: false
+#| output: false
+include(joinpath(@__DIR__, "benchmarks", "benchmarks.jl"))
+results = read_results()
+```
+
+Each dataset has a report that fits MLP, ResNet, NeuroTree and TabM with fixed settings and scores them on a held-out test set. Every report run adds its scores to `quarto/benchmarks/results.csv`, tagged with the NeuroTabModels version and git commit.
+
+This page compares, for each dataset, the latest run with the previous run on the same device, ordered by version. On california and higgs, a test metric that is more than 2% worse, or a training time per round or prediction time that is more than 25% slower, is flagged. Boston, titanic and iris have small test sets where one prediction moves a metric by several percent, so they are shown without flags. Timings leave out compilation but depend on the machine, so runs are meant to be made on the same one.
+
+To add a run, render the reports with `julia --project=quarto quarto/run.jl`. Add a dataset as a new entry in `DATASETS` in `quarto/benchmarks/benchmarks.jl`.
+
+```{julia}
+#| echo: false
+#| output: false
+# relative change from `prev` to `cur`, signed so that positive is worse
+function worse_by(metric, cur, prev)
+    prev == 0 && return 0.0
+    change = (cur - prev) / abs(prev)
+    return metric in HIGHER_IS_BETTER ? -change : change
+end
+
+function flag(dataset, metric, change)
+    (DATASETS[dataset].check && metric ∉ ("best_iter", "train_time")) || return ""
+    limit = metric in ("time_per_round", "predict_time") ? 0.25 : 0.02
+    return change > limit ? "worse" : ""
+end
+
+function compare(results, dataset)
+    d = results[results.dataset .== dataset, :]
+    d.v = VersionNumber.(d.version)
+    runs = unique(select(sort(d, [:v, :date]), :date, :version, :commit, :device), [:version, :commit, :device])
+    run_name(r) = "$(r.version) ($(r.commit), $(r.device))"
+    cur = runs[end, :]
+    runs = runs[runs.device .== cur.device, :]
+    d = d[d.device .== cur.device, :]
+    out = DataFrame(; model=String[], metric=String[])
+    out[!, run_name(cur)] = Float64[]
+    if nrow(runs) == 1
+        for r in eachrow(d[d.commit .== cur.commit, :])
+            push!(out, (r.model, r.metric, r.value))
+        end
+        return out
+    end
+    prev = runs[end - 1, :]
+    out[!, run_name(prev)] = Float64[]
+    out[!, "worse by"], out.flag = String[], String[]
+    for r in eachrow(d[d.commit .== cur.commit, :])
+        p = d[(d.commit .== prev.commit) .& (d.model .== r.model) .& (d.metric .== r.metric), :value]
+        isempty(p) && continue
+        change = worse_by(r.metric, r.value, only(p))
+        push!(out, (r.model, r.metric, r.value, only(p), string(round(100 * change; digits=1), "%"), flag(dataset, r.metric, change)))
+    end
+    return out
+end
+```
+
+```{julia}
+#| echo: false
+#| output: asis
+for dataset in sort(unique(results.dataset))
+    println("## ", dataset, "\n")
+    println("[Report](benchmark-", dataset, ".md). ", DATASETS[dataset].description, "\n")
+    df = compare(results, dataset)
+    println(pretty_table(String, df; backend=:markdown, column_labels=names(df)), "\n")
+end
+```

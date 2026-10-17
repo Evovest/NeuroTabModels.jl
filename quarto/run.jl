@@ -1,28 +1,47 @@
 #!/usr/bin/env julia
 
-# Render named reports into quarto/build/, then copy into Documenter.
-# Quarto requires --output-dir to be a subdirectory of the project (quarto/).
-# The qmd uses `format: gfm` with `variant: -raw_html` so figures are
-# `![](stem_files/...)`, which DocumenterVitepress keeps as images.
-reports = [
-    "embeddings-design.qmd",
-]
-build_dir = joinpath(@__DIR__, "build")
+# Render the reports and copy them into Documenter:
+#
+#   julia --project=quarto quarto/run.jl                    # every report
+#   julia --project=quarto quarto/run.jl boston california  # those benchmarks, then the summary
+#
+# Set `BENCHMARK_DEVICE=gpu` to train the benchmarks on GPU; this needs CUDA and cuDNN added
+# to the quarto environment.
+#
+# Reports are rendered in place and then moved: with `--output-dir`, Quarto runs Julia
+# through Jupyter instead of its own Julia engine. The qmds use `format: gfm` with
+# `variant: -raw_html` so figures are `![](stem_files/...)`, which DocumenterVitepress keeps
+# as images. `benchmark.qmd` is rendered once per dataset, from a copy named
+# `benchmark-<dataset>.qmd`, so each dataset gets its own page and figures.
+
+include(joinpath(@__DIR__, "benchmarks", "benchmarks.jl"))
+
 dest = joinpath(@__DIR__, "..", "docs", "src", "quarto")
 
+function render(qmd; params...)
+    args = reduce(vcat, ["-P", "$k:$v"] for (k, v) in params; init=String[])
+    run(`quarto render $qmd $args`)
+    stem = first(splitext(qmd))
+    mv("$stem.md", joinpath(dest, "$stem.md"); force=true)
+    isdir("$(stem)_files") && mv("$(stem)_files", joinpath(dest, "$(stem)_files"); force=true)
+end
+
+datasets = isempty(ARGS) ? sort(collect(keys(DATASETS))) : ARGS
+for d in datasets
+    haskey(DATASETS, d) || error("Unknown dataset `$d`. Datasets: $(join(sort(collect(keys(DATASETS))), ", ")).")
+end
+
 cd(@__DIR__) do
-    mkpath(build_dir)
     mkpath(dest)
-    for report in reports
-        run(`quarto render $report --output-dir $build_dir`)
-        stem = first(splitext(report))
-        cp(joinpath(build_dir, "$stem.md"), joinpath(dest, "$stem.md"); force=true)
-        files = "$(stem)_files"
-        src_files = joinpath(build_dir, files)
-        if isdir(src_files)
-            dst_files = joinpath(dest, files)
-            isdir(dst_files) && rm(dst_files; recursive=true)
-            cp(src_files, dst_files)
+    isempty(ARGS) && render("embeddings-design.qmd")
+    for d in datasets
+        qmd = "benchmark-$d.qmd"
+        cp("benchmark.qmd", qmd; force=true)
+        try
+            render(qmd; dataset=d, device=get(ENV, "BENCHMARK_DEVICE", "cpu"))
+        finally
+            rm(qmd; force=true)
         end
     end
+    render("benchmarks.qmd")
 end
