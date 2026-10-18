@@ -33,7 +33,7 @@ number of rounds, the batch size and early stopping.
 archs = [
     "MLP" => MLPConfig(; hidden_size=64, stack_size=2),
     "ResNet" => ResNetConfig(; hidden_size=64, stack_size=2),
-    "NeuroTree" => NeuroTreeConfig(; depth=4, ntrees=32),
+    "NeuroTree" => NeuroTreeConfig(; k=8, depth=4, ntrees=32),
     "TabM" => TabMConfig(; k=8, d_block=128, n_blocks=2),
 ]
 settings = (; nrounds=spec.nrounds, batchsize=spec.batchsize, early_stopping_rounds=20, device, backend)
@@ -81,13 +81,13 @@ times in seconds.
 
 | **model** | **mlogloss** | **accuracy** | **best_iter** | **train_time** | **time_per_round** | **predict_time** |
 |---:|---:|---:|---:|---:|---:|---:|
-| MLP | 0.133708 | 0.956522 | 11.0 | 1.86162 | 0.0600523 | 0.182904 |
-| ResNet | 0.172913 | 0.956522 | 10.0 | 3.38663 | 0.112888 | 0.207058 |
-| NeuroTree | 0.0260106 | 1.0 | 359.0 | 1.9408 | 0.00512085 | 0.22417 |
-| TabM | 0.0323744 | 0.956522 | 152.0 | 2.48017 | 0.0144196 | 0.172585 |
+| MLP | 0.133708 | 0.956522 | 11.0 | 1.82792 | 0.0589653 | 0.182907 |
+| ResNet | 0.172913 | 0.956522 | 10.0 | 3.33591 | 0.111197 | 0.209479 |
+| NeuroTree | 0.0267331 | 1.0 | 285.0 | 1.72709 | 0.00566259 | 0.237566 |
+| TabM | 0.0323744 | 0.956522 | 152.0 | 2.44334 | 0.0142054 | 0.172878 |
 
-Run on NeuroTabModels 0.5.0 (35b6864), Julia 1.12.6, gpu, reactant,
-2026-10-18 13:20.
+Run on NeuroTabModels 0.5.0 (d547a0f), Julia 1.12.6, gpu, reactant,
+2026-10-18 17:09.
 
 ## Learning curves
 
