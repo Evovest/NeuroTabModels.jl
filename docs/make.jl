@@ -1,4 +1,4 @@
-# push!(LOAD_PATH, "../src/")
+# pushfirst!(LOAD_PATH, joinpath(@__DIR__, ".."))
 using Documenter
 using DocumenterVitepress
 using NeuroTabModels

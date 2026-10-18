@@ -20,7 +20,7 @@ The following names refer to distinct objects:
 
 [`NeuroTabRegressor`](@ref) and [`NeuroTabClassifier`](@ref) are **learners**.
 They hold an architecture config together with training settings (loss,
-optimizer, device). Training is documented on the [Training](@ref) page.
+optimizer, device). Training is documented on the [Training](../API.md) page.
 
 ## Instantiating from a config
 

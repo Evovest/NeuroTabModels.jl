@@ -7,7 +7,7 @@ the Lux chain, runs the loop, and returns a
 calling that fitted model, or from [`infer`](@ref NeuroTabModels.infer).
 
 Architecture configs and how they become a Lux chain are on
-[Models](@ref). Losses are on [Losses](@ref). Numerical and temporal
+[Models](models/models.md). Losses are on [Losses](@ref). Numerical and temporal
 embeddings are on [Embeddings](@ref).
 
 ## Learners
@@ -45,7 +45,7 @@ These live on the learner, not on `fit`:
 
 `metric` and `early_stopping_rounds` only take effect when `fit` is given
 `deval`. Constructors and the MLJ interface are documented with the types
-on [Models](@ref).
+on [Models](models/models.md).
 
 ## Fit
 
