@@ -11,8 +11,7 @@
 #
 # `bench-template.qmd` is rendered once per dataset as `bench-<dataset>.md`. Quarto still
 # writes its figures to `bench-template_files`, so they are moved to `bench-<dataset>_files`
-# and the links rewritten. `_quarto.yml` keeps Quarto on its Julia engine: without it,
-# `--output-dir` runs Julia through Jupyter.
+# and the links rewritten.
 
 datasets = ["boston", "titanic", "iris", "california", "higgs"]
 # datasets = ["boston"]
