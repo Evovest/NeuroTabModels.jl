@@ -1,0 +1,58 @@
+---
+title: "Benchmarks"
+engine: julia
+format:
+  gfm:
+    variant: -raw_html
+---
+
+```{julia}
+#| echo: false
+#| output: false
+include(joinpath(@__DIR__, "benchmarks.jl"))
+results = read_results()
+```
+
+Each dataset has a report that fits MLP, ResNet, NeuroTree and TabM with fixed settings and scores them on a held-out test set. Every report run adds its scores to `quarto/benchmarks/results.csv`, tagged with the NeuroTabModels version and git commit.
+
+This page shows, for each dataset, the test scores and timings of the latest version, with the change from the previous version in brackets. A version run more than once counts with its latest run. Timings leave out compilation but depend on the machine, so runs are meant to be made on the same one.
+
+To add a run, render the reports with `julia --project=quarto quarto/benchmarks/run.jl`. Add a dataset as a new entry in `DATASETS` in `quarto/benchmarks/benchmarks.jl`.
+
+```{julia}
+#| echo: false
+#| output: false
+fmt(x) = isinteger(x) ? string(Int(x)) : string(round(x; sigdigits=4))
+change(v, p) = ismissing(p) || iszero(p) ? "" : string(" (", v >= p ? "+" : "", round(100 * (v - p) / abs(p); digits=1), "%)")
+
+# One row per model and a column per metric, for the latest version on the latest run's device and backend.
+function compare(results, dataset)
+    d = results[results.dataset .== dataset, :]
+    (; device, backend) = d[argmax(d.date), :]
+    d = d[(d.device .== device) .& (d.backend .== backend), :]
+    runs = sort(combine(groupby(d, :version), :date => maximum => :date), :version; by=v -> VersionNumber(v))
+    d = semijoin(d, runs; on=[:version, :date])
+    t = d[d.version .== runs.version[end], [:model, :metric, :value]]
+    t.cell = fmt.(t.value)
+    if nrow(runs) > 1
+        prev = rename(d[d.version .== runs.version[end - 1], [:model, :metric, :value]], :value => :prev)
+        t = leftjoin(t, prev; on=[:model, :metric], order=:left)
+        t.cell .*= change.(t.value, t.prev)
+    end
+    caption = "Version $(runs.version[end]) on $device with $backend" *
+        (nrow(runs) > 1 ? ", change from $(runs.version[end - 1]) in brackets." : ".")
+    return unstack(t, :model, :metric, :cell), caption
+end
+```
+
+```{julia}
+#| echo: false
+#| output: asis
+for dataset in sort(unique(results.dataset))
+    println("## ", dataset, "\n")
+    println("[Report](bench-", dataset, ".md). ", DATASETS[dataset].description, "\n")
+    df, caption = compare(results, dataset)
+    println(caption, "\n")
+    println(pretty_table(String, df; backend=:markdown, column_labels=names(df)), "\n")
+end
+```
