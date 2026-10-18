@@ -17,7 +17,7 @@ Each dataset has a report that fits MLP, ResNet, NeuroTree and TabM with fixed s
 
 This page shows, for each dataset, the test scores and timings of the latest version, with the change from the previous version in brackets. A version run more than once counts with its latest run. Timings leave out compilation but depend on the machine, so runs are meant to be made on the same one.
 
-To add a run, render the reports with `julia --project=quarto quarto/benchmarks/run.jl`. Add a dataset as a new entry in `DATASETS` in `quarto/benchmarks/benchmarks.jl`.
+To add a run, render the reports with `julia --project=quarto quarto/benchmarks/run.jl` followed by the datasets. Add a dataset as a new entry in `DATASETS` in `quarto/benchmarks/benchmarks.jl`.
 
 ```{julia}
 #| echo: false

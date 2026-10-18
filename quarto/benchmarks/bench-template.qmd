@@ -3,9 +3,6 @@ engine: julia
 format:
   gfm:
     variant: -raw_html
-execute:
-  # a worker per render, so no dataset holds on to GPU memory while the next one trains
-  daemon: false
 params:
   dataset: "boston"
   device: "cpu"
@@ -18,8 +15,7 @@ params:
 include(joinpath(@__DIR__, "benchmarks.jl"))
 using NeuroTabModels.Models
 using CairoMakie
-# the backend is a package extension; `backend: reactant` needs Reactant, and `device: gpu` with Zygote
-# needs CUDA and cuDNN, in the quarto environment
+# the backend is a package extension; `device: gpu` with Zygote needs CUDA and cuDNN in the quarto environment
 backend == "reactant" ? @eval(using Reactant) : @eval(using Zygote)
 device == "gpu" && backend == "zygote" && @eval using CUDA, cuDNN
 ```

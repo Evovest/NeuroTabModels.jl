@@ -14,7 +14,7 @@ const RESULTS_FILE = joinpath(@__DIR__, "results.csv")
 
 #===========================================================================================
 Datasets: each loader returns a DataFrame of numeric features plus the target column.
-Add a dataset by adding an entry to `DATASETS`; `run.jl` renders one report per entry.
+Add a dataset by adding an entry to `DATASETS`; `run.jl <name>` renders its report.
 ===========================================================================================#
 
 function _boston()
