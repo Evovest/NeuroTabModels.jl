@@ -24,7 +24,7 @@ LuxCore.statelength(::ResidualScale) = 0
 
 Peer attention over an unordered set (attention batch dim = 1). Shared ``W_{qk}``
 for query and key, values = encoder tokens. Score scale is the usual
-`NNlib.dot_product_attention` ``1/√d``. Residual
+`NNlib.scaled_dot_product_attention` ``1/√d``. Residual
 `x + scale * Dropout(Attn)`, with `scale` a learned scalar initialized at
 `attn_scale` (default `0.1`). Encoder tokens should already be BatchNorm'd so
 QK logits stay O(1); the small residual scale is what lets the model ignore
@@ -53,9 +53,6 @@ function AttnResidual(
     return AttnResidual(qk, Dropout(attn_dropout), Dropout(dropout), ResidualScale(attn_scale), nheads)
 end
 
-_as_seq(x::AbstractMatrix) = reshape(x, size(x, 1), size(x, 2), 1)
-_from_seq(x::AbstractArray) = reshape(x, size(x, 1), size(x, 2))
-
 # Per-token RMS over the hidden axis (MLP QK). Per-channel RMS over the sequence
 # (NeuroTree: each ensemble is its own head, so do not mix `k` in the denominator).
 function _rms_tokens(x::AbstractMatrix)
@@ -81,10 +78,11 @@ function _block(l::AttnResidual, x::AbstractMatrix, mask, ps, st)
         l.qk_proj(_rms_tokens(x), ps.qk_proj, st.qk_proj)
     end
     attn_drop = StatefulLuxLayer(l.attn_drop, ps.attn_drop, st.attn_drop)
-    a3, _ = dot_product_attention(
-        _as_seq(qk), _as_seq(qk), _as_seq(x); nheads=l.nheads, mask, fdrop=attn_drop
-    )
-    a, st_d = l.drop(_from_seq(a3), ps.drop, st.drop)
+    head_dim = size(x, 1) ÷ l.nheads
+    qk_heads = reshape(qk, head_dim, l.nheads, size(x, 2), 1)
+    value_heads = reshape(x, head_dim, l.nheads, size(x, 2), 1)
+    attn = scaled_dot_product_attention(qk_heads, qk_heads, value_heads; mask, fdrop=attn_drop)
+    a, st_d = l.drop(reshape(attn, size(x)), ps.drop, st.drop)
     s, st_s = l.scale(a, ps.scale, st.scale)
     return x .+ s, (; qk_proj=st_qk, attn_drop=attn_drop.st, drop=st_d, scale=st_s)
 end
@@ -98,7 +96,7 @@ end
 """
     _key_padding_mask(w, seq)
 
-Build a boolean key-padding mask for `NNlib.dot_product_attention`.
+Build a boolean key-padding mask for `NNlib.scaled_dot_product_attention`.
 
 Attention scores have shape `(kv_len, q_len, nheads, batch)`. A `true` entry keeps that
 key position. Reshaping valid-token flags to `(seq, 1, 1, 1)` zeros out entire *columns*

@@ -341,6 +341,28 @@ end
     @test st_none.running_var == st_tr.running_var
 end
 
+@testset "AttnResidual multi-head attention" begin
+    layer = NeuroTabModels.Models.AttnResidual(4, 2; identity_qk=true, attn_scale=1.0f0)
+    ps, st = Lux.setup(Random.Xoshiro(123), layer)
+    st = Lux.testmode(st)
+    x = Float32[1 2 10; 3 1 5; 2 4 8; 1 3 6]
+
+    for valid in (trues(3), Bool[true, true, false])
+        mask = reshape(valid, 3, 1, 1, 1)
+        y, _ = layer((x, mask), ps, st)
+        qk = x ./ sqrt.(sum(abs2, x[:, valid]; dims=2) ./ Float32(sum(valid)) .+ 1.0f-5)
+        expected = similar(x)
+        for head in 1:2, i in 1:3
+            channels = (2head - 1):(2head)
+            scores = [sum(qk[channels, j] .* qk[channels, i]) / sqrt(2.0f0) for j in findall(valid)]
+            weights = exp.(scores .- maximum(scores))
+            weights ./= sum(weights)
+            expected[channels, i] = x[channels, valid] * weights
+        end
+        @test y[1] ≈ x .+ expected
+    end
+end
+
 @testset "MLPAttn key-padding mask" begin
     Random.seed!(123)
     rng = Random.Xoshiro(123)
