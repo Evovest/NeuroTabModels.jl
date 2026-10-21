@@ -59,9 +59,12 @@ _reshape_3d(x::AbstractVector) = reshape(x, 1, 1, :)
 _reshape_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
 _reshape_3d(x::AbstractArray{T,3}) where {T} = x
 
+# every model returns `(outsize, k, batch)`; checked by dispatch, as a type assert slows the gradient
+_check_3d(pred::AbstractArray{<:Any,3}) = pred
+
 function _forward(model, ps, st, x)
     pred, st_ = model(x, ps, st)
-    return _reshape_3d(pred), st_
+    return _check_3d(pred), st_
 end
 
 """
@@ -89,7 +92,7 @@ _apply_offset(pred, ::Nothing) = pred
 _apply_offset(pred, offset) = pred .+ _reshape_3d(offset)
 
 _reduce(loss) = mean(loss)
-_reduce(loss, w) = sum(mean(loss; dims=2) .* w) / sum(w)
+_reduce(loss, w) = sum(mean(loss; dims=(1, 2)) .* w) / sum(w)
 
 _aggregate(loss, pred, y, ::Nothing) = _reduce(_pointwise(loss, pred, y))
 _aggregate(loss, pred, y, w) = _reduce(_pointwise(loss, pred, y), _reshape_3d(w))
@@ -123,14 +126,15 @@ _poisson_dev(η, y) = 2 * (y * log(max(y, oftype(y, 1e-30))) - y * η + exp(η) 
 
 _pointwise(::Poisson, pred, y) = _poisson_dev.(pred, y)
 
+# Rows interleave per target: μ₁, log-σ₁, μ₂, log-σ₂, …
 function _pointwise(::GaussianMLE, pred, y)
-    μ = pred[1:1, :, :]
-    σ = pred[2:2, :, :]
+    μ = pred[1:2:end, :, :]
+    σ = pred[2:2:end, :, :]
     σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ)))
 end
 
-# First output channel (`μ` when the head is 2-wide), mean over the ensemble axis.
-_corr_from_pred(pred) = vec(mean(view(pred, 1, :, :); dims=1))
+# Target `t`'s prediction row, mean over the ensemble axis.
+_corr_from_pred(pred, t=1) = vec(mean(view(pred, t, :, :); dims=1))
 
 function _pearson_value(p, y, w)
     p = vec(p)
@@ -148,13 +152,16 @@ function _pearson_value(p, y, w)
     return cov / (sqrt(max(p_var, ϵ)) * sqrt(max(y_var, ϵ)))
 end
 
-function _aggregate(::Pearson, pred, y, ::Nothing)
-    p = _corr_from_pred(pred)
-    return -_pearson_value(p, y, one.(p))
+# Mean correlation over targets. A loop because Reactant fails to trace `sum(f, 1:T)`.
+function _pearson_mean(pred_t, y, w)
+    s = _pearson_value(pred_t(1), selectdim(y, 1, 1), w)
+    for t in 2:size(y, 1)
+        s += _pearson_value(pred_t(t), selectdim(y, 1, t), w)
+    end
+    return s / size(y, 1)
 end
-function _aggregate(::Pearson, pred, y, w)
-    p = _corr_from_pred(pred)
-    return -_pearson_value(p, y, w)
-end
+
+_aggregate(l::Pearson, pred, y, ::Nothing) = _aggregate(l, pred, y, one.(view(pred, 1, 1, :)))
+_aggregate(::Pearson, pred, y, w) = -_pearson_mean(t -> _corr_from_pred(pred, t), y, w)
 
 end

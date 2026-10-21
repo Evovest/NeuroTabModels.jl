@@ -37,6 +37,18 @@ function get_activation(act::Symbol)
 end
 
 """
+    interleave_heads(μ, σ)
+
+Combine the two heads of an `MLE_tree_split` model into rows μ₁, σ₁, μ₂, σ₂, …,
+the per-target order `GaussianMLE` reads. With one target this equals `vcat(μ, σ)`.
+"""
+function interleave_heads(μ, σ)
+    rest = Base.tail(size(μ))
+    pair = vcat(reshape(μ, 1, size(μ, 1), rest...), reshape(σ, 1, size(σ, 1), rest...))
+    return reshape(pair, 2 * size(μ, 1), rest...)
+end
+
+"""
     uses_batch_mask(layer) -> Bool
 
 Whether `layer` consumes a `(x, mask)` tuple so padded group-buffer slots can be ignored

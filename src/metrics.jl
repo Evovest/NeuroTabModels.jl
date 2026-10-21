@@ -5,7 +5,7 @@ export metric_dict, is_maximise, get_metric
 import Statistics: mean, std
 import StatsBase: tiedrank, denserank
 import NNlib: logsigmoid, logsoftmax, softmax, relu, hardsigmoid
-import ..Losses: _pearson_value, _poisson_dev
+import ..Losses: _pearson_mean, _poisson_dev
 using Lux
 
 """
@@ -30,10 +30,12 @@ function mse(m, x, y; agg=mean)
     return agg((vec(m(x)) .- vec(y)) .^ 2)
 end
 function mse(m, x, y, w; agg=mean)
-    return agg((vec(m(x)) .- vec(y)) .^ 2 .* vec(w))
+    p = m(x)
+    return agg((p .- reshape(y, size(p))) .^ 2 .* reshape(w, 1, :))
 end
 function mse(m, x, y, w, offset; agg=mean)
-    return agg((vec(m(x)) .+ vec(offset) .- vec(y)) .^ 2 .* vec(w))
+    p = m(x) .+ _offset_2d(offset)
+    return agg((p .- reshape(y, size(p))) .^ 2 .* reshape(w, 1, :))
 end
 
 """
@@ -45,10 +47,12 @@ function mae(m, x, y; agg=mean)
     return agg(abs.(vec(m(x)) .- vec(y)))
 end
 function mae(m, x, y, w; agg=mean)
-    return agg(abs.(vec(m(x)) .- vec(y)) .* vec(w))
+    p = m(x)
+    return agg(abs.(p .- reshape(y, size(p))) .* reshape(w, 1, :))
 end
 function mae(m, x, y, w, offset; agg=mean)
-    return agg(abs.(vec(m(x)) .+ vec(offset) .- vec(y)) .* vec(w))
+    p = m(x) .+ _offset_2d(offset)
+    return agg(abs.(p .- reshape(y, size(p))) .* reshape(w, 1, :))
 end
 
 """
@@ -62,14 +66,14 @@ function logloss(m, x, y; agg=mean)
     return agg((1 .- y) .* p .- logsigmoid.(p))
 end
 function logloss(m, x, y, w; agg=mean)
-    p = vec(m(x))
-    y = vec(y)
-    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* vec(w))
+    p = m(x)
+    y = reshape(y, size(p))
+    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* reshape(w, 1, :))
 end
 function logloss(m, x, y, w, offset; agg=mean)
-    p = vec(m(x)) .+ vec(offset)
-    y = vec(y)
-    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* vec(w))
+    p = m(x) .+ _offset_2d(offset)
+    y = reshape(y, size(p))
+    return agg(((1 .- y) .* p .- logsigmoid.(p)) .* reshape(w, 1, :))
 end
 
 """
@@ -87,9 +91,9 @@ function tweedie(m, x, y; agg=mean)
 end
 function tweedie(m, x, y, w; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(vec(m(x)))
-    y = vec(y)
-    w = vec(w)
+    p = exp.(m(x))
+    y = reshape(y, size(p))
+    w = reshape(w, 1, :)
     return agg(
         w .* 2 .*
         (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
@@ -97,9 +101,9 @@ function tweedie(m, x, y, w; agg=mean)
 end
 function tweedie(m, x, y, w, offset; agg=mean)
     rho = eltype(x)(1.5)
-    p = exp.(vec(m(x)) .+ vec(offset))
-    y = vec(y)
-    w = vec(w)
+    p = exp.(m(x) .+ _offset_2d(offset))
+    y = reshape(y, size(p))
+    w = reshape(w, 1, :)
     return agg(
         w .* 2 .*
         (y .^ (2 - rho) / (1 - rho) / (2 - rho) .- y .* p .^ (1 - rho) / (1 - rho) .+ p .^ (2 - rho) / (2 - rho)),
@@ -123,10 +127,12 @@ function poisson(m, x, y; agg=mean)
     return agg(_poisson_dev.(vec(m(x)), vec(y)))
 end
 function poisson(m, x, y, w; agg=mean)
-    return agg(_poisson_dev.(vec(m(x)), vec(y)) .* vec(w))
+    p = m(x)
+    return agg(_poisson_dev.(p, reshape(y, size(p))) .* reshape(w, 1, :))
 end
 function poisson(m, x, y, w, offset; agg=mean)
-    return agg(_poisson_dev.(vec(m(x)) .+ vec(offset), vec(y)) .* vec(w))
+    p = m(x) .+ _offset_2d(offset)
+    return agg(_poisson_dev.(p, reshape(y, size(p))) .* reshape(w, 1, :))
 end
 
 """
@@ -167,17 +173,20 @@ _gaussian_mle_elt(μ, σ, y, w) = (-σ - (y - μ)^2 / (2 * max(oftype(σ, 2e-7),
 
 function gaussian_mle(m, x, y; agg=mean)
     p = m(x)
-    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y)))
+    μ, σ = @views p[1:2:end, :], p[2:2:end, :]
+    metric = agg(_gaussian_mle_elt.(μ, σ, reshape(y, size(μ))))
     return metric
 end
 function gaussian_mle(m, x, y, w; agg=mean)
     p = m(x)
-    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
+    μ, σ = @views p[1:2:end, :], p[2:2:end, :]
+    metric = agg(_gaussian_mle_elt.(μ, σ, reshape(y, size(μ)), reshape(w, 1, :)))
     return metric
 end
 function gaussian_mle(m, x, y, w, offset; agg=mean)
     p = m(x) .+ _offset_2d(offset)
-    metric = agg(_gaussian_mle_elt.(view(p, 1, :), view(p, 2, :), vec(y), vec(w)))
+    μ, σ = @views p[1:2:end, :], p[2:2:end, :]
+    metric = agg(_gaussian_mle_elt.(μ, σ, reshape(y, size(μ)), reshape(w, 1, :)))
     return metric
 end
 
@@ -188,20 +197,22 @@ end
 
 Uses the first output (`μ` when `gaussian_mle` returns `size(p, 1) == 2`).
 A flat group (constant predictions or target, or a single row) scores 0 and keeps its weight.
+With several targets, the metric is the mean correlation over targets.
 """
-_corr_pred(p) = vec(view(p, 1, :))
+# target `t` reads row `t`, or its μ row when there are two outputs per target
+_corr_pred(p, y, t) = vec(view(p, (size(p, 1) ÷ size(y, 1)) * (t - 1) + 1, :))
 
 function pearson(m, x, y; agg=mean)
-    p = _corr_pred(m(x))
-    return _pearson_value(p, y, one.(p)) * length(y)
+    p = m(x)
+    return _pearson_mean(t -> _corr_pred(p, y, t), y, one.(view(p, 1, :))) * length(y)
 end
 function pearson(m, x, y, w; agg=mean)
-    p = _corr_pred(m(x))
-    return _pearson_value(p, y, w) * sum(w)
+    p = m(x)
+    return _pearson_mean(t -> _corr_pred(p, y, t), y, w) * sum(w) * size(y, 1)
 end
 function pearson(m, x, y, w, offset; agg=mean)
-    p = _corr_pred(m(x) .+ _offset_2d(offset))
-    return _pearson_value(p, y, w) * sum(w)
+    p = m(x) .+ _offset_2d(offset)
+    return _pearson_mean(t -> _corr_pred(p, y, t), y, w) * sum(w) * size(y, 1)
 end
 
 """

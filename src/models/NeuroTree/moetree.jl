@@ -121,7 +121,7 @@ function (config::MOETreeConfig)(; ins, outsize, kwargs...)
         iseven(outsize) || error("MLE_tree_split requires an even `outsize` (e.g., 2 for μ and σ). Got: $outsize")
         head_outsize = outsize ÷ 2
         return Chain(
-            Parallel(vcat, _build_moe_tree(ins, head_outsize, config), _build_moe_tree(ins, head_outsize, config))
+            Parallel(interleave_heads, _build_moe_tree(ins, head_outsize, config), _build_moe_tree(ins, head_outsize, config))
         )
     end
     return _build_moe_tree(ins, outsize, config)
