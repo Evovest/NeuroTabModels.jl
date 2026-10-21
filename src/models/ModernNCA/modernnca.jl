@@ -146,23 +146,23 @@ weights to zero during training.
 """
 _mask_diag(d::AbstractMatrix) = _diag_inf.(reshape(1:size(d, 1), :, 1), reshape(1:size(d, 2), 1, :), d)
 
-_to_output(::Union{MSE,MAE}, α, cy, _) = reshape(α' * cy, 1, :)
+_to_output(::Union{MSE,MAE}, α, cy, _) = reshape(α' * cy, 1, 1, :)
 
 function _to_output(::LogLoss, α, cy, _)
-    p = clamp.(reshape(α' * cy, 1, :), 1.0f-6, 1.0f0 - 1.0f-6)
+    p = clamp.(reshape(α' * cy, 1, 1, :), 1.0f-6, 1.0f0 - 1.0f-6)
     return log.(p ./ (1.0f0 .- p))
 end
 
 function _to_output(::MLogLoss, α, cy, outsize::Int)
     oh = ((k, c) -> ifelse(k == c, 1.0f0, 0.0f0)).(reshape(UInt32(1):UInt32(outsize), :, 1), reshape(cy, 1, :))
-    return log.(clamp.(oh * α, 1.0f-7, Inf32))
+    return reshape(log.(clamp.(oh * α, 1.0f-7, Inf32)), outsize, 1, :)
 end
 
 """
-    _nca_logits(m, zq, zk, cy; mask_self=false) -> Matrix
+    _nca_logits(m, zq, zk, cy; mask_self=false) -> Array
 
 Softmax attention over corpus keys `zk` for query embeddings `zq`.
-When `mask_self=true`, diagonal entries are masked (training path).
+Returns `(outsize, 1, batch)`. When `mask_self=true`, diagonal entries are masked (training path).
 """
 function _nca_logits(m::ModernNCAModel, zq, zk, cy; mask_self::Bool=false)
     d = _pairwise_dist(zq, zk, m.cfg.eps) ./ max(m.cfg.temperature, m.cfg.eps)
