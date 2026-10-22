@@ -95,10 +95,14 @@ train_dataloader(::Architecture, ::Any, data, ::Any; kwargs...) = data
 """
     build_chain(arch, embed_chain; ins, outsize)
 
-Utility function for assembling the Lux chain that `fit` will train.
+Assemble the Lux chain that `fit` will train: `MaskedModel(embed_chain, core)`
+when the core consumes a batch mask, `Chain(embed_chain, core)` otherwise.
+Architectures can override this when the embedding must be part of the model
+itself.
 """
 function build_chain(arch::Architecture, embed_chain; ins, outsize, kwargs...)
-    Chain(embed_chain, arch(; ins, outsize, kwargs...))
+    core = arch(; ins, outsize, kwargs...)
+    return uses_batch_mask(core) ? MaskedModel(embed_chain, core) : Chain(embed_chain, core)
 end
 
 """
@@ -109,7 +113,7 @@ Default returns `data` unchanged; retrieval-style archs override to wrap each
 batch with extra inputs (e.g. a candidate corpus). Dispatched on
 `typeof(m.chain)` so arch modules can override on their concrete model type.
 """
-infer_dataloader(::Any, ::Any, data, ::Any, ::Any, ::Any) = data
+infer_dataloader(::Any, ::Any, data, ::Any, ::Any, ::Any; kwargs...) = data
 
 """
     eval_dataloader(chain, info, data, dev, ps, st)
