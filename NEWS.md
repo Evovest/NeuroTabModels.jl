@@ -28,6 +28,8 @@ Dropped from the embeddings export list: `NLinear`, `Periodic`, `PiecewiseLinear
 
 **`TabMConfig`.** `scaling_init` is no longer a config field (unknown kwargs are ignored with a warning).
 
+**Model output shape.** Every architecture now returns `(outsize, k, batch)`, with `k = 1` for a single model, and losses no longer reshape a 2D `(outsize, batch)` output. A custom architecture that returns `(outsize, batch)` must add the `k` axis, for example with `ReshapeLayer((outsize, 1))`. MLP, ResNet, MLPAttn and NeuroTreeAttn models saved before this change have no `k` axis and must be refit.
+
 **Raw predictions.** With `proj=false`, `MLogLoss` and `GaussianMLE` return `(nobs, K)`, the same layout as `proj=true`, instead of `(K, nobs)`.
 
 **NeuroTree leaf init.** `init_scale` is no longer a field of `NeuroTreeConfig`, `MOETreeConfig`, or `NeuroTreeAttnConfig` (an explicit value is ignored with a warning). On a `NeuroTree` layer, leaves are still drawn with std `init_scale · √(trees · leaves)`, and that gain defaults to `1.0` (was `0.1` in v0.4). Configs fix it: the `NeuroTreeConfig` head and the `MOETree` router start at zero leaves (neutral predictions, uniform gates); hidden trees, experts, and `NeuroTreeAttn` encoders use the default gain.
@@ -39,5 +41,6 @@ Dropped from the embeddings export list: `NLinear`, `Periodic`, `PiecewiseLinear
 - Architectures: `ModernNCAConfig`, `MLPAttnConfig`, `NeuroTreeAttnConfig`.
 - Embeddings: `TemporalEmbeddings`, `LayerNormEmbeddings`, `IdentityEmbedding`, `EmbeddingLayer`.
 - Loss / metric: Pearson (`:pearson`), Poisson (`:poisson`).
+- Multiple targets: pass a vector `target_name` to `fit` and predictions come back as an `(nobs, T)` matrix (`(nobs, 2T)` for `:gaussian_mle`, interleaved μ₁, σ₁, μ₂, σ₂, …). Not supported with `:mlogloss` or `ModernNCAConfig`. `offset_name` also accepts a vector of columns, one offset per model output.
 - Mask-aware grouped training and inference (padding masks, `MaskedModel`); grouped predictions are returned in the caller’s row order.
 - Attention residual layers and grouped dense building blocks used by the new architectures.

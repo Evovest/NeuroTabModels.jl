@@ -5,7 +5,7 @@ export MLPConfig, MLPAttnConfig
 using Lux
 using LuxCore
 
-import ..Models: Architecture, get_activation, uses_batch_mask, MaskedBatchNorm, CarryMask, MaskSkip
+import ..Models: Architecture, get_activation, uses_batch_mask, interleave_heads, MaskedBatchNorm, CarryMask, MaskSkip
 import ..Layers: _untuple, _valid_tokens, _attn_blocks, _pred_head
 
 """
@@ -55,7 +55,7 @@ function _mlp_trunk(ins::Int, hsize::Int, outsize::Int, act, stack_size::Int, dr
         push!(layers, Dense(hsize => hsize))
         dropout > 0 && push!(layers, Dropout(dropout))
     end
-    push!(layers, Dense(hsize => outsize))
+    push!(layers, Dense(hsize => outsize), ReshapeLayer((outsize, 1)))
     return Chain(layers...)
 end
 
@@ -80,7 +80,7 @@ function (config::MLPConfig)(; ins, outsize, kwargs...)
         head_outsize = outsize ÷ 2
         chain = Chain(
             Parallel(
-                vcat,
+                interleave_heads,
                 _mlp_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
                 _mlp_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
             ),

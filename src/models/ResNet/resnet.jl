@@ -5,7 +5,7 @@ export ResNetConfig
 using Lux
 using LuxCore
 
-import ..Models: Architecture, get_activation
+import ..Models: Architecture, get_activation, interleave_heads
 
 """
     ResNetConfig(; kwargs...)
@@ -63,7 +63,7 @@ function _resnet_trunk(ins::Int, hsize::Int, outsize::Int, act, stack_size::Int,
     for _ in 1:stack_size
         push!(layers, _res_block(hsize, act, dropout))
     end
-    push!(layers, Dense(hsize => outsize))
+    push!(layers, Dense(hsize => outsize), ReshapeLayer((outsize, 1)))
     return Chain(layers...)
 end
 
@@ -90,7 +90,7 @@ function (config::ResNetConfig)(; ins, outsize, kwargs...)
         head_outsize = outsize ÷ 2
         chain = Chain(
             Parallel(
-                vcat,
+                interleave_heads,
                 _resnet_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
                 _resnet_trunk(ins, hsize, head_outsize, act, config.stack_size, config.dropout),
             ),

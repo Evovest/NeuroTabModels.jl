@@ -4,7 +4,7 @@ Losses are concrete callable types, following the [Lux loss API](https://lux.csa
 
 ## Prediction Shape
 
-All losses expect 3D predictions: `(outsize, K, batch)` where `K` is the ensemble size. 2D outputs are reshaped to `(outsize, 1, batch)` automatically.
+All losses expect 3D predictions: `(outsize, K, batch)` where `K` is the ensemble size. Other shapes are rejected.
 
 `reduce_pred` averages over `K` on raw predictions before any transformation.
 
@@ -30,6 +30,10 @@ MSE()(model, ps, st, data)
 | `:tweedie` | `Tweedie` | `(1, K, B)` | non-negative | log-scale pred, ρ = 1.5 |
 | `:poisson` | `Poisson` | `(1, K, B)` | non-negative | log-scale pred, Poisson deviance |
 | `:pearson` | `Pearson` | `(1, K, B)` | scalar | negative Pearson correlation |
+
+## Multiple Targets
+
+With `T` targets (a vector `target_name`), the prediction is `(T·outsize, K, B)` and the target `(T, B)`. `:gaussian_mle` rows interleave per target (μ₁, log-σ₁, μ₂, log-σ₂, …), `:pearson` takes the mean correlation over targets, and `:mlogloss` does not support several targets.
 
 ## Data Tuples
 
