@@ -36,7 +36,7 @@ import{_ as a,o as s,c as n,ao as t}from"./chunks/framework.DbicK8U_.js";const u
 <span class="line"><span>        └── MaskedModel:    (x, w)            → embed(x) → core(z, w)</span></span>
 <span class="line"><span>        │</span></span>
 <span class="line"><span>        ▼</span></span>
-<span class="line"><span>  y  (outsize × buffer)     pad slots still have a number</span></span>
+<span class="line"><span>  y  (outsize × k × buffer) pad slots still have a number</span></span>
 <span class="line"><span>        │</span></span>
 <span class="line"><span>        ├── train/eval:  loss weighted by w  (pads drop out)</span></span>
 <span class="line"><span>        └── infer:       pred[:, mask]       (pads dropped after forward)</span></span></code></pre></div><h2 id="Inside-MLPAttn-/-NeuroTreeAttn" tabindex="-1">Inside MLPAttn / NeuroTreeAttn <a class="header-anchor" href="#Inside-MLPAttn-/-NeuroTreeAttn" aria-label="Permalink to &quot;Inside MLPAttn / NeuroTreeAttn {#Inside-MLPAttn-/-NeuroTreeAttn}&quot;">​</a></h2><p><code>MLPAttn</code> converts <code>w</code> to a boolean <code>valid</code> once, then uses the same flags in two shapes.</p><div class="language- vp-adaptive-theme"><button title="Copy Code" class="copy"></button><span class="lang"></span><pre class="shiki shiki-themes github-light github-dark vp-code" tabindex="0"><code><span class="line"><span>(x, w)</span></span>
