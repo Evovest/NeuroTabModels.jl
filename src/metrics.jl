@@ -190,6 +190,9 @@ function gaussian_mle(m, x, y, w, offset; agg=mean)
     return metric
 end
 
+# the μ rows when there are two outputs per target
+_corr_pred(p, y) = p[1:(size(p, 1) ÷ size(y, 1)):end, :]
+
 """
     pearson(m, x, y; agg=mean)
     pearson(m, x, y, w; agg=mean)
@@ -199,20 +202,17 @@ Uses the first output (`μ` when `gaussian_mle` returns `size(p, 1) == 2`).
 A flat group (constant predictions or target, or a single row) scores 0 and keeps its weight.
 With several targets, the metric is the mean correlation over targets.
 """
-# target `t` reads row `t`, or its μ row when there are two outputs per target
-_corr_pred(p, y, t) = vec(view(p, (size(p, 1) ÷ size(y, 1)) * (t - 1) + 1, :))
-
 function pearson(m, x, y; agg=mean)
     p = m(x)
-    return _pearson_mean(t -> _corr_pred(p, y, t), y, one.(view(p, 1, :))) * length(y)
+    return _pearson_mean(_corr_pred(p, y), y, one.(view(p, 1, :))) * length(y)
 end
 function pearson(m, x, y, w; agg=mean)
     p = m(x)
-    return _pearson_mean(t -> _corr_pred(p, y, t), y, w) * sum(w) * size(y, 1)
+    return _pearson_mean(_corr_pred(p, y), y, w) * sum(w) * size(y, 1)
 end
 function pearson(m, x, y, w, offset; agg=mean)
     p = m(x) .+ _offset_2d(offset)
-    return _pearson_mean(t -> _corr_pred(p, y, t), y, w) * sum(w) * size(y, 1)
+    return _pearson_mean(_corr_pred(p, y), y, w) * sum(w) * size(y, 1)
 end
 
 """

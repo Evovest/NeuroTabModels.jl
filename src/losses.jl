@@ -133,33 +133,24 @@ function _pointwise(::GaussianMLE, pred, y)
     σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ)))
 end
 
-# Target `t`'s prediction row, mean over the ensemble axis.
-_corr_from_pred(pred, t=1) = vec(mean(view(pred, t, :, :); dims=1))
-
-function _pearson_value(p, y, w)
-    p = vec(p)
-    y = vec(y)
-    w = vec(w)
-    sw = sum(w)
-    dp = p .- (w' * p) / sw
-    dy = y .- (w' * y) / sw
-    cov = (w' * (dp .* dy)) / sw
-    p_var = (w' * (dp .^ 2)) / sw
-    y_var = (w' * (dy .^ 2)) / sw
+# Mean correlation over targets, one per row.
+function _pearson_mean(p, y, w)
+    p, y = reshape(p, size(p, 1), :), reshape(y, size(y, 1), :)
+    # normalised first so a single row has an exact zero gradient; mat-vec as broadcast sums are slow
+    w = vec(w) ./ sum(w)
+    dp = p .- p * w
+    dy = y .- y * w
+    cov = (dp .* dy) * w
+    p_var = dp .^ 2 * w
+    y_var = dy .^ 2 * w
     # A flat group (constant predictions or target, or a single row) scores 0. The floor keeps
     # sqrt off 0, so the gradient there stays finite and points along the target.
     ϵ = eltype(p)(1e-14)
-    return cov / (sqrt(max(p_var, ϵ)) * sqrt(max(y_var, ϵ)))
+    return mean(cov ./ (sqrt.(max.(p_var, ϵ)) .* sqrt.(max.(y_var, ϵ))))
 end
 
-# Mean correlation over targets. A loop because Reactant fails to trace `sum(f, 1:T)`.
-function _pearson_mean(pred_t, y, w)
-    s = _pearson_value(pred_t(1), selectdim(y, 1, 1), w)
-    for t in 2:size(y, 1)
-        s += _pearson_value(pred_t(t), selectdim(y, 1, t), w)
-    end
-    return s / size(y, 1)
-end
+_aggregate(l::Pearson, pred, y, ::Nothing) = _aggregate(l, pred, y, one.(view(pred, 1, 1, :)))
+_aggregate(::Pearson, pred, y, w) = -_pearson_mean(mean(pred; dims=2), y, w)
 
 _aggregate(l::Pearson, pred, y, ::Nothing) = _aggregate(l, pred, y, one.(view(pred, 1, 1, :)))
 _aggregate(::Pearson, pred, y, w) = -_pearson_mean(t -> _corr_from_pred(pred, t), y, w)
