@@ -152,7 +152,4 @@ end
 _aggregate(l::Pearson, pred, y, ::Nothing) = _aggregate(l, pred, y, one.(view(pred, 1, 1, :)))
 _aggregate(::Pearson, pred, y, w) = -_pearson_mean(mean(pred; dims=2), y, w)
 
-_aggregate(l::Pearson, pred, y, ::Nothing) = _aggregate(l, pred, y, one.(view(pred, 1, 1, :)))
-_aggregate(::Pearson, pred, y, w) = -_pearson_mean(t -> _corr_from_pred(pred, t), y, w)
-
 end
