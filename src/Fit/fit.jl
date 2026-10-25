@@ -41,20 +41,31 @@ function init(
     offset_name=nothing,
     group_name=nothing,
 )
-    feature_names, target_name = Symbol.(feature_names), Symbol(target_name)
+    feature_names = Symbol.(feature_names)
+    targets = Symbol.(vcat(target_name))
+    T = length(targets)
+    target_name = T == 1 ? only(targets) : targets
     weight_name = isnothing(weight_name) ? nothing : Symbol(weight_name)
-    offset_name = isnothing(offset_name) ? nothing : Symbol(offset_name)
+    offset_name = isnothing(offset_name) ? nothing : Symbol.(offset_name)
     group_name = isnothing(group_name) ? nothing : Symbol(group_name)
 
     dev = _get_device(config.backend, config.device; gpuID=config.gpuID)
     batchsize = config.batchsize
     nfeats = length(feature_names)
     loss = LossType(config.loss)
-
-    target_name in feature_names && error("Target `$target_name` is also listed in `feature_names`.")
-    any(v -> ismissing(v) || (v isa AbstractFloat && isnan(v)), df[!, target_name]) &&
-        error("Target `$target_name` has missing or NaN values.")
-    outsize = noutputs(loss)
+    hasproperty(config.arch, :MLE_tree_split) && config.arch.MLE_tree_split && !(loss isa GaussianMLE) &&
+        error("`MLE_tree_split` requires `loss=:gaussian_mle`.")
+    T > 1 && (loss isa MLogLoss || config.arch isa ModernNCAConfig) &&
+        error("Multiple targets are not supported with `loss=:mlogloss` or `ModernNCAConfig`.")
+    allunique(targets) || error("`target_name` has duplicate names.")
+    for t in targets
+        t in feature_names && error("Target `$t` is also listed in `feature_names`.")
+        any(v -> ismissing(v) || (v isa AbstractFloat && isnan(v)), df[!, t]) &&
+            error("Target `$t` has missing or NaN values.")
+        T > 1 && !(nonmissingtype(eltype(df[!, t])) <: Real) &&
+            error("Target `$t` must be numeric to fit several targets, got eltype $(eltype(df[!, t])).")
+    end
+    outsize = noutputs(loss) * T
     target_levels = nothing
     target_isordered = false
 
@@ -64,12 +75,17 @@ function init(
         target_isordered = isordered(df[!, target_name])
         outsize = length(target_levels)
     end
+    offset_name isa AbstractVector && length(offset_name) ∉ (1, outsize) &&
+        error("`offset_name` has $(length(offset_name)) columns, expected 1 or $outsize.")
 
     scalers = nothing
     if hasproperty(config, :scale_target) && config.scale_target && scales_target(loss)
-        scalers = (mu=mean(df[!, target_name]), sigma=std(df[!, target_name]))
-        iszero(scalers.sigma) &&
-            error("Target `$target_name` is constant and cannot be scaled; drop it or set `scale_target=false`.")
+        y = Matrix(df[!, targets])
+        scalers = (mu=vec(mean(y; dims=1)), sigma=vec(std(y; dims=1)))
+        for (t, s) in zip(targets, scalers.sigma)
+            iszero(s) && error("Target `$t` is constant and cannot be scaled; drop it or set `scale_target=false`.")
+        end
+        T == 1 && (scalers = map(only, scalers))
     end
 
     # one rng drives both parameter init and batch order, so `seed` makes a fit reproducible;
@@ -147,11 +163,14 @@ Training function of NeuroTabModels' internal API.
 # Keyword arguments
 
 - `feature_names`: Required. A `Vector{Symbol}` or `Vector{String}` of the feature names to use.
-- `target_name`: Required. A `Symbol` or `String` indicating the name of the target variable.
+- `target_name`: Required. A `Symbol` or `String`, or a vector of them for multiple targets.
+  Predictions are then `(nobs, T)`, or `(nobs, 2T)` for `:gaussian_mle` (μ₁, σ₁, μ₂, σ₂, …).
+  Not supported with `:mlogloss` or `ModernNCAConfig`.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
   With `group_name`, weights must be positive and finite, and they act within each group: each step
   is normalised by its group's own weight sum.
-- `offset_name=nothing`: Optional. A `Symbol` or `String` indicating the offset column.
+- `offset_name=nothing`: Optional. One offset column added to every output, or a vector with one
+  column per output, in prediction order (for `:gaussian_mle`, μ₁, σ₁, μ₂, σ₂, … on the log-σ scale).
 - `group_name=nothing`: Optional. Column used to group training data in the dataloader.
 - `eval_group_name=group_name`: Optional. Column used to group evaluation data when computing metrics.
   Defaults to `group_name`. Set independently to compute groupby eval metrics while training on the
@@ -177,6 +196,7 @@ function fit(
 )
     m, cache = init(config, dtrain; feature_names, target_name, weight_name, offset_name, group_name)
     m.info[:eval_group_name] = isnothing(eval_group_name) ? nothing : Symbol(eval_group_name)
+    target_name = m.info[:target_name]
 
     logger = nothing
     if !isnothing(deval)

@@ -59,9 +59,12 @@ _reshape_3d(x::AbstractVector) = reshape(x, 1, 1, :)
 _reshape_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
 _reshape_3d(x::AbstractArray{T,3}) where {T} = x
 
+# every model returns `(outsize, k, batch)`; checked by dispatch, as a type assert slows the gradient
+_check_3d(pred::AbstractArray{<:Any,3}) = pred
+
 function _forward(model, ps, st, x)
     pred, st_ = model(x, ps, st)
-    return _reshape_3d(pred), st_
+    return _check_3d(pred), st_
 end
 
 """
@@ -89,7 +92,7 @@ _apply_offset(pred, ::Nothing) = pred
 _apply_offset(pred, offset) = pred .+ _reshape_3d(offset)
 
 _reduce(loss) = mean(loss)
-_reduce(loss, w) = sum(mean(loss; dims=2) .* w) / sum(w)
+_reduce(loss, w) = sum(mean(loss; dims=(1, 2)) .* w) / sum(w)
 
 _aggregate(loss, pred, y, ::Nothing) = _reduce(_pointwise(loss, pred, y))
 _aggregate(loss, pred, y, w) = _reduce(_pointwise(loss, pred, y), _reshape_3d(w))
@@ -123,38 +126,30 @@ _poisson_dev(η, y) = 2 * (y * log(max(y, oftype(y, 1e-30))) - y * η + exp(η) 
 
 _pointwise(::Poisson, pred, y) = _poisson_dev.(pred, y)
 
+# Rows interleave per target: μ₁, log-σ₁, μ₂, log-σ₂, …
 function _pointwise(::GaussianMLE, pred, y)
-    μ = pred[1:1, :, :]
-    σ = pred[2:2, :, :]
+    μ = pred[1:2:end, :, :]
+    σ = pred[2:2:end, :, :]
     σ .+ (y .- μ) .^ 2 ./ (2 .* max.(eltype(σ)(2e-7), exp.(2 .* σ)))
 end
 
-# First output channel (`μ` when the head is 2-wide), mean over the ensemble axis.
-_corr_from_pred(pred) = vec(mean(view(pred, 1, :, :); dims=1))
-
-function _pearson_value(p, y, w)
-    p = vec(p)
-    y = vec(y)
-    w = vec(w)
-    sw = sum(w)
-    dp = p .- (w' * p) / sw
-    dy = y .- (w' * y) / sw
-    cov = (w' * (dp .* dy)) / sw
-    p_var = (w' * (dp .^ 2)) / sw
-    y_var = (w' * (dy .^ 2)) / sw
+# Mean correlation over targets, one per row.
+function _pearson_mean(p, y, w)
+    p, y = reshape(p, size(p, 1), :), reshape(y, size(y, 1), :)
+    # normalised first so a single row has an exact zero gradient; mat-vec as broadcast sums are slow
+    w = vec(w) ./ sum(w)
+    dp = p .- p * w
+    dy = y .- y * w
+    cov = (dp .* dy) * w
+    p_var = dp .^ 2 * w
+    y_var = dy .^ 2 * w
     # A flat group (constant predictions or target, or a single row) scores 0. The floor keeps
     # sqrt off 0, so the gradient there stays finite and points along the target.
     ϵ = eltype(p)(1e-14)
-    return cov / (sqrt(max(p_var, ϵ)) * sqrt(max(y_var, ϵ)))
+    return mean(cov ./ (sqrt.(max.(p_var, ϵ)) .* sqrt.(max.(y_var, ϵ))))
 end
 
-function _aggregate(::Pearson, pred, y, ::Nothing)
-    p = _corr_from_pred(pred)
-    return -_pearson_value(p, y, one.(p))
-end
-function _aggregate(::Pearson, pred, y, w)
-    p = _corr_from_pred(pred)
-    return -_pearson_value(p, y, w)
-end
+_aggregate(l::Pearson, pred, y, ::Nothing) = _aggregate(l, pred, y, one.(view(pred, 1, 1, :)))
+_aggregate(::Pearson, pred, y, w) = -_pearson_mean(mean(pred; dims=2), y, w)
 
 end
