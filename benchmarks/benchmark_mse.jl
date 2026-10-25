@@ -3,10 +3,10 @@ using DataFrames
 using BenchmarkTools
 using Random: seed!
 
-using CUDA, cuDNN
+# using CUDA, cuDNN
+# using Zygote
+# using Enzyme
 using Reactant
-using Zygote
-using Enzyme
 
 Threads.nthreads()
 
@@ -22,7 +22,7 @@ dtrain.y = Y
 target_name = "y"
 
 arch = NeuroTabModels.NeuroTreeConfig(;
-    tree_type=:binary, actA=:identity, depth=4, ntrees=32, stack_size=1, hidden_size=1, scaler=false
+    tree_type=:binary, actA=:identity, depth=5, ntrees=64, stack_size=1, hidden_size=1, scaler=true
 )
 # arch = NeuroTabModels.TabMConfig(;
 #     arch_type=:tabm,
