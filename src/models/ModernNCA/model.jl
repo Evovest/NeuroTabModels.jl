@@ -100,6 +100,8 @@ _finalize(::Union{MSE,MAE}, p) = p
 _finalize(::LogLoss, p) = (p = clamp.(p, 1.0f-6, 1.0f0 - 1.0f-6); log.(p ./ (1.0f0 .- p)))
 _finalize(::MLogLoss, p) = log.(clamp.(p, 1.0f-7, Inf32))
 
+_finalize(m::ModernNCAModel, p) = reshape(_finalize(m.loss, p), m.outsize, 1, :)
+
 """
     _softmax_acc(zq, outsize) -> (running_max, denominator, numerator)
 
@@ -212,7 +214,7 @@ function (m::ModernNCAModel)((x, corpus)::Tuple{Any,Corpus}, ps, st)
         acc = _softmax_fold(acc, s, _target_block(m, corpus.y, idx))
     end
     p, _ = _softmax_result(acc)
-    return _finalize(m.loss, p), st
+    return _finalize(m, p), st
 end
 
 """
@@ -225,7 +227,7 @@ which has a custom backward.
 function (m::ModernNCAModel)((x, cand_x, cand_y, y)::Tuple{Any,Any,Any,Any}, ps, st)
     zq, st = _encode(m, x, ps, st)
     p, st, _ = _attend_train(m, zq, vec(y), cand_x, vec(cand_y), ps, st)
-    return _finalize(m.loss, p), st
+    return _finalize(m, p), st
 end
 
 _train_targets(m::ModernNCAModel, y, idx) =

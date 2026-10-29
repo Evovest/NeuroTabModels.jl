@@ -4,7 +4,7 @@ function dense_nca(model, zq, zk, y; mask_self=false)
     _, s = modernnca._scores(model, zq, zk; mask_self)
     α = exp.(s .- maximum(s; dims=1))
     α = α ./ sum(α; dims=1)
-    return modernnca._finalize(model.loss,
+    return modernnca._finalize(model,
         modernnca._train_targets(model, y, 1:size(zk, 2)) * α)
 end
 
