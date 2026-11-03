@@ -314,7 +314,7 @@ end
     @test mean(argmax.(eachrow(p)) .== levelcode.(deval.class)) > 0.6
     # the eval metric is scored on the padded groups, so it must match the rows alone
     mlogloss = mean(-log(p[i, levelcode(deval.class[i])]) for i in 1:nrow(deval))
-    @test m.info[:logger][:metrics][:metric][end] ≈ mlogloss rtol = 1e-4
+    @test m.info[:logger][:best_metric] ≈ mlogloss rtol = 1e-4
 end
 
 @testset "MaskedBatchNorm" begin
@@ -1188,5 +1188,5 @@ end
     @test slope(pn) > 1.5
     # the eval metric is the mean over groups of the correlation of prediction plus offset with y
     r = [cor(po[g] .+ d.off[g], Float64.(d.y[g])) for g in ((20 * (i - 1) + 1):(20 * i) for i in 1:20)]
-    @test last(mo.info[:logger][:metrics][:metric]) ≈ mean(r) rtol = 1e-4
+    @test mo.info[:logger][:best_metric] ≈ mean(r) rtol = 1e-4
 end
