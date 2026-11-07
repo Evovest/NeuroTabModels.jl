@@ -49,7 +49,7 @@ Item-wise residual encoder with peer attention over the batch / group.
 
 The encoder is a BatchNorm residual MLP like [`ResNetConfig`](@ref NeuroTabModels.Models.ResNet.ResNetConfig), but each BN
 restricts mean/var to valid tokens when a padding mask is passed (grouped loaders).
-Attention is shared Q=K via `NNlib.dot_product_attention`, values = encoder tokens,
+Attention is shared Q=K via `NNlib.scaled_dot_product_attention`, values = encoder tokens,
 residual-added with a learned scalar (`attn_scale`, default `0.1`) so peer mixing
 starts small. The head is Glorot `Dense` like ResNet. `n_attn_layers=0` should track
 ResNet on ungrouped data.

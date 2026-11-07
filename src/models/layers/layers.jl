@@ -8,7 +8,7 @@ using Lux
 using Lux: StatefulLuxLayer, zeros32
 using LuxCore
 using LuxLib: batched_matmul
-using NNlib: dot_product_attention
+using NNlib: scaled_dot_product_attention
 using Random: AbstractRNG
 
 include("maskednorm.jl")
