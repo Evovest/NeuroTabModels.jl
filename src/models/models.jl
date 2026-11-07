@@ -91,7 +91,7 @@ function (m::MaskedModel)((x, w)::Tuple, ps, st)
 end
 
 import ..Losses: masked_input
-masked_input(::MaskedModel, x, w) = (x, w)
+masked_input(::MaskedModel, x, w::AbstractArray{<:Any,3}) = (x, w)
 
 """
     train_dataloader(arch, m, default, df; kwargs...)

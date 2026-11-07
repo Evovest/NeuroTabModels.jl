@@ -195,7 +195,7 @@ observation. `*Attn` models still accept a plain `x` (the unmasked method).
 ablation, including `MaskedBatchNorm` with `valid = nothing`, which is
 ordinary BatchNorm.
 
-If an ungrouped loader also carries sample weights, `*Attn` chains receive
-`(x, w)` because `masked_input(::MaskedModel, x, w) = (x, w)`. Zero weights
-are then treated as padded keys. Keep sample weights strictly positive; the grouped
-loader rejects non-positive or non-finite weights for this reason.
+If an ungrouped loader also carries sample weights, they only scale the loss:
+`masked_input` forwards `w` only in the grouped `(1, 1, buffer)` shape. In
+grouped training `w` doubles as the pad mask, so the grouped loader rejects
+non-positive or non-finite weights.

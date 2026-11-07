@@ -341,6 +341,14 @@ end
     @test st_none.running_var == st_tr.running_var
 end
 
+@testset "MaskedModel forwards only grouped weights" begin
+    m = NeuroTabModels.Models.MaskedModel(nothing, nothing)
+    x, w = randn(Float32, 3, 4), ones(Float32, 4)
+    @test NeuroTabModels.Losses.masked_input(m, x, w) === x
+    w3 = reshape(w, 1, 1, :)
+    @test NeuroTabModels.Losses.masked_input(m, x, w3) === (x, w3)
+end
+
 @testset "AttnResidual multi-head attention" begin
     layer = NeuroTabModels.Models.AttnResidual(4, 2; identity_qk=true, attn_scale=1.0f0)
     ps, st = Lux.setup(Random.Xoshiro(123), layer)
