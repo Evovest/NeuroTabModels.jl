@@ -1,6 +1,6 @@
 name = "NeuroTabModels"
 uuid = "f03403ce-56d7-46f9-9b5e-ff6add8ca7b3"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["jeremie.db <jeremie.db@evovest.com>"]
 
 [deps]
@@ -38,11 +38,11 @@ LuxCore = "1"
 LuxLib = "1"
 MLJModelInterface = "1.2.1"
 MLUtils = "0.4"
-NNlib = "0.9.45"
+NNlib = "0.9.54"
 OneHotArrays = "0.2"
 Optimisers = "0.4"
 Random = "1"
-Reactant = "0.2.270"
+Reactant = "0.2.306"
 Statistics = "1"
 StatsBase = "0.34"
 Tables = "1.9"
