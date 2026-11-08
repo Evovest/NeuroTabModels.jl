@@ -117,6 +117,8 @@ function infer(
     st = dev(m.info[:st])
     scalers = m.info[:scalers]
 
+    data = Models.infer_dataloader(
+        m.chain, m.info, data, dev, ps, st; backend)
     x0 = first(data)
     preds = _infer_loop(Val(backend), m.chain, data, x0, dev, cdev, ps, st)
 
@@ -137,6 +139,8 @@ function infer_grp(
     st = dev(m.info[:st])
     scalers = m.info[:scalers]
 
+    data = Models.infer_dataloader(
+        m.chain, m.info, data, dev, ps, st; backend, grouped=true)
     (x0, mask0) = first(data)
     preds = _infer_grp_loop(Val(backend), m.chain, data, x0, mask0, dev, cdev, ps, st)
 
