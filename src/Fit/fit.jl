@@ -88,17 +88,28 @@ function init(
         T == 1 && (scalers = map(only, scalers))
     end
 
+    embed_config = EmbeddingLayer(config.embedding_config)
+    if isnothing(embed_config.cat)
+        auto = filter(f -> nonmissingtype(eltype(df[!, f])) <: CategoricalValue, feature_names)
+        isempty(auto) ||
+            (embed_config = EmbeddingLayer(embed_config.num, embed_config.temp, CategoricalEmbeddings(; features=auto)))
+    end
+    cat_features = isnothing(embed_config.cat) ? Symbol[] : embed_config.cat.features
+    cat_levels = Dict{Symbol,Vector}(f => CategoricalArrays.levels(df[!, f]) for f in cat_features)
+
     # one rng drives both parameter init and batch order, so `seed` makes a fit reproducible;
     # the loader only draws from it once iteration starts, after `Lux.setup` below
     rng = Xoshiro(config.seed)
     dfg = isnothing(group_name) ? df : groupby(df, group_name; sort=true)
-    data = get_df_loader_train(dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, rng) |> dev
+    data = get_df_loader_train(
+        dfg; feature_names, target_name, weight_name, offset_name, cat_levels, scalers, batchsize, rng
+    ) |> dev
 
     # Build chain: optional embeddings + architecture backbone
-    embed_config = config.embedding_config
-    x_train = Models.Embeddings.needs_x_train(embed_config) ? Matrix{Float32}(df[:, feature_names]) : nothing
-    embed_chain = Models.Embeddings.build_embedding_chain(embed_config, nfeats; x_train)
-    ins = Models.Embeddings.embedding_width(embed_chain, randn(Float32, nfeats, 2), default_rng())
+    needs_x = Models.Embeddings.needs_x_train(embed_config)
+    x_train = needs_x ? permutedims(feature_matrix(df, feature_names, cat_levels)) : nothing
+    embed_chain = Models.Embeddings.build_embedding_chain(embed_config, feature_names; x_train, cat_levels)
+    ins = Models.Embeddings.embedding_width(embed_chain, zeros(Float32, nfeats, 2), default_rng())
     core_chain = config.arch(; ins, outsize, loss)
     chain = if uses_batch_mask(core_chain)
         MaskedModel(embed_chain, core_chain)
@@ -113,6 +124,7 @@ function init(
         :weight_name => weight_name,
         :offset_name => offset_name,
         :group_name => group_name,
+        :cat_levels => cat_levels,
         :target_levels => target_levels,
         :target_isordered => target_isordered,
         :scalers => scalers,

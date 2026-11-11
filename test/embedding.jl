@@ -1,6 +1,8 @@
 using NeuroTabModels.Models.Embeddings: EmbeddingLayer, LayerNormEmbeddings, BatchNormEmbeddings
+using NeuroTabModels.Models.Embeddings: LinearEmbeddings, TemporalEmbeddings, CategoricalEmbeddings
 using NeuroTabModels.Models.Embeddings: build_embedding_chain, embedding_width
 using NNlib
+using Statistics: var
 
 @testset "GroupedDense" begin
     rng = Xoshiro(1)
@@ -39,7 +41,7 @@ end
     for (etype, T) in [(:batchnorm, BatchNormEmbeddings), (:layernorm, LayerNormEmbeddings)]
         config = EmbeddingLayer(Dict(:embedding_type => etype))
         @test config.num isa T
-        layer = build_embedding_chain(config, nfeats)
+        layer = build_embedding_chain(config, [Symbol(:x, j) for j in 1:nfeats])
         ps, st = Lux.setup(rng, layer)
         y, _ = layer(x, ps, st)
         @test size(y) == (nfeats, batch)
@@ -124,4 +126,65 @@ end
         @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
         @test mean(peval .== levelcode.(deval.class)) >= 0.95
     end
+end
+
+@testset "Temporal and categorical embeddings by name" begin
+    Random.seed!(123)
+    n = 2000
+    effect = Dict("a" => -2.0, "b" => 0.0, "c" => 1.0, "d" => 3.0)
+    store = rand(collect(keys(effect)), n)
+    x1, t = randn(n), Float64.(1:n)
+    y = x1 .+ getindex.(Ref(effect), store) .+ sin.(2π .* t ./ 50) .+ 0.1 .* randn(n)
+    df = DataFrame(; x1, t, store=categorical(store), y)
+    dtrain, deval = df[1:1600, :], df[1601:end, :]
+
+    embedding_config = EmbeddingLayer(;
+        num=LinearEmbeddings(; d_embedding=8),
+        temp=TemporalEmbeddings(; feature=:t, order=[3], periods=[50.0], d_embedding=8),
+        cat=CategoricalEmbeddings(; features=[:store], d_embedding=4),
+    )
+    learner = NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=60, lr=3e-3, batchsize=128, embedding_config)
+    m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t, :store], target_name=:y)
+
+    p = m(deval)
+    @test mean((p .- deval.y) .^ 2) < 0.1 * var(deval.y)
+    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+
+    dnew = deval[1:3, :]
+    dnew.store = categorical(["unseen", "a", "d"])
+    @test !any(isnan, m(dnew))
+
+    config = EmbeddingLayer(Dict(  # as parsed from JSON
+        "temporal" => Dict("feature" => "t", "order" => Any[3], "periods" => Any[50]),
+        "categorical" => Dict("features" => Any["store"]),
+    ))
+    @test config.temp.feature == :t
+    @test config.temp.periods == Float32[50]
+    @test config.cat.features == [:store]
+    config = EmbeddingLayer(; num=:linear, temp=:t, cat=[:store])
+    @test config.num isa LinearEmbeddings
+    @test config.temp.feature == :t
+    @test config.cat.features == [:store]
+    @test_throws ArgumentError EmbeddingLayer(; num=:foo)
+
+    learner = NeuroTabRegressor(
+        NeuroTabModels.MLPConfig(); nrounds=1, embedding_config=EmbeddingLayer(; num=:linear, temp=:t)
+    )
+    m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t, :store], target_name=:y)
+    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+    m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t], target_name=:y)
+    delete!(m.info, :cat_levels)
+    @test !any(isnan, m(deval))
+    m = NeuroTabModels.fit(
+        NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=1), dtrain; feature_names=[:store], target_name=:y
+    )
+    @test !any(isnan, m(deval))
+
+    @test_throws "also listed as categorical" EmbeddingLayer(;
+        temp=TemporalEmbeddings(; feature=:t), cat=CategoricalEmbeddings(; features=[:t])
+    )
+    @test_throws "not in feature_names" NeuroTabModels.fit(
+        NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=1, embedding_config=EmbeddingLayer(; temp=TemporalEmbeddings(; feature=:date))),
+        dtrain; feature_names=[:x1, :t], target_name=:y,
+    )
 end
