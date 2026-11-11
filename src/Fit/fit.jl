@@ -176,6 +176,7 @@ Training function of NeuroTabModels' internal API.
   Defaults to `group_name`. Set independently to compute groupby eval metrics while training on the
   regular (ungrouped) dataloader.
 - `deval=nothing`: Optional. Evaluation data (`<:AbstractDataFrame`) for tracking metrics and early stopping.
+  The returned model is the one from the round with the best eval metric.
 - `print_every_n=9999`: Integer. Logs training progress to the console every `N` epochs.
 - `verbosity=1`: Integer. Controls the logging level (`0` for silent, `>0` for info).
 
@@ -205,6 +206,7 @@ function fit(
         )
         logger = init_logger(config)
         cb(logger, 0, cache[:train_state])
+        _sync_params_to_model!(m, cache)
         (verbosity > 0) && @info "Init training" metric = logger[:metrics][end]
     else
         (verbosity > 0) && @info "Init training"
@@ -215,6 +217,7 @@ function fit(
         iter = m.info[:nrounds]
         if !isnothing(logger)
             cb(logger, iter, cache[:train_state])
+            logger[:best_iter] == iter && _sync_params_to_model!(m, cache)
             if verbosity > 0 && iter % print_every_n == 0
                 @info "iter $iter" metric = logger[:metrics][:metric][end]
             end
@@ -223,7 +226,7 @@ function fit(
             (verbosity > 0 && iter % print_every_n == 0) && @info "iter $iter"
         end
     end
-    _sync_params_to_model!(m, cache)
+    isnothing(logger) && _sync_params_to_model!(m, cache)
     m.info[:logger] = logger
     return m
 end
@@ -231,8 +234,9 @@ end
 function _sync_params_to_model!(m, cache)
     ts = cache[:train_state]
     cdev = cpu_device()
-    m.info[:ps] = cdev(ts.parameters)
-    m.info[:st] = cdev(Lux.testmode(ts.states))
+    # `cpu_device` hands back CPU arrays as they are, and training updates them in place
+    m.info[:ps] = deepcopy(cdev(ts.parameters))
+    m.info[:st] = deepcopy(cdev(Lux.testmode(ts.states)))
 end
 
 function _single_train_step!(device::Symbol, ad_backend, lux_loss, d, ts)
