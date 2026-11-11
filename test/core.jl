@@ -341,12 +341,12 @@ end
     @test st_none.running_var == st_tr.running_var
 end
 
-@testset "MaskedModel forwards only grouped weights" begin
+@testset "Only MaskedModel keeps the grouped mask" begin
     m = NeuroTabModels.Models.MaskedModel(nothing, nothing)
-    x, w = randn(Float32, 3, 4), ones(Float32, 4)
-    @test NeuroTabModels.Losses.masked_input(m, x, w) === x
-    w3 = reshape(w, 1, 1, :)
-    @test NeuroTabModels.Losses.masked_input(m, x, w3) === (x, w3)
+    x, mask = randn(Float32, 3, 4), trues(4)
+    @test NeuroTabModels.Losses.masked_input(m, x) === x
+    @test NeuroTabModels.Losses.masked_input(m, (x, mask)) === (x, mask)
+    @test NeuroTabModels.Losses.masked_input(nothing, (x, mask)) === x
 end
 
 @testset "AttnResidual multi-head attention" begin
@@ -941,8 +941,7 @@ end
     group_ns = Float64[]
     metric_acc = 0.0
     ws = 0.0
-    for (x, yb, w) in loader
-        mask = vec(w) .> 0
+    for ((x, mask), yb, w) in loader
         @test size(x, 2) == 4  # padded to max group size
         @test count(mask) == sum(w)
         p_real = Float64.(x[1, mask])
@@ -1112,9 +1111,16 @@ end
     @test ws[2] == Float32[3, 1, 1, 4]
     bad = copy(df)
     bad.w = -df.w
-    @test_throws "positive and finite" NeuroTabModels.Data.get_df_loader_train(
+    @test_throws "non-negative and finite" NeuroTabModels.Data.get_df_loader_train(
         groupby(bad, :grp); feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0
     )
+    # a zero weight only drops the row from the loss; the mask still marks it as real
+    bad.w = [0; df.w[2:end]]
+    (_, mask), _, w = first(NeuroTabModels.Data.get_df_loader_train(
+        groupby(bad, :grp; sort=true); feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0, shuffle=false
+    ))
+    @test mask == [true, true, true, false]
+    @test vec(w) == Float32[0, 2, 1, 0]
 
     # and they reach the fit. Odd rows follow y = 2 x1 and even rows y = -x1, so weighting odd
     # rows 9 to 1 gives a least-squares slope of 1.7 against 0.5 unweighted

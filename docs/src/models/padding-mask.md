@@ -26,8 +26,8 @@ one group, 3 real rows, buffer = 5
    o  =  [  o₁   o₂   o₃   0    0  ]     offset, with offset_name
 ```
 
-Train/eval use `w` as the row weight, 0 on pads (shape `(1, 1, buffer)`). Infer uses a
-boolean `mask` of length `buffer` and, after the forward, keeps only
+Train/eval use `w` as the row weight, 0 on pads (shape `(1, 1, buffer)`). Every grouped
+loader also yields a boolean `mask` of length `buffer`, as `(x, mask)`; infer keeps only
 `pred[:, mask]`.
 
 Pads exist so the group is a rectangular array. They are not observations.
@@ -35,14 +35,14 @@ Anything that reduces across the last dimension must ignore them. Per-column
 maps (embeddings, Dense heads) can run on pad columns without contaminating
 real ones.
 
-## Two jobs for `w`
+## Weight and mask
 
-`w` is reused for two different things, at two different places:
+`w` and `mask` do two different jobs:
 
 | Job | Who uses it | What happens to pads |
 | --- | --- | --- |
-| **Loss / metric weight** | `_reduce(loss, w)` and eval | pad slots contribute `0` to the scalar loss |
-| **Attention mask** | `MLPAttn` / `NeuroTreeAttn` | pads are excluded from attention keys and from `MaskedBatchNorm` stats |
+| **Loss / metric weight** (`w`) | `_reduce(loss, w)` and eval | pad slots contribute `0` to the scalar loss |
+| **Attention mask** (`mask`) | `MLPAttn` / `NeuroTreeAttn` | pads are excluded from attention keys and from `MaskedBatchNorm` stats |
 
 A non-attention model (`ResNet`, `MLP`, …) only needs the first job. Its
 forward sees `x` only; pad rows still produce a prediction, but that
@@ -94,16 +94,16 @@ that signature. `MaskedModel` peels the tuple: embeddings stay ordinary Lux
 layers; only the core is mask-aware.
 
 Call sites do not special-case embeddings either. `masked_input` decides
-whether `w` is forwarded into the assembled chain:
+whether `mask` is forwarded into the assembled chain:
 
 ```
-Chain:         masked_input(model, x, w) = x
-MaskedModel:   masked_input(model, x, w) = (x, w)
+Chain:         masked_input(model, (x, mask)) = x
+MaskedModel:   masked_input(model, (x, mask)) = (x, mask)
 ```
 
-Loss, eval, and infer all go through that hook. The grouped loader produces
-`(x, y, w)`, or `(x, y, w, offset)` with `offset_name`; only mask-aware chains
-unpack `w` as a model input.
+Loss and eval go through that hook. The grouped loader produces
+`((x, mask), y, w)`, or `((x, mask), y, w, offset)` with `offset_name`; only
+mask-aware chains keep `mask` as a model input.
 
 Pad columns are still forwarded. After `embed(x)` the core keeps a rectangular
 `(hidden, buffer)` stream: attention and `MaskedBatchNorm` drop pads from
@@ -125,10 +125,10 @@ GroupedDataFrame
                         w/mask  (1 on real, 0/false on pad)
         │
         ▼
-  masked_input(chain, x, w)
+  masked_input(chain, (x, mask))
         │
         ├── Chain:          x                 → embed(x) → core(z)
-        └── MaskedModel:    (x, w)            → embed(x) → core(z, w)
+        └── MaskedModel:    (x, mask)         → embed(x) → core(z, mask)
         │
         ▼
   y  (outsize × k × buffer) pad slots still have a number
@@ -195,7 +195,5 @@ observation. `*Attn` models still accept a plain `x` (the unmasked method).
 ablation, including `MaskedBatchNorm` with `valid = nothing`, which is
 ordinary BatchNorm.
 
-If an ungrouped loader also carries sample weights, they only scale the loss:
-`masked_input` forwards `w` only in the grouped `(1, 1, buffer)` shape. In
-grouped training `w` doubles as the pad mask, so the grouped loader rejects
-non-positive or non-finite weights.
+Sample weights only scale the loss, grouped or not; only grouped loaders yield a
+`mask`. A zero weight drops a row from the loss but keeps it as a real token.

@@ -68,17 +68,16 @@ function _forward(model, ps, st, x)
 end
 
 """
-    masked_input(model, x, w)
+    masked_input(model, x)
 
-Features to pass into `model` when a sample-weight / padding mask `w` is available.
-Default ignores `w` (same as calling `model(x)`). Architectures that mix across the
-batch override to return `(x, w)`.
+Input to pass into `model`. A grouped loader yields `x` as `(features, mask)`, with `mask`
+false on padded slots; the default drops the mask. Architectures that mix across the
+batch override to keep it.
 """
-masked_input(::Any, x, w) = x
+masked_input(::Any, x) = x
+masked_input(::Any, (x, _)::Tuple{AbstractArray,AbstractVector}) = x
 
-_model_x(model, data::Tuple{Any,Any}) = data[1]
-_model_x(model, data::Tuple{Any,Any,Any}) = masked_input(model, data[1], data[3])
-_model_x(model, data::Tuple{Any,Any,Any,Any}) = masked_input(model, data[1], data[3])
+_model_x(model, data) = masked_input(model, data[1])
 
 _target(data) = data[2]
 _weight(data::Tuple{Any,Any}) = nothing

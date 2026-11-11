@@ -167,7 +167,7 @@ Training function of NeuroTabModels' internal API.
   Predictions are then `(nobs, T)`, or `(nobs, 2T)` for `:gaussian_mle` (μ₁, σ₁, μ₂, σ₂, …).
   Not supported with `:mlogloss` or `ModernNCAConfig`.
 - `weight_name=nothing`: Optional. A `Symbol` or `String` indicating the sample weights column.
-  With `group_name`, weights must be positive and finite, and they act within each group: each step
+  With `group_name`, weights must be non-negative and finite, and they act within each group: each step
   is normalised by its group's own weight sum.
 - `offset_name=nothing`: Optional. One offset column added to every output, or a vector with one
   column per output, in prediction order (for `:gaussian_mle`, μ₁, σ₁, μ₂, σ₂, … on the log-σ scale).
