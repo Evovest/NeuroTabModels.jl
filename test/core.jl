@@ -1115,9 +1115,10 @@ end
         groupby(bad, :grp); feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0
     )
     # a zero weight only drops the row from the loss; the mask still marks it as real
-    bad.w = [0; df.w[2:end]]
+    zw = copy(df)
+    zw.w = [0; df.w[2:end]]
     (_, mask), _, w = first(NeuroTabModels.Data.get_df_loader_train(
-        groupby(bad, :grp; sort=true); feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0, shuffle=false
+        groupby(zw, :grp; sort=true); feature_names=[:x1], target_name=:y, weight_name=:w, batchsize=0, shuffle=false
     ))
     @test mask == [true, true, true, false]
     @test vec(w) == Float32[0, 2, 1, 0]
