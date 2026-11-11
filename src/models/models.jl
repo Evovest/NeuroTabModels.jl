@@ -63,8 +63,8 @@ uses_batch_mask(c::Chain) = any(uses_batch_mask, c.layers)
 
 Assemble embeddings and a core backbone that may take an optional padding mask.
 
-Embeddings still see only `x`. When the input is `(x, w)`, this layer runs
-`embed(x)` then `core((z, w))`. Used instead of `Chain(embed, core)` when the
+Embeddings still see only `x`. When the input is `(x, mask)`, this layer runs
+`embed(x)` then `core((z, mask))`. Used instead of `Chain(embed, core)` when the
 core mixes across observations and needs to ignore padded group-buffer slots.
 
 Embeddings are per-observation maps, so a pad column cannot contaminate a
@@ -84,14 +84,14 @@ function (m::MaskedModel)(x::AbstractArray, ps, st)
     y, st_c = m.core(z, ps.core, st.core)
     return y, (; embed=st_e, core=st_c)
 end
-function (m::MaskedModel)((x, w)::Tuple, ps, st)
+function (m::MaskedModel)((x, mask)::Tuple, ps, st)
     z, st_e = m.embed(x, ps.embed, st.embed)
-    y, st_c = m.core((z, w), ps.core, st.core)
+    y, st_c = m.core((z, mask), ps.core, st.core)
     return y, (; embed=st_e, core=st_c)
 end
 
 import ..Losses: masked_input
-masked_input(::MaskedModel, x, w) = (x, w)
+masked_input(::MaskedModel, xm::Tuple{AbstractArray,AbstractVector}) = xm
 
 """
     train_dataloader(arch, m, default, df; kwargs...)

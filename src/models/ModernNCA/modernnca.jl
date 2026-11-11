@@ -4,7 +4,7 @@ export ModernNCAConfig
 
 import ..Models
 import ..Models: Architecture, NeuroTabModel
-import ..Losses: LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE
+import ..Losses: LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, masked_input
 
 using Lux
 using LuxCore
@@ -379,10 +379,10 @@ Wrap each eval batch as `((x, cx, cy), rest...)` with the raw training corpus.
 The corpus is encoded inside the forward pass so embeddings always use the
 current model parameters rather than a stale pre-encoded version.
 """
-function Models.eval_dataloader(::ModernNCAModel, info, data, dev, ps=nothing, st=nothing)
+function Models.eval_dataloader(m::ModernNCAModel, info, data, dev, ps=nothing, st=nothing)
     ref = info[:nca_ref]
     cx, cy = dev(ref.cx), dev(ref.cy)
-    return Iterators.map(d -> ((d[1], cx, cy), Base.tail(d)...), data)
+    return Iterators.map(d -> ((masked_input(m, d[1]), cx, cy), Base.tail(d)...), data)
 end
 
 end # module

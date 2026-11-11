@@ -54,8 +54,8 @@ residual-added with a learned scalar (`attn_scale`, default `0.1`) so peer mixin
 starts small. The head is Glorot `Dense` like ResNet. `n_attn_layers=0` should track
 ResNet on ungrouped data.
 
-When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
-the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel`.
+When a grouped loader supplies a padding `mask`, the loss / eval / infer call sites
+pass `(x, mask)` into the assembled `MaskedModel`.
 
 # Arguments
 - `act::Symbol`: Activation — `:relu`, `:gelu`, `:sigmoid`, or `:tanh` (default `:relu`).

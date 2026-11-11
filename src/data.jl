@@ -134,6 +134,7 @@ function get_df_loader_train(
     x = [zeros(Float32, nfeats, bs) for _ in 1:n]
     ntargets = length(vcat(target_name))
     y = [zeros(Float32, ntargets, 1, bs) for _ in 1:n]
+    mask = [zeros(Bool, bs) for _ in 1:n]
     w = [zeros(Float32, 1, 1, bs) for _ in 1:n]
     # one row per offset column, as in the ungrouped (K, N) offset, and zero on pads
     offset_names = offset_name isa Union{String,Symbol} ? [offset_name] : offset_name
@@ -142,6 +143,7 @@ function get_df_loader_train(
     for i in 1:n
         df = dfg[i]
         x[i][:, 1:nrow(df)] .= Matrix(df[:, feature_names])'
+        mask[i][1:nrow(df)] .= true
         if target_name isa AbstractVector
             target = Matrix(df[:, target_name])'
         else
@@ -159,10 +161,10 @@ function get_df_loader_train(
         if isnothing(weight_name)
             w[i][1, 1, 1:nrow(df)] .= 1.0
         else
-            # a weight of zero marks a padded slot, so real rows need a positive one
+            # each step is normalised by its group's weight sum
             wi = Float32.(df[!, weight_name])
-            all(v -> isfinite(v) && v > 0, wi) ||
-                error("Weights in `$weight_name` must be positive and finite.")
+            all(v -> isfinite(v) && v >= 0, wi) && sum(wi) > 0 ||
+                error("Weights in `$weight_name` must be non-negative and finite, with a positive sum per group.")
             w[i][1, 1, 1:nrow(df)] .= wi
         end
         if !isnothing(offset)
@@ -170,7 +172,7 @@ function get_df_loader_train(
         end
     end
 
-    container = ContainerTrain(x, y, w, offset)
+    container = ContainerTrain(collect(zip(x, mask)), y, w, offset)
     dtrain = DataLoader(container; shuffle, batchsize=0, partial=false, parallel=false, rng)
     return dtrain
 end

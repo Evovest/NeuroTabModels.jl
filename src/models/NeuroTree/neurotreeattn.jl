@@ -63,8 +63,8 @@ over `k`). Peer attention is **per ensemble channel** (one head per `k`, no
 Dense QK mixing), residual-added with `attn_scale` (default `0`). There is no
 transformer FFN.
 
-When a padding mask is available (`w` from grouped loaders, or the infer `mask`),
-the loss / eval / infer call sites pass `(x, w)` into the assembled `MaskedModel`.
+When a grouped loader supplies a padding `mask`, the loss / eval / infer call sites
+pass `(x, mask)` into the assembled `MaskedModel`.
 
 # Arguments
 - `tree_type::Symbol`: `:binary` or `:oblivious` (default `:binary`).

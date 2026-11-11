@@ -68,14 +68,14 @@ function _build_eval_step(chain, feval, d0, ps, st; reactant::Bool)
         return reactant ? _compile_eval_step(Val(:reactant), _step2, d0[1], d0[2], ps, st) : _step2
     elseif length(d0) == 3
         function _step3(x, y, w, ps, st)
-            xin = masked_input(chain, x, w)
+            xin = masked_input(chain, x)
             m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, xin, y, w; agg=sum), sum(w) * size(y, 1)
         end
         return reactant ? _compile_eval_step(Val(:reactant), _step3, d0[1], d0[2], d0[3], ps, st) : _step3
     else
         function _step4(x, y, w, offset, ps, st)
-            xin = masked_input(chain, x, w)
+            xin = masked_input(chain, x)
             m = x -> reduce_pred(first(chain(x, ps, st)))
             return feval(m, xin, y, w, offset; agg=sum), sum(w) * size(y, 1)
         end
