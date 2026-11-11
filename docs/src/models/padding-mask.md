@@ -64,16 +64,16 @@ The mask is therefore not an embedding concern. The split is implemented once,
 at the embed / core boundary:
 
 ```
-input is either x  or  (x, w)
+input is either x  or  (x, mask)
 
-                    (x, w)
+                  (x, mask)
                        │
           ┌────────────┴────────────┐
           │      MaskedModel        │
           │                         │
           │   z = embed(x)          │  ← embeddings: x only
           │                         │
-          │   y = core((z, w))      │  ← *Attn / MaskedBN: (z, w)
+          │   y = core((z, mask))   │  ← *Attn / MaskedBN: (z, mask)
           └────────────┬────────────┘
                        │
                        y
@@ -89,7 +89,7 @@ else
 end
 ```
 
-`Chain(embed, core)` would pass `(x, w)` into `embed`, which does not implement
+`Chain(embed, core)` would pass `(x, mask)` into `embed`, which does not implement
 that signature. `MaskedModel` peels the tuple: embeddings stay ordinary Lux
 layers; only the core is mask-aware.
 
@@ -139,13 +139,13 @@ GroupedDataFrame
 
 ## Inside MLPAttn / NeuroTreeAttn
 
-`MLPAttn` converts `w` to a boolean `valid` once, then uses the same flags in
+`MLPAttn` reads `mask` as a boolean `valid` once, then uses the same flags in
 two shapes.
 
 ```
-(x, w)
+(x, mask)
    │
-   ├─ valid = vec(w) .> 0          length = buffer
+   ├─ valid = vec(mask)            length = buffer
    │
    ▼
 encoder  ←  (x, valid)
