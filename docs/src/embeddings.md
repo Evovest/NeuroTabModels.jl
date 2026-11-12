@@ -17,24 +17,26 @@ independently, and `MaskedModel` only reattaches `w` at the `*Attn` core. See
 - `BatchNormEmbeddings`: batch-normalizes raw numerical features without expanding them.
 - `LayerNormEmbeddings`: layer-normalizes raw numerical features without expanding them.
 - `TemporalEmbeddings`: embeds one time column with Fourier features and an optional trend term.
+- `CategoricalEmbeddings`: learns a vector per level of each categorical column.
 
 ## Configuration
 
-Use `EmbeddingLayer` to combine a numerical embedding with an optional temporal
-branch. A dictionary form is also available for model configuration dictionaries.
+Use `EmbeddingLayer` to combine a numerical embedding with optional temporal and categorical
+branches. A dictionary form is also available for model configuration dictionaries.
 
 ```julia
-EmbeddingLayer(PeriodicEmbeddings(; d_embedding=24))
+EmbeddingLayer(; num=:periodic, temp=:t)   # CategoricalVector columns are embedded automatically
 
 EmbeddingLayer(;
     num=PiecewiseLinearEmbeddings(; bins=32),
-    temp=TemporalEmbeddings(; index=1),
+    temp=TemporalEmbeddings(; feature=:t, periods=[50.0]),
+    cat=[:store],
 )
 
 EmbeddingLayer(Dict(
     :embedding_type => :periodic,
     :d_embedding => 24,
-    :temporal => Dict(:index => 1),
+    :temporal => Dict(:feature => :t),
 ))
 ```
 

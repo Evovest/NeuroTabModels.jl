@@ -16,9 +16,9 @@ struct _LinearEmbeddings{G} <: LuxCore.AbstractLuxWrapperLayer{:layer}
 end
 
 # Fan-out uniform, matching the previous `_LinearEmbeddings` init (not fan-in rsqrt).
-function _embed_affine_init(rng::AbstractRNG, out::Integer, in::Integer, groups::Integer)
+function _embed_affine_init(rng::AbstractRNG, out::Integer, dims::Integer...)
     limit = Float32(out)^(-0.5f0)
-    return (rand(rng, Float32, out, in, groups) .* 2.0f0 .* limit) .- limit
+    return (rand(rng, Float32, out, dims...) .* 2.0f0 .* limit) .- limit
 end
 
 _as_feature_groups(x::AbstractMatrix) = reshape(x, 1, size(x, 1), size(x, 2))

@@ -6,9 +6,9 @@ using Random
 using NNlib
 import Statistics: mean, quantile, std
 
-export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractEmbedding
+export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractCategoricalEmbedding, AbstractEmbedding
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
-export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
+export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, CategoricalEmbeddings, IdentityEmbedding
 export EmbeddingLayer, build_embedding_chain, needs_x_train, temporal_out_dim
 export embedding_width
 
@@ -21,6 +21,7 @@ include("piecewise_linear.jl")
 include("batchnorm.jl")
 include("layernorm.jl")
 include("temporal.jl")
+include("categorical.jl")
 include("config.jl")
 
 end

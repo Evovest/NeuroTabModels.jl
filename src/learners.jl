@@ -56,10 +56,10 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 - `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
-- `embedding_config=nothing`: Optional numerical/temporal embeddings. Accepts `nothing` (no-op),
-  an `AbstractEmbedding` (e.g. `EmbeddingLayer(num=PeriodicEmbeddings(d_embedding=24))`), or an
-  `AbstractDict` selecting the type via `:embedding_type` (e.g.
-  `Dict(:embedding_type => :periodic, :d_embedding => 24)`).
+- `embedding_config=nothing`: Optional numerical/temporal/categorical embeddings. Accepts `nothing`
+  (categorical columns are still embedded automatically), an `AbstractEmbedding`
+  (e.g. `EmbeddingLayer(; num=:periodic, temp=:t)`), or an `AbstractDict` selecting the type via
+  `:embedding_type` (e.g. `Dict(:embedding_type => :periodic, :d_embedding => 24)`).
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
@@ -266,8 +266,9 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 - `backend=:zygote`:        Backend used by Lux. One of `:enzyme`, `:zygote`, or `:reactant`.
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
-- `embedding_config=nothing`: Optional numerical/temporal embeddings. Accepts `nothing` (no-op),
-  an `AbstractEmbedding`, or an `AbstractDict` selecting the type via `:embedding_type`.
+- `embedding_config=nothing`: Optional numerical/temporal/categorical embeddings. Accepts `nothing`
+  (categorical columns are still embedded automatically), an `AbstractEmbedding`, or an `AbstractDict`
+  selecting the type via `:embedding_type`.
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.

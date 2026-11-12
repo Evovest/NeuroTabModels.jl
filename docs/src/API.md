@@ -7,8 +7,8 @@ the Lux chain, runs the loop, and returns a
 calling that fitted model, or from [`infer`](@ref NeuroTabModels.infer).
 
 Architecture configs and how they become a Lux chain are on
-[Models](models/models.md). Losses are on [Losses](@ref). Numerical and temporal
-embeddings are on [Embeddings](@ref).
+[Models](models/models.md). Losses are on [Losses](@ref). Numerical, temporal and
+categorical embeddings are on [Embeddings](@ref).
 
 ## Learners
 
@@ -36,7 +36,7 @@ These live on the learner, not on `fit`:
 | Field | Role |
 | --- | --- |
 | `arch` | Architecture config (`MLPConfig`, …) |
-| `embedding_config` | Numerical / temporal embeddings |
+| `embedding_config` | Numerical / temporal / categorical embeddings |
 | `loss`, `metric` | Training loss and eval metric (symbols; see [Losses](@ref)) |
 | `nrounds`, `early_stopping_rounds` | Epoch budget and patience |
 | `lr`, `wd`, `batchsize`, `seed` | Optimiser and data |

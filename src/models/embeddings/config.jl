@@ -16,6 +16,8 @@ abstract type AbstractNumericalEmbedding <: AbstractEmbedding end
 # Time-column embeddings.
 abstract type AbstractTemporalEmbedding end
 
+abstract type AbstractCategoricalEmbedding end
+
 """
     IdentityEmbedding()
 
@@ -110,82 +112,125 @@ Layer-normalize the raw features without expanding their dimension (one output p
 struct LayerNormEmbeddings <: AbstractNumericalEmbedding end
 
 """
-    TemporalEmbeddings(; index, order=[4, 1, 7, 0], periods=_DEFAULT_TEMPORAL_PERIODS,
+    TemporalEmbeddings(; feature, order=[4, 1, 7, 0], periods=_DEFAULT_TEMPORAL_PERIODS,
                        trend=true, d_embedding=16)
 
-Fourier embedding of a single time column: the column at `index` is expanded into multi-scale sine/cosine features at `periods`, projected to `d_embedding`, and optionally augmented with a linear trend. `order` and `periods` align per band: `order[i]` is the harmonic count for `periods[i]`.
+Fourier embedding of a single time column: the column `feature` is expanded into multi-scale sine/cosine features at `periods`, projected to `d_embedding`, and optionally augmented with a linear trend. `order` and `periods` align per band: `order[i]` is the harmonic count for `periods[i]`.
 
 # Arguments
-- `index::Int`: Required. 1-based position of the time column in `feature_names`.
+- `feature`: Required. Name of the time column; must be one of `feature_names`.
 - `order::Vector{Int}`: Harmonics per period; nonnegative with at least one positive entry (default `[4, 1, 7, 0]`).
 - `periods::Vector{Float32}`: Base periods in column units (default `_DEFAULT_TEMPORAL_PERIODS`).
 - `trend::Bool`: Append a linear trend term to the embedding (default `true`).
 - `d_embedding::Int`: Projection dimension of the periodic features (default `16`).
 """
 struct TemporalEmbeddings <: AbstractTemporalEmbedding
-    index::Int
+    feature::Symbol
     order::Vector{Int}
     periods::Vector{Float32}
     trend::Bool
     d_embedding::Int
 end
 function TemporalEmbeddings(;
-    index::Int,
-    order::AbstractVector{<:Integer}=Int[4, 1, 7, 0],
-    periods::AbstractVector{<:Real}=_DEFAULT_TEMPORAL_PERIODS,
+    feature::Union{Symbol,AbstractString},
+    order::AbstractVector=Int[4, 1, 7, 0],
+    periods::AbstractVector=_DEFAULT_TEMPORAL_PERIODS,
     trend::Bool=true,
     d_embedding::Int=16,
 )
-    index >= 1 || throw(ArgumentError("index must be >= 1, got $index"))
     length(order) == length(periods) ||
         throw(ArgumentError("length(order)=$(length(order)) must equal length(periods)=$(length(periods))"))
     all(>=(0), order) && any(>(0), order) ||
         throw(ArgumentError("order must be non-negative with at least one positive entry"))
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
-    TemporalEmbeddings(index, Vector{Int}(order), Vector{Float32}(periods), trend, d_embedding)
+    TemporalEmbeddings(Symbol(feature), Vector{Int}(order), Vector{Float32}(periods), trend, d_embedding)
 end
 
 """
-    EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing)
-    EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing)
+    CategoricalEmbeddings(; features, d_embedding=16)
+
+Learned embedding of categorical columns: each level of each column in `features` maps to
+its own `d_embedding` vector. Levels are taken from the training data at fit time; a level
+not seen then maps to a per-column "unseen" vector.
+
+# Arguments
+- `features`: Required. Names of the categorical columns; each must be one of `feature_names`.
+- `d_embedding::Int`: Output dimension per feature (default `16`).
+"""
+struct CategoricalEmbeddings <: AbstractCategoricalEmbedding
+    features::Vector{Symbol}
+    d_embedding::Int
+end
+function CategoricalEmbeddings(; features::AbstractVector, d_embedding::Int=16)
+    features = Symbol.(features)
+    isempty(features) && throw(ArgumentError("features must not be empty"))
+    allunique(features) || throw(ArgumentError("features has duplicate names"))
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
+    CategoricalEmbeddings(features, d_embedding)
+end
+
+_features(::Nothing) = Symbol[]
+_features(t::TemporalEmbeddings) = [t.feature]
+_features(c::CategoricalEmbeddings) = c.features
+
+"""
+    EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing, cat=nothing)
+    EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing, cat=nothing)
     EmbeddingLayer(d::AbstractDict)
 
-Numerical embedding over the non-time columns, optionally combined with a temporal
-embedding on the column at `temp.index` (1-based position in the feature list). `num`
-always exists (defaults to [`IdentityEmbedding`](@ref)); `nothing` normalizes to it.
-When `temp` is set the branches are concatenated features-first, temporal-last.
-
-Prefer the keyword constructor so the two branches are explicit:
+Embeds each feature by its kind and concatenates the results, numerical first, then
+temporal, then categorical. `temp` and `cat` name the columns they embed; `num` embeds
+every other column of `feature_names`. `num` always exists (defaults to
+[`IdentityEmbedding`](@ref)); `nothing` normalizes to it.
 
 ```julia
-EmbeddingLayer(;
-    num=LinearEmbeddings(; d_embedding=16),
-    temp=TemporalEmbeddings(; index=2, d_embedding=16),  # column 2 is time
-)
+EmbeddingLayer(; num=:periodic, temp=:t)   # CategoricalVector columns are embedded automatically
 ```
 
-`index` is the time column, not the embedding width and not `nfeats`.
-`build_embedding_chain(config, nfeats; x_train)` still needs `nfeats` = number of columns.
+`num` takes an `:embedding_type` name, `temp` a column name, and `cat=[:store]` picks the
+categorical columns explicitly. Full objects still work for tuning, e.g.
+`temp=TemporalEmbeddings(; feature=:t, periods=[50.0])`.
 
 The `Dict` form is for the hyperparameter harness: `:embedding_type` (`:linear`,
-`:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`) selects the numerical type, an
-optional `:temporal` Dict gives [`TemporalEmbeddings`](@ref) kwargs, and unknown or
-`nothing` keys are ignored (missing `:embedding_type` → identity).
+`:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`) selects the numerical type,
+optional `:temporal` and `:categorical` Dicts give [`TemporalEmbeddings`](@ref) and
+[`CategoricalEmbeddings`](@ref) kwargs, and unknown or `nothing` keys are ignored
+(missing `:embedding_type` → identity).
 
 ```julia
-EmbeddingLayer(PeriodicEmbeddings(; d_embedding=24))
-EmbeddingLayer(; temp=TemporalEmbeddings(; index=1))            # temporal only
-EmbeddingLayer(Dict(:embedding_type => :periodic, :temporal => Dict(:index => 1)))
+EmbeddingLayer(Dict(
+    :embedding_type => :periodic,
+    :temporal => Dict(:feature => :date),
+    :categorical => Dict(:features => [:store]),
+))
 ```
 """
-struct EmbeddingLayer{N<:AbstractNumericalEmbedding,T<:Union{Nothing,AbstractTemporalEmbedding}} <: AbstractEmbedding
+struct EmbeddingLayer{
+    N<:AbstractNumericalEmbedding,
+    T<:Union{Nothing,AbstractTemporalEmbedding},
+    C<:Union{Nothing,AbstractCategoricalEmbedding},
+} <: AbstractEmbedding
     num::N
     temp::T
+    cat::C
+    function EmbeddingLayer(num::N, temp::T, cat::C) where {N,T,C}
+        isdisjoint(_features(temp), _features(cat)) ||
+            throw(ArgumentError("temporal feature :$(temp.feature) is also listed as categorical"))
+        new{N,T,C}(num, temp, cat)
+    end
 end
 _as_num(::Nothing) = IdentityEmbedding()
 _as_num(n::AbstractNumericalEmbedding) = n
-EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing) = EmbeddingLayer(_as_num(num), temp)
-EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing) = EmbeddingLayer(num, temp)
+_as_num(s::Union{Symbol,AbstractString}) = EmbeddingLayer(Dict(:embedding_type => s)).num
+_as_temp(t) = t
+_as_temp(s::Union{Symbol,AbstractString}) = TemporalEmbeddings(; feature=s)
+_as_cat(c) = c
+_as_cat(v::AbstractVector) = CategoricalEmbeddings(; features=v)
+EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing, cat=nothing) =
+    EmbeddingLayer(_as_num(num), _as_temp(temp), _as_cat(cat))
+EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing, cat=nothing) =
+    EmbeddingLayer(num, _as_temp(temp), _as_cat(cat))
+EmbeddingLayer(e::EmbeddingLayer) = e
 
 const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
     :identity => IdentityEmbedding,
@@ -218,8 +263,10 @@ end
 _num_from_dict(::Type{BatchNormEmbeddings}, d) = BatchNormEmbeddings()
 _num_from_dict(::Type{LayerNormEmbeddings}, d) = LayerNormEmbeddings()
 
+_symbol_keys(d) = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
+
 function EmbeddingLayer(d::AbstractDict)
-    d = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
+    d = _symbol_keys(d)
     num = if haskey(d, :embedding_type) && d[:embedding_type] !== nothing
         etype = Symbol(d[:embedding_type])
         T = get(_NUM_EMBEDDING_TYPES, etype) do
@@ -229,13 +276,9 @@ function EmbeddingLayer(d::AbstractDict)
     else
         IdentityEmbedding()
     end
-    temp = if haskey(d, :temporal)
-        td = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d[:temporal])
-        TemporalEmbeddings(; td...)
-    else
-        nothing
-    end
-    return EmbeddingLayer(num, temp)
+    temp = haskey(d, :temporal) ? TemporalEmbeddings(; _symbol_keys(d[:temporal])...) : nothing
+    cat = haskey(d, :categorical) ? CategoricalEmbeddings(; _symbol_keys(d[:categorical])...) : nothing
+    return EmbeddingLayer(num, temp, cat)
 end
 
 # Output width of a temporal embedding: d_embedding, +1 when trend is appended.
@@ -270,7 +313,7 @@ needs_x_train(config::EmbeddingLayer) = needs_x_train(config.num) || needs_x_tra
 # output. Expanding types append their own FlattenLayer; BatchNorm and LayerNorm are
 # already 2D and Identity is a no-op. The builder never inspects the type to decide
 # how to flatten; adding a new numerical embedding means adding one method here.
-# Row (feature-column) selector used by the temporal `Parallel` branches. Named (not a
+# Row (feature-column) selector used by the `Parallel` branches. Named (not a
 # closure) so the resulting `WrappedFunction` is concretely typed via `Base.Fix2`.
 _select_rows(x::AbstractMatrix, rows) = x[rows, :]
 
@@ -316,41 +359,56 @@ function _build_temp(t::TemporalEmbeddings, x_col)
     _TemporalEmbeddings(t_mean, t_std, t.order, t.trend, t.d_embedding; periods=t.periods)
 end
 
-"""
-    build_embedding_chain(config, nfeats; x_train=nothing)
+_route(rows, layer) = Chain(WrappedFunction(Base.Fix2(_select_rows, rows)), layer)
+_columns(::Nothing, rows) = nothing
+_columns(x::AbstractMatrix, rows) = x[:, rows]
 
-Build the embedding chain for `config`. A numerical-only config embeds every column; with a
-temporal branch the input is routed through a `Lux.Parallel`, applying `num` to the non-time
-columns and `temp` to the time column, concatenated features-first then temporal.
+function _feature_rows(feature_names, features)
+    rows = indexin(features, feature_names)
+    i = findfirst(isnothing, rows)
+    isnothing(i) || throw(ArgumentError("embedding feature :$(features[i]) is not in feature_names"))
+    return Vector{Int}(rows)
+end
+
+"""
+    build_embedding_chain(config, feature_names; x_train=nothing, cat_levels=Dict())
+
+Build the embedding chain for `config`. A numerical-only config embeds every column. With a
+temporal or categorical branch the input is routed through a `Lux.Parallel`: `num` gets the
+columns not named by `temp` or `cat`, and the outputs are concatenated numerical, temporal,
+categorical.
 
 # Arguments
 - `config::AbstractEmbedding`: The embedding config to build.
-- `nfeats::Int`: Number of input features.
+- `feature_names::AbstractVector{Symbol}`: Input feature names, in input row order.
 - `x_train`: Training matrix `(n_samples, nfeats)`, required when `needs_x_train(config)` (default `nothing`).
+- `cat_levels`: Training levels per categorical feature name, required when `config.cat` is set.
 
 # Returns
 A `Lux` layer emitting a flat `(width, batch)` output; recover the width with [`embedding_width`](@ref).
 """
-function build_embedding_chain(config::AbstractNumericalEmbedding, nfeats::Int; x_train=nothing)
-    _build_num(config; nfeats, x_train)
+function build_embedding_chain(config::AbstractNumericalEmbedding, feature_names; x_train=nothing)
+    build_embedding_chain(EmbeddingLayer(config), feature_names; x_train)
 end
-function build_embedding_chain(config::EmbeddingLayer, nfeats::Int; x_train=nothing)
-    # numerical branch only
-    isnothing(config.temp) && return _build_num(config.num; nfeats, x_train)
+function build_embedding_chain(
+    config::EmbeddingLayer, feature_names::AbstractVector{Symbol}; x_train=nothing, cat_levels=Dict{Symbol,Vector}()
+)
+    nfeats = length(feature_names)
+    isnothing(config.temp) && isnothing(config.cat) && return _build_num(config.num; nfeats, x_train)
 
-    # numerical + temporal: route the non-time columns through `num` and the time
-    # column through `temp`, concatenating features-first / temporal-last. When `num`
-    # is IdentityEmbedding this is the temporal-only case (features pass through).
-    idx = config.temp.index
-    1 <= idx <= nfeats || throw(ArgumentError("temporal index=$idx out of range for nfeats=$nfeats"))
-    keep = setdiff(1:nfeats, idx)
-    core = _build_num(config.num; nfeats=nfeats - 1, x_train=x_train === nothing ? nothing : x_train[:, keep])
-    temp = _build_temp(config.temp, x_train === nothing ? nothing : @view x_train[:, idx])
-    return Parallel(
-        vcat,
-        Chain(WrappedFunction(Base.Fix2(_select_rows, keep)), core),
-        Chain(WrappedFunction(Base.Fix2(_select_rows, idx:idx)), temp),
-    )
+    temp_rows = _feature_rows(feature_names, _features(config.temp))
+    cat_rows = _feature_rows(feature_names, _features(config.cat))
+    num_rows = setdiff(1:nfeats, temp_rows, cat_rows)
+    branches = []
+    isempty(num_rows) || push!(branches, _route(num_rows,
+        _build_num(config.num; nfeats=length(num_rows), x_train=_columns(x_train, num_rows))))
+    isnothing(config.temp) || push!(branches, _route(temp_rows,
+        _build_temp(config.temp, _columns(x_train, only(temp_rows)))))
+    isnothing(config.cat) || push!(branches, _route(cat_rows, Chain(
+        _CategoricalEmbeddings([length(cat_levels[f]) for f in config.cat.features], config.cat.d_embedding),
+        FlattenLayer(),
+    )))
+    return Parallel(vcat, branches...)
 end
 
 """
@@ -362,7 +420,8 @@ through a `vcat` connection.
 
 # Arguments
 - `layer`: The embedding layer to measure.
-- `x::AbstractMatrix`: Probe input of shape `(nfeats, batch)` (`init` passes `(nfeats, 2)`).
+- `x::AbstractMatrix`: Probe input of shape `(nfeats, batch)`. `init` passes zeros, which are
+  valid level codes for categorical rows (`0` = unseen level).
 - `rng::AbstractRNG`: RNG used for parameter setup.
 
 # Returns

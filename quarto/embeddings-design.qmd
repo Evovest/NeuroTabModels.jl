@@ -46,9 +46,9 @@ const EVO = (
     embedding="#7d568a",  # gfx-2
 )
 
-function setup_embedding(config; nfeats=1, x_train=nothing)
+function setup_embedding(config; feature_names=[:x], x_train=nothing)
     rng = Xoshiro(seed)
-    layer = Embeddings.build_embedding_chain(config, nfeats; x_train)
+    layer = Embeddings.build_embedding_chain(config, feature_names; x_train)
     ps, st = Embeddings.LuxCore.setup(rng, layer)
     return layer, ps, st
 end
@@ -79,9 +79,9 @@ function basis_grid(layer, ps, st, xvals, field::Symbol)
 end
 
 function temporal_basis(layer, ps, st, xvals)
-    temp = layer.layers.layer_2[2]
+    temp = layer.layers.layer_1[2]
     x = reshape(Float32.(collect(xvals)), 1, :)
-    h, _ = temp.periodic(x, ps.layer_2.layer_2.periodic, st.layer_2.layer_2.periodic)
+    h, _ = temp.periodic(x, ps.layer_1.layer_2.periodic, st.layer_1.layer_2.periodic)
     return h
 end
 
@@ -282,7 +282,7 @@ Defaults assume a POSIX-seconds column (`year`, `month`, `week`, `day`). The fig
 ```{julia}
 order = [2, 1]
 periods = Float32[2, 4]
-conf_temporal = EmbeddingLayer(; temp=TemporalEmbeddings(; index=1, order, periods, trend=true, d_embedding))
+conf_temporal = EmbeddingLayer(; temp=TemporalEmbeddings(; feature=:x, order, periods, trend=true, d_embedding))
 layer_temporal, ps_temporal, st_temporal = setup_embedding(conf_temporal; x_train)
 h_temporal = temporal_basis(layer_temporal, ps_temporal, st_temporal, xgrid)
 y_temporal = embed_grid(layer_temporal, ps_temporal, st_temporal, xgrid)
@@ -308,18 +308,21 @@ plot_channels(xgrid, y_temporal; titles=vcat(["e_$k" for k in 1:d_embedding], ["
 
 ### EmbeddingLayer
 
-The rest of this report built a **numerical** config for a single column. A real table has several numeric columns and, sometimes, one time column. `EmbeddingLayer` is the wrapper that says how those two kinds of columns are treated.
+The rest of this report built a **numerical** config for a single column. A real table has several numeric columns and, sometimes, one time column or categorical columns. `EmbeddingLayer` is the wrapper that says how each kind of column is treated.
 
 ```text
-input columns:   [  x1   x2   x3   t  ]
-                    └─────────┘    │
-                         num       temp  (temp.index = 4)
-                           │       │
-                           └─ vcat ┘  →  backbone
+input columns:   [  x1   x2   t   store  region  ]
+                    └────┘    │   └───────────┘
+                      num    temp      cat
+                       │      │         │
+                       └───── vcat ─────┘  →  (width, batch)  →  backbone
 ```
 
-- `num` — applied to every column **except** the time column. Default: `IdentityEmbedding()` (pass-through).
-- `temp` — applied to **one** column, whose position is `temp.index` (1-based in the feature list). Default: `nothing` (no time branch).
+- `num` — applied to every column **except** the time and categorical columns. Default: `IdentityEmbedding()` (pass-through).
+- `temp` — applied to **one** column, named `temp.feature`. Default: `nothing` (no time branch).
+- `cat` — applied to one or more categorical columns, named `cat.features`; each level gets a learned vector. Default: the `CategoricalVector` columns of `feature_names`.
+
+Every branch is optional and only branches with columns are built, so numeric columns are not required: a table with only categorical columns works.
 
 You pass this object as `embedding_config` when fitting; `fit` then builds the chain. The snippets below call `build_embedding_chain` only to show widths.
 
@@ -329,23 +332,23 @@ You pass this object as `embedding_config` when fitting; `fit` then builds the c
 EmbeddingLayer(; num=LinearEmbeddings(; d_embedding, activation=:identity))
 ```
 
-**Temporal only** — numeric columns pass through; column `index` is the timestamp:
+**Temporal only** — numeric columns pass through; the column named `:t` is the timestamp:
 
 ```{julia}
-EmbeddingLayer(; temp=TemporalEmbeddings(; index=1, d_embedding))
+EmbeddingLayer(; temp=TemporalEmbeddings(; feature=:t, d_embedding))
 ```
 
-**Both** — two columns, `x1` then `t`. `index=2` means "the second column is time", not embedding width:
+**Both** — two columns, `x1` then `t`:
 
 ```{julia}
-nfeats = 2          # columns in the table
-time_column = 2     # t is column 2
+feature_names = [:x1, :t]
+nfeats = length(feature_names)
 conf_combo = EmbeddingLayer(;
     num=LinearEmbeddings(; d_embedding, activation=:identity),
-    temp=TemporalEmbeddings(; index=time_column, order=[2], periods=Float32[4], trend=true, d_embedding),
+    temp=TemporalEmbeddings(; feature=:t, order=[2], periods=Float32[4], trend=true, d_embedding),
 )
 x_train2 = hcat(collect(xgrid), collect(xgrid))  # (n_samples, nfeats): [x1 | t]
-layer_combo = Embeddings.build_embedding_chain(conf_combo, nfeats; x_train=x_train2)
+layer_combo = Embeddings.build_embedding_chain(conf_combo, feature_names; x_train=x_train2)
 
 # widths: one numeric feature → d_embedding; time → d_embedding projection + 1 trend
 n_numeric = nfeats - 1
@@ -361,6 +364,6 @@ batch = randn(Float32, nfeats, 4)  # (nfeats, batch) dummy input
 )
 ```
 
-The second argument of `build_embedding_chain` is `nfeats` (how many columns the matrix has), not `temp.index`. `x_train` is `(n_samples, nfeats)`.
+The second argument of `build_embedding_chain` is `feature_names`, in input row order. `x_train` is `(n_samples, nfeats)`.
 
-For hyperparameter search, a `Dict` is accepted: `:embedding_type` selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`), and `:temporal => Dict(:index => 2, ...)` builds `temp`. Unknown keys are ignored.
+For hyperparameter search, a `Dict` is accepted: `:embedding_type` selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`), `:temporal => Dict(:feature => :t, ...)` builds `temp`, and `:categorical => Dict(:features => [...], ...)` builds `cat`. String keys and values work, so a config read back from JSON builds the same learner. Unknown keys are ignored.
