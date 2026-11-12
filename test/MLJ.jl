@@ -68,6 +68,27 @@ end
     @test MLJBase.iteration_parameter(NeuroTabRegressor) == :nrounds
 end
 
+@testset "MLJ - update refits when a hyperparameter other than nrounds changes" begin
+    X, y = make_regression(500, 3)
+    mach = machine(NeuroTabRegressor(; nrounds=2, lr=1e-2, seed=1), X, y)
+    fit!(mach, verbosity=0)
+    fr = mach.fitresult
+
+    # more rounds only: training goes on from the fitted parameters
+    mach.model.nrounds = 4
+    fit!(mach, verbosity=0)
+    @test mach.fitresult === fr
+    @test mach.fitresult.info[:nrounds] == 4
+
+    # any other change: a fresh fit, the same as fitting the changed model from scratch
+    mach.model.lr = 1e-3
+    fit!(mach, verbosity=0)
+    @test mach.fitresult !== fr
+    fresh = machine(NeuroTabRegressor(; nrounds=4, lr=1e-3, seed=1), X, y)
+    fit!(fresh, verbosity=0)
+    @test predict(mach, X) ≈ predict(fresh, X)
+end
+
 @testset "MLJ - rowtables - NeuroTabRegressor" begin
     X, y = make_regression(1000, 5)
     X = Tables.rowtable(X)
