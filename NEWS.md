@@ -1,3 +1,9 @@
+# NeuroTabModels v0.5.1
+
+## Added
+
+- Loss: Huber (`:huber`), δ = 1 on the training scale (one standard deviation when `scale_target=true`).
+
 # NeuroTabModels v0.5.0
 
 Breaking release versus v0.4.0. `fit`, functor inference (`m(data)`), and the MLJ interface are unchanged in spirit; several public types, fields, and constructors are not.

@@ -47,7 +47,7 @@ end
 # Apply inverse link to convert from model scale to natural scale
 _inverse_link(::LogLoss, pred) = sigmoid.(pred)
 _inverse_link(::Union{Tweedie,Poisson}, pred) = exp.(pred)
-_inverse_link(::Union{MSE,MAE,Pearson}, pred) = pred
+_inverse_link(::Union{MSE,MAE,Huber,Pearson}, pred) = pred
 _inverse_link(::MLogLoss, pred) = softmax(pred; dims=2)
 # Columns interleave per target: odd columns are μ and even columns σ.
 function _inverse_link(::GaussianMLE, pred)
@@ -58,7 +58,7 @@ end
 
 # per-target scalers lie along columns
 _scaler(::LossType, p, scalers) = p
-_scaler(::Union{MSE,MAE,Pearson}, p, scalers::NamedTuple) = p .* scalers[:sigma]' .+ scalers[:mu]'
+_scaler(::Union{MSE,MAE,Huber,Pearson}, p, scalers::NamedTuple) = p .* scalers[:sigma]' .+ scalers[:mu]'
 function _scaler(::GaussianMLE, p, scalers::NamedTuple)
     @views p[:, 1:2:end] .= p[:, 1:2:end] .* scalers[:sigma]' .+ scalers[:mu]'
     @views p[:, 2:2:end] .= p[:, 2:2:end] .* scalers[:sigma]'

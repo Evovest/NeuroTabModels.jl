@@ -4,7 +4,7 @@ export ModernNCAConfig
 
 import ..Models
 import ..Models: Architecture, NeuroTabModel
-import ..Losses: LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, masked_input
+import ..Losses: LossType, MSE, MAE, Huber, LogLoss, MLogLoss, GaussianMLE, masked_input
 
 using Lux
 using LuxCore
@@ -146,7 +146,7 @@ weights to zero during training.
 """
 _mask_diag(d::AbstractMatrix) = _diag_inf.(reshape(1:size(d, 1), :, 1), reshape(1:size(d, 2), 1, :), d)
 
-_to_output(::Union{MSE,MAE}, α, cy, _) = reshape(α' * cy, 1, 1, :)
+_to_output(::Union{MSE,MAE,Huber}, α, cy, _) = reshape(α' * cy, 1, 1, :)
 
 function _to_output(::LogLoss, α, cy, _)
     p = clamp.(reshape(α' * cy, 1, 1, :), 1.0f-6, 1.0f0 - 1.0f-6)
@@ -277,7 +277,7 @@ end
 Encode targets for each loss:
 - `MLogLoss`: 1-based `UInt32` class codes.
 - `LogLoss`: `Float32` in `{0, 1}`.
-- `MSE / MAE`: `Float32`, standardised when `scalers` is provided.
+- `MSE / MAE / Huber`: `Float32`, standardised when `scalers` is provided.
 
 # Arguments
 - `df`: source data frame.
@@ -295,7 +295,7 @@ function _encode_targets(df, target_name, ::LogLoss, _)
     return Float32.(CategoricalArrays.levelcode.(col) .- 1)
 end
 
-function _encode_targets(df, target_name, ::Union{MSE,MAE,GaussianMLE}, scalers)
+function _encode_targets(df, target_name, ::Union{MSE,MAE,Huber,GaussianMLE}, scalers)
     y = Float32.(df[!, target_name])
     isnothing(scalers) || (y .= (y .- scalers.mu) ./ scalers.sigma)
     return y

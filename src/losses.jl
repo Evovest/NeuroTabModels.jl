@@ -1,6 +1,6 @@
 module Losses
 
-export LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, Tweedie, Poisson, Pearson
+export LossType, MSE, MAE, Huber, LogLoss, MLogLoss, GaussianMLE, Tweedie, Poisson, Pearson
 export masked_input
 
 import Statistics: mean
@@ -23,6 +23,7 @@ abstract type LossType <: Function end
 
 struct MSE <: LossType end
 struct MAE <: LossType end
+struct Huber <: LossType end
 struct LogLoss <: LossType end
 struct MLogLoss <: LossType end
 struct GaussianMLE <: LossType end
@@ -35,6 +36,7 @@ LossType(::Type{L}) where {L<:LossType} = L()
 LossType(s::Symbol) = LossType(Val(s))
 LossType(::Val{:mse}) = MSE()
 LossType(::Val{:mae}) = MAE()
+LossType(::Val{:huber}) = Huber()
 LossType(::Val{:logloss}) = LogLoss()
 LossType(::Val{:mlogloss}) = MLogLoss()
 LossType(::Val{:gaussian_mle}) = GaussianMLE()
@@ -43,7 +45,7 @@ LossType(::Val{:poisson}) = Poisson()
 LossType(::Val{:pearson}) = Pearson()
 function LossType(::Val{s}) where {s}
     error(
-        "Unknown loss `:$s`. Supported: :mse, :mae, :logloss, :mlogloss, :gaussian_mle, :tweedie, :poisson, :pearson.",
+        "Unknown loss `:$s`. Supported: :mse, :mae, :huber, :logloss, :mlogloss, :gaussian_mle, :tweedie, :poisson, :pearson.",
     )
 end
 
@@ -53,7 +55,7 @@ noutputs(::GaussianMLE) = 2
 
 """Whether this loss standardises the target when `scale_target=true`."""
 scales_target(::LossType) = false
-scales_target(::Union{MSE,MAE,GaussianMLE,Pearson}) = true
+scales_target(::Union{MSE,MAE,Huber,GaussianMLE,Pearson}) = true
 
 _reshape_3d(x::AbstractVector) = reshape(x, 1, 1, :)
 _reshape_3d(x::AbstractMatrix) = reshape(x, size(x, 1), 1, size(x, 2))
@@ -104,6 +106,11 @@ end
 
 _pointwise(::MSE, pred, y) = (pred .- y) .^ 2
 _pointwise(::MAE, pred, y) = abs.(pred .- y)
+
+# δ = 1 on the training scale (one standard deviation when `scale_target=true`).
+# Quadratic inside δ, linear outside; the derivative is continuous at |r| = δ.
+_huber(r, δ) = ifelse(abs(r) <= δ, (r * r) / 2, δ * (abs(r) - δ / 2))
+_pointwise(::Huber, pred, y) = _huber.(pred .- y, one(eltype(pred)))
 _pointwise(::LogLoss, pred, y) = (1 .- y) .* pred .- logsigmoid.(pred)
 
 function _pointwise(::MLogLoss, pred, y)
