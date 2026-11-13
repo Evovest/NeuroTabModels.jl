@@ -16,7 +16,8 @@ compatible with Lux's training API:
 loss(model, ps, st, data) -> (scalar, updated_state, NamedTuple())
 ```
 
-`data` is `(x, y)`, `(x, y, w)`, or `(x, y, w, offset)`. Construct from a symbol
+`data` is `(x, y)`, `(x, y, w)`, or `(x, y, w, offset)`. A grouped loader passes
+`x` as `(features, mask)` and always includes `w` (0 on pads). Construct from a symbol
 with `LossType(:mse)` (returns `MSE()`), or use the structs directly (`MSE()`).
 """
 abstract type LossType <: Function end

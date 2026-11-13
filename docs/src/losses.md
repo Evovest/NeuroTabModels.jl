@@ -41,15 +41,23 @@ With `T` targets (a vector `target_name`), the prediction is `(T·outsize, K, B)
 
 ## Eval metrics
 
-`metric` defaults to the training loss and must be one of the supported losses. `:pearson` reads the μ rows when the loss is `:gaussian_mle`. The reported value is the weighted mean of per-batch or per-group scores, not a single score over the entire evaluation set.
+`metric` defaults to the training loss and must be one of the supported losses. `:pearson` reads the μ rows when the loss is `:gaussian_mle`.
+
+The reported value is one score for the full evaluation set. Each batch contributes a sum, divided by the total weight, so unequal batch sizes do not change it. Pad rows have weight 0 and do not count.
+
+`:pearson` is the exception. Correlation is not a sum of per-row scores, so the reported value is the size-weighted mean of the per-batch or per-group correlations, not one correlation on the concatenated evaluation set. Pads are still dropped inside each batch.
 
 ## Data Tuples
 
-| Tuple | Contents |
-|-------|----------|
-| `(x, y)` | standard training |
-| `(x, y, w)` | weighted training |
-| `(x, y, w, offset)` | with offset (e.g. boosting) |
+The loss sees a 2-, 3-, or 4-tuple. `x` is the model input. A grouped loader wraps it as `(features, mask)` and always includes `w`.
+
+| Tuple | When |
+|-------|------|
+| `(x, y)` | ungrouped, no `weight_name`, no `offset_name` |
+| `(x, y, w)` | `weight_name`, or any grouped batch |
+| `(x, y, w, offset)` | `offset_name`. Ungrouped batches with no `weight_name` use `w = 1` |
+
+See [Grouped padding and masks](@ref) for `w` and `mask` on a grouped batch.
 
 ## Signature
 
