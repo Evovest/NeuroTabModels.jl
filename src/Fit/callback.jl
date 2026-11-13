@@ -41,7 +41,8 @@ function CallBack(
     scalers = cache[:scalers]
     batchsize = config.batchsize
     feval = metric_dict[config.metric]
-    # the metric must read the outputs the loss gives: two per target for `:gaussian_mle`, one otherwise
+    # the metric must read the outputs the loss gives: two per target for `:gaussian_mle`, one otherwise.
+    # `:pearson` reads the μ rows, so it fits either layout.
     (config.metric == :gaussian_mle) == (config.loss == :gaussian_mle) || config.metric == :pearson ||
         error("`metric=:$(config.metric)` does not fit `loss=:$(config.loss)`.")
 
