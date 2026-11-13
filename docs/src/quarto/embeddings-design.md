@@ -244,8 +244,8 @@ trend:
 
 The rest of this report built a **numerical** config for a single
 column. A real table has several numeric columns and, sometimes, one
-time column or categorical columns. `EmbeddingLayer` is the wrapper
-that says how each kind of column is treated.
+time column or categorical columns. `EmbeddingLayer` is the wrapper that
+says how each kind of column is treated.
 
 ``` text
 input columns:   [  x1   x2   t   store  region  ]
