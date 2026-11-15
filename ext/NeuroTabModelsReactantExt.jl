@@ -54,6 +54,16 @@ end
 _single_train_step!(::Val{:reactant}, ad_backend, lux_loss, d, ts) =
     Training.single_train_step!(ad_backend, lux_loss, d, ts; return_gradients=Val(false))
 
-_compile_eval_step(::Val{:reactant}, step, args...) = @compile step(args...)
+# Compiled for the shape of the first eval batch; a short last batch gets its own compile, kept for later rounds.
+function _compile_eval_step(::Val{:reactant}, step, args...)
+    compiled = @compile step(args...)
+    data0 = args[1:end-2]
+    short = Ref{Any}(nothing)
+    return function (xs...)
+        _same_shape(xs[1:end-2], data0) && return compiled(xs...)
+        isnothing(short[]) && (short[] = @compile step(xs...))
+        return short[](xs...)
+    end
+end
 
 end

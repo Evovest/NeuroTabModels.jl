@@ -57,6 +57,7 @@ function get_df_loader_train(
     batchsize,
     scalers=nothing,
     shuffle=true,
+    partial=false,
     rng=default_rng(),
 )
     feature_names = Symbol.(feature_names)
@@ -95,7 +96,7 @@ function get_df_loader_train(
 
     container = ContainerTrain(x, y, w, offset)
     batchsize = min(batchsize, length(container))
-    dtrain = DataLoader(container; shuffle, batchsize, partial=false, parallel=false, rng)
+    dtrain = DataLoader(container; shuffle, batchsize, partial, parallel=false, rng)
     return dtrain
 end
 
@@ -123,6 +124,7 @@ function get_df_loader_train(
     batchsize=0,
     scalers=nothing,
     shuffle=true,
+    partial=false,
     rng=default_rng(),
 )
     n = length(dfg)
