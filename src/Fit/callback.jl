@@ -46,9 +46,10 @@ function CallBack(
         error("`metric=:$(config.metric)` does not fit `loss=:$(config.loss)`.")
 
     dfg = isnothing(eval_group_name) ? df : groupby(df, eval_group_name; sort=true)
+    # every eval row is scored, so the last batch may be short
     deval =
         get_df_loader_train(
-            dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false
+            dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false, partial=true
         ) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
