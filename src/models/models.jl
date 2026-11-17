@@ -152,11 +152,9 @@ struct NeuroTabModel{L<:LossType,C}
     info::Dict{Symbol,Any}
 end
 
-include("layers/layers.jl")
-using .Layers: MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense, AttnResidual, ResidualScale
-
-include("embeddings/embeddings.jl")
-using .Embeddings
+import ..Layers
+using ..Layers: MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense, AttnResidual, ResidualScale
+using ..Embeddings
 
 include("MLP/mlp.jl")
 using .MLP
