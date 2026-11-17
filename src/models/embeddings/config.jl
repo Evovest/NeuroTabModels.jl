@@ -7,8 +7,6 @@ const act_dict = Dict(
     :tanhshrink => tanhshrink,
 )
 
-_check_positive(name, x) = x > 0 || throw(ArgumentError("$name must be > 0, got $x"))
-
 function _activation(a)
     a = Symbol(a)
     haskey(act_dict, a) || throw(ArgumentError("unknown activation :$a; valid: $(collect(keys(act_dict)))"))
@@ -49,7 +47,7 @@ struct LinearEmbeddings <: AbstractNumericalEmbedding
     activation::Symbol
 end
 function LinearEmbeddings(; d_embedding::Int=16, activation=:relu)
-    _check_positive("d_embedding", d_embedding)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     LinearEmbeddings(d_embedding, _activation(activation))
 end
 
@@ -76,8 +74,8 @@ end
 function PeriodicEmbeddings(;
     d_embedding::Int=16, frequencies::Int=32, frequencies_init_scale::Real=0.01f0, activation=:relu, lite::Bool=false
 )
-    _check_positive("d_embedding", d_embedding)
-    _check_positive("frequencies", frequencies)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
+    frequencies > 0 || throw(ArgumentError("frequencies must be > 0, got $frequencies"))
     PeriodicEmbeddings(d_embedding, frequencies, Float32(frequencies_init_scale), _activation(activation), lite)
 end
 
@@ -100,7 +98,7 @@ struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
 end
 function PiecewiseLinearEmbeddings(; d_embedding::Int=16, bins::Int=32, activation=:identity, version=:B)
     version = Symbol(version)
-    _check_positive("d_embedding", d_embedding)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     bins > 1 || throw(ArgumentError("bins must be > 1, got $bins"))
     version in (:A, :B) || throw(ArgumentError("version must be :A or :B, got :$version"))
     PiecewiseLinearEmbeddings(d_embedding, bins, _activation(activation), version)
@@ -151,7 +149,7 @@ function TemporalEmbeddings(;
         throw(ArgumentError("length(order)=$(length(order)) must equal length(periods)=$(length(periods))"))
     all(>=(0), order) && any(>(0), order) ||
         throw(ArgumentError("order must be non-negative with at least one positive entry"))
-    _check_positive("d_embedding", d_embedding)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     TemporalEmbeddings(Symbol(feature), Vector{Int}(order), Vector{Float32}(periods), trend, d_embedding)
 end
 
@@ -174,7 +172,7 @@ function CategoricalEmbeddings(; features::AbstractVector, d_embedding::Int=16)
     features = Symbol.(features)
     isempty(features) && throw(ArgumentError("features must not be empty"))
     allunique(features) || throw(ArgumentError("features has duplicate names"))
-    _check_positive("d_embedding", d_embedding)
+    d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     CategoricalEmbeddings(features, d_embedding)
 end
 
