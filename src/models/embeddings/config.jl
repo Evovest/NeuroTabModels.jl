@@ -185,14 +185,10 @@ _features(c::CategoricalEmbeddings) = c.features
     EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing, cat=nothing)
     EmbeddingLayer(d::AbstractDict)
 
-Embeds each feature by its kind and concatenates the results, numerical first, then
-temporal, then categorical. `temp` and `cat` name the columns they embed; `num` embeds
-every other column of `feature_names`. `num` always exists (defaults to
-[`IdentityEmbedding`](@ref)); `nothing` normalizes to it.
-
-```julia
-EmbeddingLayer(; num=:periodic, temp=:t)   # CategoricalVector columns are embedded automatically
-```
+Embedding of each feature by its kind, concatenated numerical first, then temporal, then
+categorical. `temp` and `cat` name the columns they embed; `num` embeds every other column
+of `feature_names`. `num` always exists (defaults to [`IdentityEmbedding`](@ref)); `nothing`
+normalizes to it.
 
 `num` takes an `:embedding_type` name, `temp` a column name, and `cat=[:store]` picks the
 categorical columns explicitly. Full objects still work for tuning, e.g.
@@ -201,10 +197,13 @@ categorical columns explicitly. Full objects still work for tuning, e.g.
 The `Dict` form is for the hyperparameter harness: `:embedding_type` (`:linear`,
 `:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`) selects the numerical type,
 optional `:temporal` and `:categorical` Dicts give [`TemporalEmbeddings`](@ref) and
-[`CategoricalEmbeddings`](@ref) kwargs, and unknown or `nothing` keys are ignored
-(missing `:embedding_type` → identity).
+[`CategoricalEmbeddings`](@ref) kwargs. Unknown or `nothing` top-level keys are ignored
+(missing `:embedding_type` → identity); the nested Dicts take only their constructor's kwargs.
 
+# Examples
 ```julia
+EmbeddingLayer(; num=:periodic, temp=:t)   # CategoricalVector columns are embedded automatically
+
 EmbeddingLayer(Dict(
     :embedding_type => :periodic,
     :temporal => Dict(:feature => :date),
@@ -351,7 +350,7 @@ function _feature_rows(feature_names, features)
 end
 
 """
-    build_embedding_chain(config, feature_names; x_train=nothing, cat_levels=Dict())
+    build_embedding_chain(config, feature_names; x_train=nothing, cat_levels=Dict{Symbol,Vector}())
 
 Build the embedding chain for `config`. A numerical-only config embeds every column. With a
 temporal or categorical branch the input is routed through a `Lux.Parallel`: `num` gets the

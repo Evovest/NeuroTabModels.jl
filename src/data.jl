@@ -15,8 +15,9 @@ _codes(col, levels) = something.(indexin(unwrap.(col), levels), 0)
 """
     feature_matrix(df, feature_names, cat_levels)
 
-`(nfeats, nobs)` Float32 model input. A column named in `cat_levels` becomes its level code:
-the position of its value in the training levels, or `0` for a level not seen at fit time.
+Return the `(nfeats, nobs)` `Float32` model input for the `feature_names` columns of `df`.
+A column named in `cat_levels` becomes its level code: the position of its value in the
+training levels, or `0` for a level not seen at fit time.
 """
 function feature_matrix(df::AbstractDataFrame, feature_names, cat_levels::AbstractDict)
     return stack(Float32.(_codes(df[!, f], get(cat_levels, Symbol(f), nothing))) for f in feature_names; dims=1)
