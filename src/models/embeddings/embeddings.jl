@@ -9,7 +9,7 @@ import Statistics: mean, quantile, std
 export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractCategoricalEmbedding, AbstractEmbedding
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
 export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, CategoricalEmbeddings, IdentityEmbedding
-export EmbeddingLayer, build_embedding_chain, needs_x_train, temporal_out_dim
+export EmbeddingLayer, build_embedding_chain, needs_x_train
 export embedding_width
 
 using ..Layers: GroupedDense

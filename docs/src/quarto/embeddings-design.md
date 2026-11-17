@@ -14,9 +14,10 @@ Evovest
 
 Embeddings map each raw column into a representation the backbone
 consumes. Numerical embeddings act column-wise. A temporal embedding
-reserves one time column; `EmbeddingLayer` concatenates that branch
-last. Piecewise-linear and temporal embeddings need training data at
-build time (`needs_x_train`).
+reserves one time column and a categorical embedding the categorical
+columns; `EmbeddingLayer` concatenates numerical, temporal, then
+categorical. Piecewise-linear and temporal embeddings need training data
+at build time (`needs_x_train`).
 
 ## Setup
 
@@ -37,9 +38,9 @@ constructor.
 
 ## Numerical embeddings
 
-Each numerical config is applied independently to every non-time column.
-Expanding types emit $d_{emb}=4$ coordinates; BatchNorm and Identity
-keep width 1.
+Each numerical config is applied independently to every column that is
+neither the time column nor categorical. Expanding types emit
+$d_{emb}=4$ coordinates; BatchNorm and Identity keep width 1.
 
 ### LinearEmbeddings
 
@@ -325,4 +326,6 @@ selects `num` (`:linear`, `:periodic`, `:piecewise`, `:batchnorm`,
 `:layernorm`, `:identity`), `:temporal => Dict(:feature => :t, ...)`
 builds `temp`, and `:categorical => Dict(:features => [...], ...)`
 builds `cat`. String keys and values work, so a config read back from
-JSON builds the same learner. Unknown keys are ignored.
+JSON builds the same learner. Unknown top-level keys are ignored; the
+`:temporal` and `:categorical` Dicts take only their constructor's
+kwargs.

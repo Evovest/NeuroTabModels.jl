@@ -1,8 +1,8 @@
 # Embeddings
 
 Embeddings transform raw input columns before they reach a model backbone. Numerical
-embeddings operate column-wise, while temporal embeddings reserve one column for
-time features and concatenate that branch with the remaining numerical features.
+embeddings operate column-wise, temporal embeddings reserve one time column, and
+categorical embeddings the categorical columns; the branches are concatenated.
 
 They do not consume the grouped padding mask: embeddings map each observation
 independently, and `MaskedModel` only reattaches `w` at the `*Attn` core. See
