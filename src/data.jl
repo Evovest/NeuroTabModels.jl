@@ -48,6 +48,18 @@ function getindex(data::ContainerTrain{A,B,C,D}, idx::AbstractVector) where {A,B
     return (x, y, w, offset)
 end
 
+# Codes of a categorical target. Given the model's `target_levels`, they follow its order, so an eval set
+# with fewer or reordered levels is scored against the classes the model predicts.
+function _target_codes(col, target_levels)
+    isnothing(target_levels) && return CategoricalArrays.levelcode.(col)
+    code = Dict(l => i for (i, l) in enumerate(target_levels))
+    return map(col) do v
+        get(code, unwrap(v)) do
+            error("Target level `$(unwrap(v))` was not seen in training.")
+        end
+    end
+end
+
 function get_df_loader_train(
     df::AbstractDataFrame;
     feature_names,
@@ -56,6 +68,7 @@ function get_df_loader_train(
     offset_name=nothing,
     batchsize,
     scalers=nothing,
+    target_levels=nothing,
     shuffle=true,
     rng=default_rng(),
 )
@@ -66,7 +79,7 @@ function get_df_loader_train(
     if target_name isa AbstractVector
         y = Matrix{Float32}(Matrix{Float32}(select(df, target_name))')
     elseif eltype(df[!, target_name]) <: CategoricalValue
-        y = reshape(UInt32.(CategoricalArrays.levelcode.(df[!, target_name])), 1, :)
+        y = reshape(UInt32.(_target_codes(df[!, target_name], target_levels)), 1, :)
     else
         y = reshape(Float32.(df[!, target_name]), 1, :)
     end
@@ -122,6 +135,7 @@ function get_df_loader_train(
     offset_name=nothing,
     batchsize=0,
     scalers=nothing,
+    target_levels=nothing,
     shuffle=true,
     rng=default_rng(),
 )
@@ -149,7 +163,7 @@ function get_df_loader_train(
         else
             target = df[!, target_name]
             if eltype(target) <: CategoricalValue
-                target = CategoricalArrays.levelcode.(target)
+                target = _target_codes(target, target_levels)
             end
             target = reshape(target, 1, :)
         end

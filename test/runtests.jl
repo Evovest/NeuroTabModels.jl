@@ -14,5 +14,6 @@ using Reactant
 using Zygote
 
 include("core.jl")
+include("eval_levels.jl")
 include("embedding.jl")
 include("MLJ.jl")
