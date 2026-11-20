@@ -15,10 +15,12 @@ using CategoricalArrays
 Model input for the `features` columns of `df`. A vector of names gives a `(nfeats, nobs)`
 `Float32` matrix. A NamedTuple gives one matrix per slot, where a slot of `name => levels`
 pairs gives `Int32` level codes: the position of the value in the training levels, or `0`
-for a level not seen at fit time.
+for a level not seen at fit time. Any other `missing` becomes `NaN`.
 """
 feature_matrix(df::AbstractDataFrame, features::NamedTuple) = map(f -> feature_matrix(df, f), features)
-feature_matrix(df::AbstractDataFrame, names::AbstractVector) = stack(Float32.(df[!, f]) for f in names; dims=1)
+function feature_matrix(df::AbstractDataFrame, names::AbstractVector)
+    return stack(Float32.(coalesce.(df[!, f], NaN32)) for f in names; dims=1)
+end
 function feature_matrix(df::AbstractDataFrame, levels::AbstractVector{<:Pair})
     return stack(Int32.(something.(indexin(unwrap.(df[!, f]), l), 0)) for (f, l) in levels; dims=1)
 end

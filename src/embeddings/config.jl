@@ -34,26 +34,28 @@ an [`EmbeddingLayer`](@ref).
 struct IdentityEmbedding <: AbstractNumericalEmbedding end
 
 """
-    LinearEmbeddings(; d_embedding=16, activation=:relu)
+    LinearEmbeddings(; d_embedding=16, activation=:relu, missing_token=false)
 
 Per-feature linear embedding: each feature is projected to `d_embedding` by its own affine map, followed by `activation`.
 
 # Arguments
 - `d_embedding::Int`: Output dimension per feature (default `16`).
 - `activation`: Activation applied after the projection (default `:relu`).
+- `missing_token::Bool`: Embed a missing value as a learned `[MISS]` vector rather than reject it (default `false`).
 """
 struct LinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
     activation::Symbol
+    missing_token::Bool
 end
-function LinearEmbeddings(; d_embedding::Int=16, activation=:relu)
+function LinearEmbeddings(; d_embedding::Int=16, activation=:relu, missing_token::Bool=false)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
-    LinearEmbeddings(d_embedding, _activation(activation))
+    LinearEmbeddings(d_embedding, _activation(activation), missing_token)
 end
 
 """
     PeriodicEmbeddings(; d_embedding=16, frequencies=32, frequencies_init_scale=0.01f0,
-                       activation=:relu, lite=false)
+                       activation=:relu, lite=false, missing_token=false)
 
 Per-feature periodic embedding: each feature is expanded with learned sine/cosine components, then projected to `d_embedding` and passed through `activation`.
 
@@ -63,6 +65,7 @@ Per-feature periodic embedding: each feature is expanded with learned sine/cosin
 - `frequencies_init_scale::Float32`: Std. dev. initializing the frequencies (default `0.01f0`).
 - `activation`: Activation applied after the projection (default `:relu`).
 - `lite::Bool`: Share the projection across features to cut parameters (default `false`).
+- `missing_token::Bool`: Embed a missing value as a learned `[MISS]` vector rather than reject it (default `false`).
 """
 struct PeriodicEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
@@ -70,17 +73,21 @@ struct PeriodicEmbeddings <: AbstractNumericalEmbedding
     frequencies_init_scale::Float32
     activation::Symbol
     lite::Bool
+    missing_token::Bool
 end
 function PeriodicEmbeddings(;
-    d_embedding::Int=16, frequencies::Int=32, frequencies_init_scale::Real=0.01f0, activation=:relu, lite::Bool=false
+    d_embedding::Int=16, frequencies::Int=32, frequencies_init_scale::Real=0.01f0, activation=:relu, lite::Bool=false,
+    missing_token::Bool=false,
 )
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     frequencies > 0 || throw(ArgumentError("frequencies must be > 0, got $frequencies"))
-    PeriodicEmbeddings(d_embedding, frequencies, Float32(frequencies_init_scale), _activation(activation), lite)
+    PeriodicEmbeddings(
+        d_embedding, frequencies, Float32(frequencies_init_scale), _activation(activation), lite, missing_token
+    )
 end
 
 """
-    PiecewiseLinearEmbeddings(; d_embedding=16, bins=32, activation=:identity, version=:B)
+    PiecewiseLinearEmbeddings(; d_embedding=16, bins=32, activation=:identity, version=:B, missing_token=false)
 
 Per-feature piecewise-linear embedding against bin edges computed from the training data, then projected to `d_embedding`. The bin edges are derived at fit time, so this embedding requires `x_train`.
 
@@ -89,19 +96,23 @@ Per-feature piecewise-linear embedding against bin edges computed from the train
 - `bins::Int`: Number of bins per feature, > 1 (default `32`).
 - `activation`: Activation applied after the projection (default `:identity`).
 - `version`: Encoding variant, `:A` or `:B` (default `:B`).
+- `missing_token::Bool`: Embed a missing value as a learned `[MISS]` vector rather than reject it (default `false`).
 """
 struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
     bins::Int
     activation::Symbol
     version::Symbol
+    missing_token::Bool
 end
-function PiecewiseLinearEmbeddings(; d_embedding::Int=16, bins::Int=32, activation=:identity, version=:B)
+function PiecewiseLinearEmbeddings(;
+    d_embedding::Int=16, bins::Int=32, activation=:identity, version=:B, missing_token::Bool=false
+)
     version = Symbol(version)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     bins > 1 || throw(ArgumentError("bins must be > 1, got $bins"))
     version in (:A, :B) || throw(ArgumentError("version must be :A or :B, got :$version"))
-    PiecewiseLinearEmbeddings(d_embedding, bins, _activation(activation), version)
+    PiecewiseLinearEmbeddings(d_embedding, bins, _activation(activation), version, missing_token)
 end
 
 """
@@ -286,37 +297,43 @@ needs_x_train(config::EmbeddingLayer) = needs_x_train(config.num) || needs_x_tra
 _build_num(::IdentityEmbedding; nfeats::Int, x_train=nothing) = NoOpLayer()
 function _build_num(config::LinearEmbeddings; nfeats::Int, x_train=nothing)
     Chain(
-        _LinearEmbeddings(; nfeats, d_embedding=config.d_embedding, activation=act_dict[config.activation]),
+        _with_missing(
+            config, _LinearEmbeddings(; nfeats, d_embedding=config.d_embedding, activation=act_dict[config.activation]),
+            nfeats,
+        ),
         FlattenLayer(),
     )
 end
 function _build_num(config::PeriodicEmbeddings; nfeats::Int, x_train=nothing)
     Chain(
-        _PeriodicEmbeddings(;
+        _with_missing(config, _PeriodicEmbeddings(;
             nfeats,
             d_embedding=config.d_embedding,
             frequencies=config.frequencies,
             frequencies_init_scale=config.frequencies_init_scale,
             activation=act_dict[config.activation],
             lite=config.lite,
-        ),
+        ), nfeats),
         FlattenLayer(),
     )
 end
 function _build_num(config::PiecewiseLinearEmbeddings; nfeats::Int, x_train=nothing)
     x_train === nothing && error("PiecewiseLinearEmbeddings requires x_train to compute bin edges")
     Chain(
-        _PiecewiseLinearEmbeddings(;
+        _with_missing(config, _PiecewiseLinearEmbeddings(;
             bins=compute_bins(permutedims(x_train); bins=config.bins),
             d_embedding=config.d_embedding,
             activation=act_dict[config.activation],
             version=config.version,
-        ),
+        ), nfeats),
         FlattenLayer(),
     )
 end
 _build_num(::BatchNormEmbeddings; nfeats::Int, x_train=nothing) = _BatchNormEmbeddings(; nfeats)
 _build_num(::LayerNormEmbeddings; nfeats::Int, x_train=nothing) = _LayerNormEmbeddings(; nfeats)
+
+_with_missing(config, layer, nfeats) =
+    config.missing_token ? _MissingTokens(layer, config.d_embedding, nfeats) : layer
 
 function _build_temp(t::TemporalEmbeddings, x_col)
     x_col === nothing && error("TemporalEmbeddings requires x_train for t_mean/t_std")

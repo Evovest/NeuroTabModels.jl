@@ -94,6 +94,13 @@ function init(
             (embed_config = EmbeddingLayer(embed_config.num, embed_config.temp, CategoricalEmbeddings(; features=auto)))
     end
     cat_features = isnothing(embed_config.cat) ? Symbol[] : embed_config.cat.features
+    temp_feature = isnothing(embed_config.temp) ? nothing : embed_config.temp.feature
+    for f in setdiff(feature_names, cat_features)
+        any(v -> ismissing(v) || isnan(v), df[!, f]) || continue
+        f == temp_feature && error("Temporal feature `$f` has missing values, which are not supported.")
+        hasproperty(embed_config.num, :missing_token) && embed_config.num.missing_token ||
+            error("Feature `$f` has missing values, which need a numerical embedding with `missing_token=true`.")
+    end
     cat_levels = Dict{Symbol,Vector}(f => CategoricalArrays.levels(df[!, f]) for f in cat_features)
     features = Models.Embeddings.embedding_inputs(embed_config, feature_names, cat_levels)
 

@@ -22,6 +22,7 @@ include("batchnorm.jl")
 include("layernorm.jl")
 include("temporal.jl")
 include("categorical.jl")
+include("missing.jl")
 include("config.jl")
 
 end
