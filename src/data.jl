@@ -9,7 +9,7 @@ import Random: default_rng
 using DataFrames
 using CategoricalArrays
 
-_codes(col, ::Nothing) = col
+_codes(col, ::Nothing) = coalesce.(col, NaN32)
 _codes(col, levels) = something.(indexin(unwrap.(col), levels), 0)
 
 """
@@ -17,7 +17,7 @@ _codes(col, levels) = something.(indexin(unwrap.(col), levels), 0)
 
 Return the `(nfeats, nobs)` `Float32` model input for the `feature_names` columns of `df`.
 A column named in `cat_levels` becomes its level code: the position of its value in the
-training levels, or `0` for a level not seen at fit time.
+training levels, or `0` for a level not seen at fit time. Any other `missing` becomes `NaN`.
 """
 function feature_matrix(df::AbstractDataFrame, feature_names, cat_levels::AbstractDict)
     return stack(Float32.(_codes(df[!, f], get(cat_levels, Symbol(f), nothing))) for f in feature_names; dims=1)
