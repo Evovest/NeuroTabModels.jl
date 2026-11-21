@@ -5,21 +5,25 @@ import MLJModelInterface: fit, update, predict, schema
 using Random: Random
 
 using ..Models
-using ..Models: AbstractEmbedding, IdentityEmbedding, EmbeddingLayer
+using ..Models: AbstractNumericalEmbedding, EmbeddingLayer
 export NeuroTabRegressor, NeuroTabClassifier, LearnerTypes
 
-_to_embedding(::Nothing) = IdentityEmbedding()
-_to_embedding(e::AbstractEmbedding) = e
+_to_embedding(::Nothing) = EmbeddingLayer()
+_to_embedding(e::EmbeddingLayer) = e
+_to_embedding(e::AbstractNumericalEmbedding) = EmbeddingLayer(; num=e)
 _to_embedding(d::AbstractDict) = EmbeddingLayer(d)
 function _to_embedding(x)
-    error("`embedding_config` must be `nothing`, an `AbstractDict`, or an `AbstractEmbedding`; got $(typeof(x)).")
+    error(
+        "`embedding_config` must be `nothing`, an `AbstractDict`, an `EmbeddingLayer` or a numerical embedding; " *
+        "got $(typeof(x)).",
+    )
 end
 
 mutable struct NeuroTabRegressor <: MMI.Deterministic
     loss::Symbol
     metric::Symbol
     arch::Architecture
-    embedding_config::AbstractEmbedding
+    embedding_config::EmbeddingLayer
     nrounds::Int
     early_stopping_rounds::Int
     lr::Float32
@@ -57,9 +61,9 @@ A model type for constructing a NeuroTabRegressor, based on [NeuroTabModels.jl](
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional numerical/temporal/categorical embeddings. Accepts `nothing`
-  (categorical columns are still embedded automatically), an `AbstractEmbedding`
-  (e.g. `EmbeddingLayer(; num=:periodic, temp=:t)`), or an `AbstractDict` selecting the type via
-  `:embedding_type` (e.g. `Dict(:embedding_type => :periodic, :d_embedding => 24)`).
+  (categorical columns are still embedded automatically), an `EmbeddingLayer` or a numerical embedding
+  (e.g. `PeriodicEmbeddings(; d_embedding=24)`), or an `AbstractDict` in the
+  `EmbeddingLayer` config form (e.g. `Dict(:num => Dict(:type => :periodic, :d_embedding => 24))`).
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.
@@ -238,7 +242,7 @@ mutable struct NeuroTabClassifier <: MMI.Probabilistic
     loss::Symbol
     metric::Symbol
     arch::Architecture
-    embedding_config::AbstractEmbedding
+    embedding_config::EmbeddingLayer
     nrounds::Int
     early_stopping_rounds::Int
     lr::Float32
@@ -267,8 +271,8 @@ A model type for constructing a NeuroTabClassifier, based on [NeuroTabModels.jl]
 - `device=:gpu`:            Execution device. One of `:cpu` or `:gpu`.
 - `gpuID=0`:                GPU device to use, only relevant if `device = :gpu`. `0` auto-selects.
 - `embedding_config=nothing`: Optional numerical/temporal/categorical embeddings. Accepts `nothing`
-  (categorical columns are still embedded automatically), an `AbstractEmbedding`, or an `AbstractDict`
-  selecting the type via `:embedding_type`.
+  (categorical columns are still embedded automatically), an `EmbeddingLayer` or a numerical embedding,
+  or an `AbstractDict` in the `EmbeddingLayer` config form.
 
 `backend=:zygote` works on `:cpu` and `:gpu`; `backend=:reactant` works on `:cpu` and `:gpu` and uses Enzyme for AD.
 `backend=:enzyme` with `device=:gpu` is currently known to fail for some NeuroTabModels models.

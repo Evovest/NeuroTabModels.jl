@@ -110,15 +110,15 @@ backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
 # metric = :pearson # :mse :gaussian_mle :tweedie
 
-# embedding_config = Dict(:embedding_type => :linear, :d_embedding => 8, :activation => :relu)
-embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => :identity)
-# embedding_config = Dict(:embedding_type => :piecewise, :d_embedding => 8, :activation => "relu", :nbins => 16)
-# embedding_config = Dict(
-#     :embedding_type => :periodic, :d_embedding => 8, :activation => "relu", :frequencies => 16, :lite => true
-# )
-# embedding_config = Dict(:embedding_type => :identity)
-# embedding_config = Dict(:embedding_type => :batchnorm)
-# embedding_config = Dict(:embedding_type => :layernorm)
+# embedding_config = Dict(:num => Dict(:type => :linear, :d_embedding => 8, :activation => :relu))
+embedding_config = Dict(:num => Dict(:type => :linear, :d_embedding => 1, :activation => :identity))
+# embedding_config = Dict(:num => Dict(:type => :piecewise, :d_embedding => 8, :activation => "relu", :nbins => 16))
+# embedding_config = Dict(:num => Dict(
+#     :type => :periodic, :d_embedding => 8, :activation => "relu", :frequencies => 16, :lite => true
+# ))
+# embedding_config = Dict(:num => Dict(:type => :identity))
+# embedding_config = Dict(:num => Dict(:type => :batchnorm))
+# embedding_config = Dict(:num => Dict(:type => :layernorm))
 
 learner = NeuroTabRegressor(
     arch;

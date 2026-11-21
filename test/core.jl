@@ -120,7 +120,7 @@ end
     learner = NeuroTabClassifier(;
         arch_name="NeuroTreeConfig",
         arch_config=Dict(:depth => 4),
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=Dict(:num => Dict(:type => :batchnorm)),
         nrounds=200,
         early_stopping_rounds=5,
         lr=3e-2,
@@ -152,7 +152,7 @@ end
     arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=64, dropout=0.1, arch_type)
     learner = NeuroTabClassifier(
         arch;
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=Dict(:num => Dict(:type => :batchnorm)),
         nrounds=200,
         batchsize=32,
         early_stopping_rounds=10,
@@ -192,7 +192,7 @@ end
 
     learner = NeuroTabClassifier(
         arch;
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=Dict(:num => Dict(:type => :batchnorm)),
         nrounds=200,
         batchsize=32,
         early_stopping_rounds=5,
@@ -650,7 +650,7 @@ end
     learner = NeuroTabClassifier(;
         arch_name="NeuroTreeConfig",
         arch_config=Dict(:depth => 4),
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=Dict(:num => Dict(:type => :batchnorm)),
         nrounds=200,
         early_stopping_rounds=5,
         lr=3e-2,

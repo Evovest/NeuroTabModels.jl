@@ -39,7 +39,7 @@ end
     x = randn(Float32, nfeats, batch)
     rng = Xoshiro(123)
     for (etype, T) in [(:batchnorm, BatchNormEmbeddings), (:layernorm, LayerNormEmbeddings)]
-        config = EmbeddingLayer(Dict(:embedding_type => etype))
+        config = EmbeddingLayer(Dict(:num => Dict(:type => etype)))
         @test config.num isa T
         layer = build_embedding_chain(config, [Symbol(:x, j) for j in 1:nfeats])
         ps, st = Lux.setup(rng, layer)
@@ -75,11 +75,11 @@ end
     @testset "$arch_name - $embedding_type" for (arch_name, arch) in architectures,
         embedding_type in [:periodic, :linear, :piecewise]
 
-        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
+        embedding_config = Dict(:num => Dict(:type => embedding_type, :d_embedding => 8))
         if embedding_type == :piecewise
-            embedding_config[:bins] = 16
+            embedding_config[:num][:bins] = 16
         elseif embedding_type == :periodic
-            embedding_config[:frequencies] = 8
+            embedding_config[:num][:frequencies] = 8
         end
 
         learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, lr=1e-2, embedding_config)
@@ -107,11 +107,11 @@ end
     deval = df[setdiff(1:nrow(df), train_indices), :]
 
     @testset "$embedding_type" for embedding_type in [:periodic, :linear, :piecewise]
-        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
+        embedding_config = Dict(:num => Dict(:type => embedding_type, :d_embedding => 8))
         if embedding_type == :piecewise
-            embedding_config[:bins] = 16
+            embedding_config[:num][:bins] = 16
         elseif embedding_type == :periodic
-            embedding_config[:frequencies] = 16
+            embedding_config[:num][:frequencies] = 16
         end
 
         arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=128, dropout=0.0)
@@ -155,20 +155,20 @@ end
     @test !any(isnan, m(dnew))
 
     config = EmbeddingLayer(Dict(  # as parsed from JSON
-        "temporal" => Dict("feature" => "t", "order" => Any[3], "periods" => Any[50]),
-        "categorical" => Dict("features" => Any["store"]),
+        "num" => Dict("type" => "linear", "d_embedding" => 8),
+        "temp" => Dict("feature" => "t", "order" => Any[3], "periods" => Any[50]),
+        "cat" => Dict("features" => Any["store"]),
     ))
+    @test config.num == LinearEmbeddings(; d_embedding=8)
     @test config.temp.feature == :t
     @test config.temp.periods == Float32[50]
     @test config.cat.features == [:store]
-    config = EmbeddingLayer(; num=:linear, temp=:t, cat=[:store])
-    @test config.num isa LinearEmbeddings
-    @test config.temp.feature == :t
-    @test config.cat.features == [:store]
-    @test_throws ArgumentError EmbeddingLayer(; num=:foo)
+    @test_throws ArgumentError EmbeddingLayer(Dict(:num => Dict(:type => :foo)))
 
     learner = NeuroTabRegressor(
-        NeuroTabModels.MLPConfig(); nrounds=1, embedding_config=EmbeddingLayer(; num=:linear, temp=:t)
+        NeuroTabModels.MLPConfig();
+        nrounds=1,
+        embedding_config=EmbeddingLayer(; num=LinearEmbeddings(), temp=TemporalEmbeddings(; feature=:t)),
     )
     m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t, :store], target_name=:y)
     @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])

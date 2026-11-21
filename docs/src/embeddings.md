@@ -16,20 +16,23 @@ independently, and `MaskedModel` only reattaches `w` at the `*Attn` core. See
 - `PiecewiseLinearEmbeddings`: computes feature bins from the training data and embeds the resulting piecewise-linear encoding.
 - `BatchNormEmbeddings`: batch-normalizes raw numerical features without expanding them.
 - `LayerNormEmbeddings`: layer-normalizes raw numerical features without expanding them.
-- `TemporalEmbeddings`: embeds one time column with Fourier features and an optional trend term.
-- `CategoricalEmbeddings`: learns a vector per level of each categorical column.
+- `TemporalEmbeddings(; feature)`: embeds the one time column `feature` with Fourier features and an optional trend term.
+- `CategoricalEmbeddings(; features)`: learns a vector per level of each categorical column in `features`.
 
 ## Configuration
 
 `EmbeddingLayer` combines a numerical embedding with optional temporal and categorical
 branches. It is built in one of two ways, and a learner's `embedding_config` takes either.
 
-**From embedding objects**, each built with its own constructor:
+### From embedding objects
 
-- `num`: a numerical embedding from the list above; it embeds every column not taken by `temp` or `cat`.
-- `temp`: `TemporalEmbeddings(; feature)`, for the one time column `feature`.
-- `cat`: `CategoricalEmbeddings(; features)`, for the columns in `features`. Without it, `fit`
-  embeds every `CategoricalVector` column.
+Pass each branch as an embedding object, built with its own constructor (see API below):
+
+- `num`: an `AbstractNumericalEmbedding` from the list above (default `IdentityEmbedding()`).
+  It embeds every column of `feature_names` not taken by `temp` or `cat`.
+- `temp`: a `TemporalEmbeddings`, or `nothing` (default) for no time column.
+- `cat`: a `CategoricalEmbeddings`, or `nothing` (default), in which case `fit` embeds every
+  `CategoricalVector` column.
 
 ```julia
 EmbeddingLayer(;
@@ -37,22 +40,26 @@ EmbeddingLayer(;
     temp=TemporalEmbeddings(; feature=:t, periods=[50.0]),
     cat=CategoricalEmbeddings(; features=[:store]),
 )
-EmbeddingLayer(; num=:piecewise, temp=:t, cat=[:store])   # by name, with default kwargs
 ```
 
-**From a Dict**, with these keys:
+### From a Dict
 
-- `:embedding_type`: the numerical embedding, one of `:identity`, `:linear`, `:periodic`,
-  `:piecewise`, `:batchnorm`, `:layernorm`. The other top-level keys are its kwargs.
-- `:temporal`: a Dict of `TemporalEmbeddings` kwargs.
-- `:categorical`: a Dict of `CategoricalEmbeddings` kwargs.
+For hyperparameter search, or a config read from JSON, pass a Dict with the same three keys,
+each optional and each a Dict of constructor kwargs:
+
+- `num`: `type` names the numerical embedding (`:identity`, `:linear`, `:periodic`,
+  `:piecewise`, `:batchnorm`, `:layernorm`); the other keys are its kwargs. Keys the type
+  does not take, and `nothing` values, are ignored, so one Dict can tune several types.
+- `temp`: `TemporalEmbeddings` kwargs, `feature` required.
+- `cat`: `CategoricalEmbeddings` kwargs, `features` required.
+
+Keys and values may be strings.
 
 ```julia
 EmbeddingLayer(Dict(
-    :embedding_type => :periodic,
-    :d_embedding => 24,
-    :temporal => Dict(:feature => :t),
-    :categorical => Dict(:features => [:store]),
+    :num => Dict(:type => :periodic, :d_embedding => 24),
+    :temp => Dict(:feature => :t),
+    :cat => Dict(:features => [:store]),
 ))
 ```
 

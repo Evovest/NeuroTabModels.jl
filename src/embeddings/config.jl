@@ -182,31 +182,37 @@ _features(c::CategoricalEmbeddings) = c.features
 
 """
     EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing, cat=nothing)
-    EmbeddingLayer(d::AbstractDict)
+    EmbeddingLayer(config::AbstractDict)
 
 Embedding of each feature by its kind, concatenated numerical first, then temporal, then
 categorical. `temp` and `cat` name the columns they embed; `num` embeds every other column
-of `feature_names`. `num` always exists (defaults to [`IdentityEmbedding`](@ref)); `nothing`
-normalizes to it.
+of `feature_names`.
 
-`num` takes an `:embedding_type` name, `temp` a column name, and `cat=[:store]` picks the
-categorical columns explicitly. Full objects still work for tuning, e.g.
-`temp=TemporalEmbeddings(; feature=:t, periods=[50.0])`.
-
-The `Dict` form is for the hyperparameter harness: `:embedding_type` (`:linear`,
-`:periodic`, `:piecewise`, `:batchnorm`, `:layernorm`, `:identity`) selects the numerical type,
-optional `:temporal` and `:categorical` Dicts give [`TemporalEmbeddings`](@ref) and
-[`CategoricalEmbeddings`](@ref) kwargs. Unknown or `nothing` top-level keys are ignored
-(missing `:embedding_type` → identity); the nested Dicts take only their constructor's kwargs.
+# Arguments
+- `num::AbstractNumericalEmbedding`: Numerical embedding (default [`IdentityEmbedding`](@ref)).
+- `temp`: A [`TemporalEmbeddings`](@ref), or `nothing` for no temporal column (default).
+- `cat`: A [`CategoricalEmbeddings`](@ref), or `nothing` (default), in which case `fit` embeds
+  every `CategoricalVector` column.
+- `config::AbstractDict`: The same three parts as Dicts of constructor kwargs, each optional:
+  - `num`: `type` names the embedding (`:identity`, `:linear`, `:periodic`, `:piecewise`,
+    `:batchnorm`, `:layernorm`); the other keys are its kwargs. Keys the type does not take,
+    and `nothing` values, are ignored, so one Dict can tune several types.
+  - `temp`: [`TemporalEmbeddings`](@ref) kwargs, `feature` required.
+  - `cat`: [`CategoricalEmbeddings`](@ref) kwargs, `features` required.
+  Keys and values may be strings, so a config read back from JSON builds the same layer.
 
 # Examples
 ```julia
-EmbeddingLayer(; num=:periodic, temp=:t)   # CategoricalVector columns are embedded automatically
+EmbeddingLayer(;
+    num=PeriodicEmbeddings(; d_embedding=24),
+    temp=TemporalEmbeddings(; feature=:date),
+    cat=CategoricalEmbeddings(; features=[:store]),
+)
 
 EmbeddingLayer(Dict(
-    :embedding_type => :periodic,
-    :temporal => Dict(:feature => :date),
-    :categorical => Dict(:features => [:store]),
+    :num => Dict(:type => :periodic, :d_embedding => 24),
+    :temp => Dict(:feature => :date),
+    :cat => Dict(:features => [:store]),
 ))
 ```
 """
@@ -234,41 +240,25 @@ const _NUM_EMBEDDING_TYPES = Dict{Symbol,Type}(
     :layernorm => LayerNormEmbeddings,
 )
 
-function _num_type(name)
-    etype = Symbol(name)
-    get(_NUM_EMBEDDING_TYPES, etype) do
-        throw(ArgumentError("unknown :embedding_type $(repr(etype)); valid: $(collect(keys(_NUM_EMBEDDING_TYPES)))"))
-    end
-end
-
-_as_num(::Nothing) = IdentityEmbedding()
-_as_num(n::AbstractNumericalEmbedding) = n
-_as_num(s::Union{Symbol,AbstractString}) = _num_type(s)()
-_as_temp(t) = t
-_as_temp(s::Union{Symbol,AbstractString}) = TemporalEmbeddings(; feature=s)
-_as_cat(c) = c
-_as_cat(v::AbstractVector) = CategoricalEmbeddings(; features=v)
-EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing, cat=nothing) =
-    EmbeddingLayer(_as_num(num), _as_temp(temp), _as_cat(cat))
-
-# a learner's `embedding_config` may be a bare numerical embedding
-_embedding_layer(e::EmbeddingLayer) = e
-_embedding_layer(num::AbstractNumericalEmbedding) = EmbeddingLayer(; num)
+EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing, cat=nothing) = EmbeddingLayer(num, temp, cat)
 
 _symbol_keys(d) = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
 
-# The hyperparameter harness passes a superset Dict, so each numerical type takes only
+# The hyperparameter harness passes a superset `num` Dict, so each numerical type takes only
 # its own fields; absent and `nothing`-valued keys fall back to the constructor defaults.
-function EmbeddingLayer(d::AbstractDict)
-    d = _symbol_keys(d)
-    num = if isnothing(get(d, :embedding_type, nothing))
-        IdentityEmbedding()
-    else
-        T = _num_type(d[:embedding_type])
-        T(; (k => d[k] for k in fieldnames(T) if !isnothing(get(d, k, nothing)))...)
+function _num_embedding(d)
+    name = Symbol(d[:type])
+    T = get(_NUM_EMBEDDING_TYPES, name) do
+        throw(ArgumentError("unknown numerical embedding type :$name; valid: $(collect(keys(_NUM_EMBEDDING_TYPES)))"))
     end
-    temp = haskey(d, :temporal) ? TemporalEmbeddings(; _symbol_keys(d[:temporal])...) : nothing
-    cat = haskey(d, :categorical) ? CategoricalEmbeddings(; _symbol_keys(d[:categorical])...) : nothing
+    return T(; (k => d[k] for k in fieldnames(T) if !isnothing(get(d, k, nothing)))...)
+end
+
+function EmbeddingLayer(config::AbstractDict)
+    config = _symbol_keys(config)
+    num = haskey(config, :num) ? _num_embedding(_symbol_keys(config[:num])) : IdentityEmbedding()
+    temp = haskey(config, :temp) ? TemporalEmbeddings(; _symbol_keys(config[:temp])...) : nothing
+    cat = haskey(config, :cat) ? CategoricalEmbeddings(; _symbol_keys(config[:cat])...) : nothing
     return EmbeddingLayer(num, temp, cat)
 end
 
@@ -367,7 +357,7 @@ categorical.
 A `Lux` layer emitting a flat `(width, batch)` output; recover the width with [`embedding_width`](@ref).
 """
 function build_embedding_chain(config::AbstractNumericalEmbedding, feature_names; x_train=nothing)
-    build_embedding_chain(_embedding_layer(config), feature_names; x_train)
+    build_embedding_chain(EmbeddingLayer(; num=config), feature_names; x_train)
 end
 function build_embedding_chain(
     config::EmbeddingLayer, feature_names::AbstractVector{Symbol}; x_train=nothing, cat_levels=Dict{Symbol,Vector}()
