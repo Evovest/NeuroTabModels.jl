@@ -1,6 +1,8 @@
 using NeuroTabModels.Models.Embeddings: EmbeddingLayer, LayerNormEmbeddings, BatchNormEmbeddings
+using NeuroTabModels.Models.Embeddings: LinearEmbeddings, TemporalEmbeddings, CategoricalEmbeddings
 using NeuroTabModels.Models.Embeddings: build_embedding_chain, embedding_width
 using NNlib
+using Statistics: var
 
 @testset "GroupedDense" begin
     rng = Xoshiro(1)
@@ -37,9 +39,9 @@ end
     x = randn(Float32, nfeats, batch)
     rng = Xoshiro(123)
     for (etype, T) in [(:batchnorm, BatchNormEmbeddings), (:layernorm, LayerNormEmbeddings)]
-        config = EmbeddingLayer(Dict(:embedding_type => etype))
+        config = EmbeddingLayer(Dict(:num => Dict(:type => etype)))
         @test config.num isa T
-        layer = build_embedding_chain(config, nfeats)
+        layer = build_embedding_chain(config, [Symbol(:x, j) for j in 1:nfeats])
         ps, st = Lux.setup(rng, layer)
         y, _ = layer(x, ps, st)
         @test size(y) == (nfeats, batch)
@@ -73,11 +75,11 @@ end
     @testset "$arch_name - $embedding_type" for (arch_name, arch) in architectures,
         embedding_type in [:periodic, :linear, :piecewise]
 
-        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
+        embedding_config = Dict(:num => Dict(:type => embedding_type, :d_embedding => 8))
         if embedding_type == :piecewise
-            embedding_config[:bins] = 16
+            embedding_config[:num][:bins] = 16
         elseif embedding_type == :periodic
-            embedding_config[:frequencies] = 8
+            embedding_config[:num][:frequencies] = 8
         end
 
         learner = NeuroTabRegressor(arch; loss=:mse, nrounds=20, lr=1e-2, embedding_config)
@@ -105,11 +107,11 @@ end
     deval = df[setdiff(1:nrow(df), train_indices), :]
 
     @testset "$embedding_type" for embedding_type in [:periodic, :linear, :piecewise]
-        embedding_config = Dict(:embedding_type => embedding_type, :d_embedding => 8)
+        embedding_config = Dict(:num => Dict(:type => embedding_type, :d_embedding => 8))
         if embedding_type == :piecewise
-            embedding_config[:bins] = 16
+            embedding_config[:num][:bins] = 16
         elseif embedding_type == :periodic
-            embedding_config[:frequencies] = 16
+            embedding_config[:num][:frequencies] = 16
         end
 
         arch = NeuroTabModels.TabMConfig(; k=4, n_blocks=1, d_block=128, dropout=0.0)
@@ -124,4 +126,100 @@ end
         @test mean(ptrain .== levelcode.(dtrain.class)) >= 0.95
         @test mean(peval .== levelcode.(deval.class)) >= 0.95
     end
+end
+
+@testset "Temporal and categorical embeddings by name" begin
+    Random.seed!(123)
+    n = 2000
+    effect = Dict("a" => -2.0, "b" => 0.0, "c" => 1.0, "d" => 3.0)
+    store = rand(collect(keys(effect)), n)
+    x1, t = randn(n), Float64.(1:n)
+    y = x1 .+ getindex.(Ref(effect), store) .+ sin.(2π .* t ./ 50) .+ 0.1 .* randn(n)
+    df = DataFrame(; x1, t, store=categorical(store), y)
+    dtrain, deval = df[1:1600, :], df[1601:end, :]
+
+    embedding_config = EmbeddingLayer(;
+        num=LinearEmbeddings(; d_embedding=8),
+        temp=TemporalEmbeddings(; feature=:t, order=[3], periods=[50.0], d_embedding=8),
+        cat=CategoricalEmbeddings(; features=[:store], d_embedding=4),
+    )
+    learner = NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=60, lr=3e-3, batchsize=128, embedding_config)
+    m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t, :store], target_name=:y)
+
+    p = m(deval)
+    @test mean((p .- deval.y) .^ 2) < 0.1 * var(deval.y)
+    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+
+    dnew = deval[1:3, :]
+    dnew.store = categorical(["unseen", "a", "d"])
+    @test !any(isnan, m(dnew))
+
+    config = EmbeddingLayer(Dict(  # as parsed from JSON
+        "num" => Dict("type" => "linear", "d_embedding" => 8),
+        "temp" => Dict("feature" => "t", "order" => Any[3], "periods" => Any[50]),
+        "cat" => Dict("features" => Any["store"]),
+    ))
+    @test config.num == LinearEmbeddings(; d_embedding=8)
+    @test config.temp.feature == :t
+    @test config.temp.periods == Float32[50]
+    @test config.cat.features == [:store]
+    @test_throws ArgumentError EmbeddingLayer(Dict(:num => Dict(:type => :foo)))
+
+    learner = NeuroTabRegressor(
+        NeuroTabModels.MLPConfig();
+        nrounds=1,
+        embedding_config=EmbeddingLayer(; num=LinearEmbeddings(), temp=TemporalEmbeddings(; feature=:t)),
+    )
+    m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t, :store], target_name=:y)
+    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+    m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t], target_name=:y)
+    delete!(m.info, :cat_levels)
+    @test !any(isnan, m(deval))
+    m = NeuroTabModels.fit(
+        NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=1), dtrain; feature_names=[:store], target_name=:y
+    )
+    @test !any(isnan, m(deval))
+
+    @test_throws "also listed as categorical" EmbeddingLayer(;
+        temp=TemporalEmbeddings(; feature=:t), cat=CategoricalEmbeddings(; features=[:t])
+    )
+    @test_throws "not in feature_names" NeuroTabModels.fit(
+        NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=1, embedding_config=EmbeddingLayer(; temp=TemporalEmbeddings(; feature=:date))),
+        dtrain; feature_names=[:x1, :t], target_name=:y,
+    )
+end
+
+@testset "Missing-value tokens - $embedding_type ($backend)" for embedding_type in [:linear, :periodic, :piecewise],
+    backend in [:zygote, :reactant]
+
+    Random.seed!(123)
+    X = randn(Float32, 1000, 3)
+    miss = rand(1000) .< 0.3
+    # missingness itself shifts the target: only a learned [MISS] vector can tell it from x2 = 0
+    y = X[:, 1] .+ X[:, 2] .+ 2.0f0 .* miss .+ 0.1f0 .* randn(Float32, 1000)
+    df = allowmissing(DataFrame(X, :auto))
+    df[miss, :x2] .= missing
+    df[!, :y] = y
+    feature_names = [:x1, :x2, :x3]
+    dtrain, deval = df[1:800, :], df[801:end, :]
+
+    embedding_config = Dict(
+        :num => Dict(
+            :type => embedding_type, :d_embedding => 8, :bins => 16, :activation => :identity, :missing_token => true
+        ),
+    )
+    arch = NeuroTabModels.MLPConfig(; hidden_size=32, stack_size=1)
+    learner = NeuroTabRegressor(arch; nrounds=20, lr=1e-2, embedding_config, backend, device=:cpu)
+    m = NeuroTabModels.fit(learner, dtrain; deval, target_name=:y, feature_names)
+
+    p = m(deval)
+    em = ismissing.(deval.x2)
+    # x2 itself is unknown on these rows, so even a perfect model has error var(x2) + noise ≈ 1;
+    # one that treats missing as x2 = 0 also misses the +2 shift, ≈ 5
+    @test mean((p[em] .- deval.y[em]) .^ 2) < 2.5
+
+    no_token = NeuroTabRegressor(
+        arch; nrounds=1, embedding_config=Dict(:num => Dict(:type => embedding_type, :bins => 16))
+    )
+    @test_throws "missing_token=true" NeuroTabModels.fit(no_token, dtrain; target_name=:y, feature_names)
 end

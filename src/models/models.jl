@@ -4,8 +4,8 @@ export NeuroTabModel, Architecture, uses_batch_mask, MaskedModel
 export MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense, AttnResidual, ResidualScale
 export Embeddings, EmbeddingLayer
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
-export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, IdentityEmbedding
-export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractEmbedding
+export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, CategoricalEmbeddings, IdentityEmbedding
+export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractCategoricalEmbedding, AbstractEmbedding
 export NeuroTreeConfig, MLPConfig, MLPAttnConfig, NeuroTreeAttnConfig
 export ResNetConfig, TabMConfig, MOETreeConfig, ModernNCAConfig
 
@@ -152,11 +152,9 @@ struct NeuroTabModel{L<:LossType,C}
     info::Dict{Symbol,Any}
 end
 
-include("layers/layers.jl")
-using .Layers: MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense, AttnResidual, ResidualScale
-
-include("embeddings/embeddings.jl")
-using .Embeddings
+import ..Layers
+using ..Layers: MaskedBatchNorm, CarryMask, MaskSkip, GroupedDense, AttnResidual, ResidualScale
+using ..Embeddings
 
 include("MLP/mlp.jl")
 using .MLP

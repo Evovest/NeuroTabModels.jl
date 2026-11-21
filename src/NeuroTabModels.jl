@@ -7,6 +7,8 @@ export NeuroTabRegressor, NeuroTabClassifier, NeuroTabModel
 include("data.jl")
 include("losses.jl")
 include("metrics.jl")
+include("layers/layers.jl")
+include("embeddings/embeddings.jl")
 include("models/models.jl")
 using .Models
 include("infer.jl")

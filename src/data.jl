@@ -1,6 +1,6 @@
 module Data
 
-export get_df_loader_train, get_df_loader_infer
+export get_df_loader_train, get_df_loader_infer, feature_matrix
 
 import Base: length, getindex
 import MLUtils: DataLoader
@@ -8,6 +8,20 @@ import Random: default_rng
 
 using DataFrames
 using CategoricalArrays
+
+_codes(col, ::Nothing) = coalesce.(col, NaN32)
+_codes(col, levels) = something.(indexin(unwrap.(col), levels), 0)
+
+"""
+    feature_matrix(df, feature_names, cat_levels)
+
+Return the `(nfeats, nobs)` `Float32` model input for the `feature_names` columns of `df`.
+A column named in `cat_levels` becomes its level code: the position of its value in the
+training levels, or `0` for a level not seen at fit time. Any other `missing` becomes `NaN`.
+"""
+function feature_matrix(df::AbstractDataFrame, feature_names, cat_levels::AbstractDict)
+    return stack(Float32.(_codes(df[!, f], get(cat_levels, Symbol(f), nothing))) for f in feature_names; dims=1)
+end
 
 """
     ContainerTrain
@@ -54,13 +68,13 @@ function get_df_loader_train(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
+    cat_levels=Dict{Symbol,Vector}(),
     batchsize,
     scalers=nothing,
     shuffle=true,
     rng=default_rng(),
 )
-    feature_names = Symbol.(feature_names)
-    x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
+    x = feature_matrix(df, feature_names, cat_levels)
 
     # `(T, N)`: one row per target; per-target scalers broadcast down the rows
     if target_name isa AbstractVector
@@ -120,6 +134,7 @@ function get_df_loader_train(
     target_name,
     weight_name=nothing,
     offset_name=nothing,
+    cat_levels=Dict{Symbol,Vector}(),
     batchsize=0,
     scalers=nothing,
     shuffle=true,
@@ -142,7 +157,7 @@ function get_df_loader_train(
 
     for i in 1:n
         df = dfg[i]
-        x[i][:, 1:nrow(df)] .= Matrix(df[:, feature_names])'
+        x[i][:, 1:nrow(df)] .= feature_matrix(df, feature_names, cat_levels)
         mask[i][1:nrow(df)] .= true
         if target_name isa AbstractVector
             target = Matrix(df[:, target_name])'
@@ -190,9 +205,8 @@ function getindex(data::ContainerInfer, idx::AbstractVector)
     return x
 end
 
-function get_df_loader_infer(df::AbstractDataFrame; feature_names, batchsize)
-    feature_names = Symbol.(feature_names)
-    x = Matrix{Float32}(Matrix{Float32}(select(df, feature_names))')
+function get_df_loader_infer(df::AbstractDataFrame; feature_names, cat_levels=Dict{Symbol,Vector}(), batchsize)
+    x = feature_matrix(df, feature_names, cat_levels)
 
     container = ContainerInfer(x)
     batchsize = min(batchsize, length(container))
@@ -221,7 +235,7 @@ end
 #     return (x, mask)
 # end
 
-function get_df_loader_infer(dfg::GroupedDataFrame; feature_names, batchsize=0)
+function get_df_loader_infer(dfg::GroupedDataFrame; feature_names, cat_levels=Dict{Symbol,Vector}(), batchsize=0)
     n = length(dfg)
     nfeats = length(feature_names)
     bs = maximum(dfg.ends .- dfg.starts) + 1
@@ -232,7 +246,7 @@ function get_df_loader_infer(dfg::GroupedDataFrame; feature_names, batchsize=0)
 
     for i in 1:n
         df = dfg[i]
-        x[i][:, 1:nrow(df)] .= Matrix(df[!, feature_names])'
+        x[i][:, 1:nrow(df)] .= feature_matrix(df, feature_names, cat_levels)
         mask[i][1:nrow(df)] .= true
     end
 

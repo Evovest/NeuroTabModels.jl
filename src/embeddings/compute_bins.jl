@@ -1,7 +1,7 @@
 """
     compute_bins(X; bins=32)
 
-Quantile-based bin edges for piecewise-linear embeddings.
+Quantile-based bin edges for piecewise-linear embeddings. Missing values (`NaN`) are skipped.
 
 `X` must have shape `(n_samples, n_features)`, the transpose of model input `(n_features, batch)`.
 
@@ -19,13 +19,12 @@ function compute_bins(X::AbstractMatrix; bins::Int=32)
     @assert bins < n_samples "bins must be < n_samples, got bins=$bins, n_samples=$n_samples"
 
     edges = Vector{Vector{Float32}}(undef, n_features)
-    col_buf = Vector{eltype(X)}(undef, n_samples)
 
     for j in 1:n_features
-        copyto!(col_buf, view(X, :, j))
-        sort!(col_buf)
+        col = sort!(filter(!isnan, view(X, :, j)))
+        isempty(col) && error("Feature $j has only missing values, so it has no bin edges.")
         quantile_probs = range(0.0f0, 1.0f0; length=bins + 1)
-        feat_edges = Float32[quantile(col_buf, p; sorted=true) for p in quantile_probs]
+        feat_edges = Float32[quantile(col, p; sorted=true) for p in quantile_probs]
         unique!(feat_edges)
         if length(feat_edges) < 2
             # Constant features collapse all quantile edges to one value.
