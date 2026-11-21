@@ -167,11 +167,17 @@ function infer(
 )
     group_name = m.info[:group_name]
     if isnothing(group_name)
-        dinfer = get_df_loader_infer(df; feature_names=m.info[:feature_names], batchsize=2048)
+        dinfer = get_df_loader_infer(
+            df; feature_names=m.info[:feature_names], cat_levels=get(m.info, :cat_levels, Dict{Symbol,Vector}()),
+            batchsize=2048
+        )
         p = infer(m, dinfer; device, backend, proj)
     else
         dfg = groupby(df, group_name; sort=true)
-        dinfer = get_df_loader_infer(dfg; feature_names=m.info[:feature_names], batchsize=2048)
+        dinfer = get_df_loader_infer(
+            dfg; feature_names=m.info[:feature_names], cat_levels=get(m.info, :cat_levels, Dict{Symbol,Vector}()),
+            batchsize=2048
+        )
         p = infer_grp(m, dinfer; device, backend, proj)
         p = _ungroup(p, sortperm(df[!, group_name]))
     end
