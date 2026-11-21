@@ -88,7 +88,7 @@ function init(
         T == 1 && (scalers = map(only, scalers))
     end
 
-    embed_config = EmbeddingLayer(config.embedding_config)
+    embed_config = Models.Embeddings._embedding_layer(config.embedding_config)
     if isnothing(embed_config.cat)
         auto = filter(f -> nonmissingtype(eltype(df[!, f])) <: CategoricalValue, feature_names)
         isempty(auto) ||

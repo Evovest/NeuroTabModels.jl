@@ -21,22 +21,38 @@ independently, and `MaskedModel` only reattaches `w` at the `*Attn` core. See
 
 ## Configuration
 
-Use `EmbeddingLayer` to combine a numerical embedding with optional temporal and categorical
-branches. A dictionary form is also available for model configuration dictionaries.
+`EmbeddingLayer` combines a numerical embedding with optional temporal and categorical
+branches. It is built in one of two ways, and a learner's `embedding_config` takes either.
+
+**From embedding objects**, each built with its own constructor:
+
+- `num`: a numerical embedding from the list above; it embeds every column not taken by `temp` or `cat`.
+- `temp`: `TemporalEmbeddings(; feature)`, for the one time column `feature`.
+- `cat`: `CategoricalEmbeddings(; features)`, for the columns in `features`. Without it, `fit`
+  embeds every `CategoricalVector` column.
 
 ```julia
-EmbeddingLayer(; num=:periodic, temp=:t)   # CategoricalVector columns are embedded automatically
-
 EmbeddingLayer(;
     num=PiecewiseLinearEmbeddings(; bins=32),
     temp=TemporalEmbeddings(; feature=:t, periods=[50.0]),
-    cat=[:store],
+    cat=CategoricalEmbeddings(; features=[:store]),
 )
+EmbeddingLayer(; num=:piecewise, temp=:t, cat=[:store])   # by name, with default kwargs
+```
 
+**From a Dict**, with these keys:
+
+- `:embedding_type`: the numerical embedding, one of `:identity`, `:linear`, `:periodic`,
+  `:piecewise`, `:batchnorm`, `:layernorm`. The other top-level keys are its kwargs.
+- `:temporal`: a Dict of `TemporalEmbeddings` kwargs.
+- `:categorical`: a Dict of `CategoricalEmbeddings` kwargs.
+
+```julia
 EmbeddingLayer(Dict(
     :embedding_type => :periodic,
     :d_embedding => 24,
     :temporal => Dict(:feature => :t),
+    :categorical => Dict(:features => [:store]),
 ))
 ```
 

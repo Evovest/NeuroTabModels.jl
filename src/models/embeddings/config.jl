@@ -182,7 +182,6 @@ _features(c::CategoricalEmbeddings) = c.features
 
 """
     EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing, cat=nothing)
-    EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing, cat=nothing)
     EmbeddingLayer(d::AbstractDict)
 
 Embedding of each feature by its kind, concatenated numerical first, then temporal, then
@@ -251,9 +250,10 @@ _as_cat(c) = c
 _as_cat(v::AbstractVector) = CategoricalEmbeddings(; features=v)
 EmbeddingLayer(; num=IdentityEmbedding(), temp=nothing, cat=nothing) =
     EmbeddingLayer(_as_num(num), _as_temp(temp), _as_cat(cat))
-EmbeddingLayer(num::AbstractNumericalEmbedding; temp=nothing, cat=nothing) =
-    EmbeddingLayer(num, _as_temp(temp), _as_cat(cat))
-EmbeddingLayer(e::EmbeddingLayer) = e
+
+# a learner's `embedding_config` may be a bare numerical embedding
+_embedding_layer(e::EmbeddingLayer) = e
+_embedding_layer(num::AbstractNumericalEmbedding) = EmbeddingLayer(; num)
 
 _symbol_keys(d) = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in d)
 
@@ -367,7 +367,7 @@ categorical.
 A `Lux` layer emitting a flat `(width, batch)` output; recover the width with [`embedding_width`](@ref).
 """
 function build_embedding_chain(config::AbstractNumericalEmbedding, feature_names; x_train=nothing)
-    build_embedding_chain(EmbeddingLayer(config), feature_names; x_train)
+    build_embedding_chain(_embedding_layer(config), feature_names; x_train)
 end
 function build_embedding_chain(
     config::EmbeddingLayer, feature_names::AbstractVector{Symbol}; x_train=nothing, cat_levels=Dict{Symbol,Vector}()
