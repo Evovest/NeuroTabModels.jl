@@ -54,14 +54,14 @@ arch = NeuroTabModels.NeuroTreeConfig(;
 #     dropout=0.1,
 # )
 
-# embedding_config = Dict(
-#     :embedding_type => :piecewise,
+# embedding_config = Dict(:num => Dict(
+#     :type => :piecewise,
 #     :d_embedding => 8,
 #     :activation => nothing,
 #     :bins => 16,
 #     :frequencies => 16,
-# )
-embedding_config = Dict(:embedding_type => :batchnorm)
+# ))
+embedding_config = Dict(:num => Dict(:type => :batchnorm))
 
 learner = NeuroTabRegressor(
     arch; embedding_config, loss=:logloss, nrounds=200, early_stopping_rounds=2, lr=1e-2, device=:cpu, backend=:reactant

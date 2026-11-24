@@ -53,15 +53,15 @@ backend = :reactant
 loss = :mse # :mse :gaussian_mle :tweedie
 metric = :pearson # :mse :gaussian_mle :tweedie
 
-# embedding_config = Dict(
-#     :embedding_type => :piecewise,
+# embedding_config = Dict(:num => Dict(
+#     :type => :piecewise,
 #     :d_embedding => 8,
 #     :activation => nothing,
 #     :bins => 16,
 #     :frequencies => 16,
-# )
-embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => "identity")
-# embedding_config = Dict(:embedding_type => "batchnorm")
+# ))
+embedding_config = Dict(:num => Dict(:type => :linear, :d_embedding => 1, :activation => "identity"))
+# embedding_config = Dict(:num => Dict(:type => "batchnorm"))
 
 learner = NeuroTabRegressor(
     arch; embedding_config, loss, metric, nrounds=100, early_stopping_rounds=100, lr=1e-4, batchsize=0, device, backend

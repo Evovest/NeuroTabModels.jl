@@ -41,7 +41,7 @@ backend = :reactant
 loss = :mse
 metric = :pearson
 
-embedding_config = Dict(:embedding_type => :linear, :d_embedding => 1, :activation => "identity")
+embedding_config = Dict(:num => Dict(:type => :linear, :d_embedding => 1, :activation => "identity"))
 
 learner = NeuroTabRegressor(
     arch; embedding_config, loss, metric, nrounds=200, early_stopping_rounds=20, lr=1e-4, batchsize=0, device, backend

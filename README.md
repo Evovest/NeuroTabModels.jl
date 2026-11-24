@@ -21,7 +21,7 @@
 ] add NeuroTabModels
 ```
 
-⚠ Compatible with Julia >= v1.9.
+Compatible with Julia >= v1.10.
 
 ## Configuring a model
 
