@@ -5,12 +5,13 @@ export ModernNCAConfig
 import ..Models
 import ..Models: Architecture, NeuroTabModel
 import ..Losses: LossType, MSE, MAE, LogLoss, MLogLoss, GaussianMLE, masked_input
+import ...Data: feature_matrix
 
 using Lux
 using LuxCore
 using NNlib: relu, softmax
 using Random: randperm, AbstractRNG
-using DataFrames: AbstractDataFrame, select
+using DataFrames: AbstractDataFrame
 using CategoricalArrays
 
 """
@@ -260,13 +261,13 @@ function Base.iterate(l::ModernNCALoader, state=nothing)
 end
 
 """
-    build_corpus(df, feature_names, target_name, loss, scalers)
+    build_corpus(df, feature_names, cat_levels, target_name, loss, scalers)
 
 Return `(full_x, full_y)`: the corpus feature matrix `(ins, N)` as `Float32`
 and the encoded target vector, ready for `ModernNCALoader`.
 """
-function build_corpus(df::AbstractDataFrame, feature_names, target_name, loss::LossType, scalers)
-    full_x = permutedims(Matrix{Float32}(select(df, collect(feature_names))))
+function build_corpus(df::AbstractDataFrame, feature_names, cat_levels, target_name, loss::LossType, scalers)
+    full_x = feature_matrix(df, feature_names, cat_levels)
     full_y = _encode_targets(df, target_name, loss, scalers)
     return full_x, full_y
 end
@@ -344,7 +345,9 @@ function Models.train_dataloader(
     rng,
     kwargs...,
 )
-    cx, cy = build_corpus(df, feature_names, target_name, loss, scalers)
+    cx, cy = build_corpus(
+        df, feature_names, get(m.info, :cat_levels, Dict{Symbol,Vector}()), target_name, loss, scalers
+    )
     m.info[:nca_ref] = (cx=cx, cy=cy)
     n = size(cx, 2)
     batchsize = min(batchsize, n)

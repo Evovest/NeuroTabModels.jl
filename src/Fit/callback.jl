@@ -48,7 +48,8 @@ function CallBack(
     dfg = isnothing(eval_group_name) ? df : groupby(df, eval_group_name; sort=true)
     deval =
         get_df_loader_train(
-            dfg; feature_names, target_name, weight_name, offset_name, scalers, batchsize, shuffle=false
+            dfg; feature_names, target_name, weight_name, offset_name,
+            cat_levels=get(m.info, :cat_levels, Dict{Symbol,Vector}()), scalers, batchsize, shuffle=false
         ) |> dev
 
     ps, st = ts.parameters, testmode(ts.states)
