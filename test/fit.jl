@@ -40,7 +40,7 @@ end
     learner = NeuroTabClassifier(;
         arch_name="NeuroTreeConfig",
         arch_config=Dict(:depth => 4),
-        embedding_config=Dict(:embedding_type => :batchnorm),
+        embedding_config=Dict(:num => Dict(:type => :batchnorm)),
         nrounds=200,
         early_stopping_rounds=5,
         lr=3e-2,
