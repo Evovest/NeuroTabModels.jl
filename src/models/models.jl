@@ -141,7 +141,7 @@ The object containing the model and associated metadata.
 
 # Fields
 
-- `loss`: the loss functor used in training (`MSE()`, `LogLoss()`, `MLogLoss()`, `GaussianMLE()`).
+- `loss`: the loss functor used in training (`MSE()`, `Huber()`, `LogLoss()`, `MLogLoss()`, `GaussianMLE()`).
 - `chain`: the underlying `Lux.Chain` neural network.
 - `info`: a `Dict{Symbol,Any}` of metadata such as `:feature_names`, `:target_levels`,
   and `:device`, plus the fitted parameters (`ps`) and state (`st`).

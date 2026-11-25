@@ -5,7 +5,7 @@ export metric_dict, is_maximise, get_metric
 import Statistics: mean, std
 import StatsBase: tiedrank, denserank
 import NNlib: logsigmoid, logsoftmax, softmax, relu, hardsigmoid
-import ..Losses: _pearson_mean, _poisson_dev
+import ..Losses: _pearson_mean, _poisson_dev, _huber
 using Lux
 
 """
@@ -53,6 +53,28 @@ end
 function mae(m, x, y, w, offset; agg=mean)
     p = m(x) .+ _offset_2d(offset)
     return agg(abs.(p .- reshape(y, size(p))) .* reshape(w, 1, :))
+end
+
+"""
+    huber(m, x, y; agg=mean)
+    huber(m, x, y, w; agg=mean)
+    huber(m, x, y, w, offset; agg=mean)
+
+Huber loss with δ = 1, matching `Huber`. Quadratic for `|residual| ≤ 1`, linear beyond.
+"""
+function huber(m, x, y; agg=mean)
+    r = vec(m(x)) .- vec(y)
+    return agg(_huber.(r, one(eltype(r))))
+end
+function huber(m, x, y, w; agg=mean)
+    p = m(x)
+    r = p .- reshape(y, size(p))
+    return agg(_huber.(r, one(eltype(r))) .* reshape(w, 1, :))
+end
+function huber(m, x, y, w, offset; agg=mean)
+    p = m(x) .+ _offset_2d(offset)
+    r = p .- reshape(y, size(p))
+    return agg(_huber.(r, one(eltype(r))) .* reshape(w, 1, :))
 end
 
 """
@@ -215,27 +237,6 @@ function pearson(m, x, y, w, offset; agg=mean)
     return _pearson_mean(_corr_pred(p, y), y, w) * sum(w) * size(y, 1)
 end
 
-"""
-    s_corr(m, x, y; agg=mean)
-    s_corr(m, x, y, w; agg=mean)
-    s_corr(m, x, y, w, offset; agg=mean)
-"""
-function s_corr(m, x, y, w; agg=mean)
-    p = vec(view(m(x), 1, :))
-    y = vec(y)
-    w = vec(w)
-
-    p = sortperm(sortperm(p)) ./ length(p)
-    y = sortperm(sortperm(y)) ./ length(y)
-
-    p_mean = w' * p / sum(w)
-    p_var = w' * (p .^ 2) / sum(w) - p_mean^2
-    y_mean = w' * y / sum(w)
-    y_var = w' * (y .^ 2) / sum(w) - y_mean^2
-    py_mean = w' * (p .* y) / sum(w)
-    return (py_mean - p_mean * y_mean) / (sqrt(p_var) * sqrt(y_var)) * sum(w)
-end
-
 function get_metric(ts, data, eval_compiled)
     metric = 0.0f0
     ws = 0.0f0
@@ -257,6 +258,7 @@ end
 const metric_dict = Dict(
     :mse => mse,
     :mae => mae,
+    :huber => huber,
     :logloss => logloss,
     :mlogloss => mlogloss,
     :gaussian_mle => gaussian_mle,
@@ -267,6 +269,7 @@ const metric_dict = Dict(
 
 is_maximise(::typeof(mse)) = false
 is_maximise(::typeof(mae)) = false
+is_maximise(::typeof(huber)) = false
 is_maximise(::typeof(logloss)) = false
 is_maximise(::typeof(mlogloss)) = false
 is_maximise(::typeof(gaussian_mle)) = true

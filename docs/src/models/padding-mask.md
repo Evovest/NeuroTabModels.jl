@@ -196,4 +196,4 @@ ablation, including `MaskedBatchNorm` with `valid = nothing`, which is
 ordinary BatchNorm.
 
 Sample weights only scale the loss, grouped or not; only grouped loaders yield a
-`mask`. A zero weight drops a row from the loss but keeps it as a real token.
+`mask`. A weight of 0 is not a pad: that row stays a real token.
