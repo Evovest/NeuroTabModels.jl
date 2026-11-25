@@ -82,6 +82,21 @@ const DATASETS = Dict(
         task=:count, target="ClaimNb", offset="LogExposure", nrounds=100, batchsize=2048,
         load=_fremtpl,
     ),
+    "year" => (;
+        description="YearPredictionMSD (OpenML 44027): release year of 515k songs from 90 audio features.",
+        task=:regression, target="year", nrounds=100, batchsize=2048,
+        load=() -> DataFrame(OpenML.load(44027)),
+    ),
+    "nyc_taxi" => (;
+        description="NYC green taxi, December 2016 (OpenML 44143): tip amount of 582k trips.",
+        task=:regression, target="tipamount", nrounds=100, batchsize=2048,
+        load=() -> DataFrame(OpenML.load(44143)),
+    ),
+    "zurich" => (;
+        description="Zurich public transport delays (OpenML 45034): delay of 5.5M stops, from weather and time of day.",
+        task=:regression, target="delay", nrounds=50, batchsize=4096,
+        load=() -> DataFrame(OpenML.load(45034)),
+    ),
 )
 
 """

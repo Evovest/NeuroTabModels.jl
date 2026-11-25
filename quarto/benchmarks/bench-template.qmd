@@ -49,6 +49,8 @@ archs = [
     "ResNet" => ResNetConfig(; hidden_size=64, stack_size=2),
     "NeuroTree" => NeuroTreeConfig(; k=8, depth=4, ntrees=32),
     "TabM" => TabMConfig(; k=8, d_block=128, n_blocks=2),
+    "MLPAttn" => MLPAttnConfig(; hidden_size=64, stack_size=2),
+    "NeuroTreeAttn" => NeuroTreeAttnConfig(; hidden_size=8, depth=4, ntrees=32),
 ]
 settings = (; nrounds=spec.nrounds, batchsize=spec.batchsize, early_stopping_rounds=20, device, backend)
 ```
