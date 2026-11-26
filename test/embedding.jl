@@ -148,7 +148,8 @@ end
 
     p = m(deval)
     @test mean((p .- deval.y) .^ 2) < 0.1 * var(deval.y)
-    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+    @test m.info[:features].cat == [:store => ["a", "b", "c", "d"]]
+    @test NeuroTabModels.Data.feature_matrix(deval, m.info[:features]).cat isa Matrix{Int32}
 
     dnew = deval[1:3, :]
     dnew.store = categorical(["unseen", "a", "d"])
@@ -171,9 +172,8 @@ end
         embedding_config=EmbeddingLayer(; num=LinearEmbeddings(), temp=TemporalEmbeddings(; feature=:t)),
     )
     m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t, :store], target_name=:y)
-    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+    @test m.info[:features].cat == [:store => ["a", "b", "c", "d"]]
     m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t], target_name=:y)
-    delete!(m.info, :cat_levels)
     @test !any(isnan, m(deval))
     m = NeuroTabModels.fit(
         NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=1), dtrain; feature_names=[:store], target_name=:y

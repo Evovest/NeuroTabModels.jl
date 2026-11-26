@@ -79,7 +79,7 @@ end
 
 uses_batch_mask(::MaskedModel) = true
 
-function (m::MaskedModel)(x::AbstractArray, ps, st)
+function (m::MaskedModel)(x::Union{AbstractArray,NamedTuple}, ps, st)
     z, st_e = m.embed(x, ps.embed, st.embed)
     y, st_c = m.core(z, ps.core, st.core)
     return y, (; embed=st_e, core=st_c)
@@ -91,7 +91,7 @@ function (m::MaskedModel)((x, mask)::Tuple, ps, st)
 end
 
 import ..Losses: masked_input
-masked_input(::MaskedModel, xm::Tuple{AbstractArray,AbstractVector}) = xm
+masked_input(::MaskedModel, xm::Tuple{Any,AbstractVector}) = xm
 
 """
     train_dataloader(arch, m, default, df; kwargs...)
