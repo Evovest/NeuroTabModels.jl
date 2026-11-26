@@ -34,26 +34,28 @@ an [`EmbeddingLayer`](@ref).
 struct IdentityEmbedding <: AbstractNumericalEmbedding end
 
 """
-    LinearEmbeddings(; d_embedding=16, activation=:relu)
+    LinearEmbeddings(; d_embedding=16, activation=:relu, missing_token=false)
 
 Per-feature linear embedding: each feature is projected to `d_embedding` by its own affine map, followed by `activation`.
 
 # Arguments
 - `d_embedding::Int`: Output dimension per feature (default `16`).
 - `activation`: Activation applied after the projection (default `:relu`).
+- `missing_token::Bool`: Embed a missing value as a learned `[MISS]` vector rather than reject it (default `false`).
 """
 struct LinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
     activation::Symbol
+    missing_token::Bool
 end
-function LinearEmbeddings(; d_embedding::Int=16, activation=:relu)
+function LinearEmbeddings(; d_embedding::Int=16, activation=:relu, missing_token::Bool=false)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
-    LinearEmbeddings(d_embedding, _activation(activation))
+    LinearEmbeddings(d_embedding, _activation(activation), missing_token)
 end
 
 """
     PeriodicEmbeddings(; d_embedding=16, frequencies=32, frequencies_init_scale=0.01f0,
-                       activation=:relu, lite=false)
+                       activation=:relu, lite=false, missing_token=false)
 
 Per-feature periodic embedding: each feature is expanded with learned sine/cosine components, then projected to `d_embedding` and passed through `activation`.
 
@@ -63,6 +65,7 @@ Per-feature periodic embedding: each feature is expanded with learned sine/cosin
 - `frequencies_init_scale::Float32`: Std. dev. initializing the frequencies (default `0.01f0`).
 - `activation`: Activation applied after the projection (default `:relu`).
 - `lite::Bool`: Share the projection across features to cut parameters (default `false`).
+- `missing_token::Bool`: Embed a missing value as a learned `[MISS]` vector rather than reject it (default `false`).
 """
 struct PeriodicEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
@@ -70,17 +73,21 @@ struct PeriodicEmbeddings <: AbstractNumericalEmbedding
     frequencies_init_scale::Float32
     activation::Symbol
     lite::Bool
+    missing_token::Bool
 end
 function PeriodicEmbeddings(;
-    d_embedding::Int=16, frequencies::Int=32, frequencies_init_scale::Real=0.01f0, activation=:relu, lite::Bool=false
+    d_embedding::Int=16, frequencies::Int=32, frequencies_init_scale::Real=0.01f0, activation=:relu, lite::Bool=false,
+    missing_token::Bool=false,
 )
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     frequencies > 0 || throw(ArgumentError("frequencies must be > 0, got $frequencies"))
-    PeriodicEmbeddings(d_embedding, frequencies, Float32(frequencies_init_scale), _activation(activation), lite)
+    PeriodicEmbeddings(
+        d_embedding, frequencies, Float32(frequencies_init_scale), _activation(activation), lite, missing_token
+    )
 end
 
 """
-    PiecewiseLinearEmbeddings(; d_embedding=16, bins=32, activation=:identity, version=:B)
+    PiecewiseLinearEmbeddings(; d_embedding=16, bins=32, activation=:identity, version=:B, missing_token=false)
 
 Per-feature piecewise-linear embedding against bin edges computed from the training data, then projected to `d_embedding`. The bin edges are derived at fit time, so this embedding requires `x_train`.
 
@@ -89,19 +96,23 @@ Per-feature piecewise-linear embedding against bin edges computed from the train
 - `bins::Int`: Number of bins per feature, > 1 (default `32`).
 - `activation`: Activation applied after the projection (default `:identity`).
 - `version`: Encoding variant, `:A` or `:B` (default `:B`).
+- `missing_token::Bool`: Embed a missing value as a learned `[MISS]` vector rather than reject it (default `false`).
 """
 struct PiecewiseLinearEmbeddings <: AbstractNumericalEmbedding
     d_embedding::Int
     bins::Int
     activation::Symbol
     version::Symbol
+    missing_token::Bool
 end
-function PiecewiseLinearEmbeddings(; d_embedding::Int=16, bins::Int=32, activation=:identity, version=:B)
+function PiecewiseLinearEmbeddings(;
+    d_embedding::Int=16, bins::Int=32, activation=:identity, version=:B, missing_token::Bool=false
+)
     version = Symbol(version)
     d_embedding > 0 || throw(ArgumentError("d_embedding must be > 0, got $d_embedding"))
     bins > 1 || throw(ArgumentError("bins must be > 1, got $bins"))
     version in (:A, :B) || throw(ArgumentError("version must be :A or :B, got :$version"))
-    PiecewiseLinearEmbeddings(d_embedding, bins, _activation(activation), version)
+    PiecewiseLinearEmbeddings(d_embedding, bins, _activation(activation), version, missing_token)
 end
 
 """
@@ -286,37 +297,43 @@ needs_x_train(config::EmbeddingLayer) = needs_x_train(config.num) || needs_x_tra
 _build_num(::IdentityEmbedding; nfeats::Int, x_train=nothing) = NoOpLayer()
 function _build_num(config::LinearEmbeddings; nfeats::Int, x_train=nothing)
     Chain(
-        _LinearEmbeddings(; nfeats, d_embedding=config.d_embedding, activation=act_dict[config.activation]),
+        _with_missing(
+            config, _LinearEmbeddings(; nfeats, d_embedding=config.d_embedding, activation=act_dict[config.activation]),
+            nfeats,
+        ),
         FlattenLayer(),
     )
 end
 function _build_num(config::PeriodicEmbeddings; nfeats::Int, x_train=nothing)
     Chain(
-        _PeriodicEmbeddings(;
+        _with_missing(config, _PeriodicEmbeddings(;
             nfeats,
             d_embedding=config.d_embedding,
             frequencies=config.frequencies,
             frequencies_init_scale=config.frequencies_init_scale,
             activation=act_dict[config.activation],
             lite=config.lite,
-        ),
+        ), nfeats),
         FlattenLayer(),
     )
 end
 function _build_num(config::PiecewiseLinearEmbeddings; nfeats::Int, x_train=nothing)
     x_train === nothing && error("PiecewiseLinearEmbeddings requires x_train to compute bin edges")
     Chain(
-        _PiecewiseLinearEmbeddings(;
-            bins=compute_bins(x_train; bins=config.bins),
+        _with_missing(config, _PiecewiseLinearEmbeddings(;
+            bins=compute_bins(permutedims(x_train); bins=config.bins),
             d_embedding=config.d_embedding,
             activation=act_dict[config.activation],
             version=config.version,
-        ),
+        ), nfeats),
         FlattenLayer(),
     )
 end
 _build_num(::BatchNormEmbeddings; nfeats::Int, x_train=nothing) = _BatchNormEmbeddings(; nfeats)
 _build_num(::LayerNormEmbeddings; nfeats::Int, x_train=nothing) = _LayerNormEmbeddings(; nfeats)
+
+_with_missing(config, layer, nfeats) =
+    config.missing_token ? _MissingTokens(layer, config.d_embedding, nfeats) : layer
 
 function _build_temp(t::TemporalEmbeddings, x_col)
     x_col === nothing && error("TemporalEmbeddings requires x_train for t_mean/t_std")
@@ -325,33 +342,42 @@ function _build_temp(t::TemporalEmbeddings, x_col)
     _TemporalEmbeddings(t_mean, t_std, t.order, t.trend, t.d_embedding; periods=t.periods)
 end
 
-# Row (feature-column) selector used by the `Parallel` branches. Named (not a
-# closure) so the resulting `WrappedFunction` is concretely typed via `Base.Fix2`.
-_select_rows(x::AbstractMatrix, rows) = x[rows, :]
-_route(rows, layer) = Chain(WrappedFunction(Base.Fix2(_select_rows, rows)), layer)
-_columns(::Nothing, rows) = nothing
-_columns(x::AbstractMatrix, rows) = x[:, rows]
+_slot(::Nothing, k) = nothing
+_slot(x::NamedTuple, k) = x[k]
 
-function _feature_rows(feature_names, features)
-    rows = indexin(features, feature_names)
-    i = findfirst(isnothing, rows)
-    isnothing(i) || throw(ArgumentError("embedding feature :$(features[i]) is not in feature_names"))
-    return Vector{Int}(rows)
+"""
+    embedding_inputs(config, feature_names, cat_levels)
+
+Model input layout for `config`: `feature_names` when every column is numerical, otherwise a
+NamedTuple with one slot per embedding kind in use, in the order numerical, temporal,
+categorical. `num` and `temp` hold column names, `cat` holds `name => levels` pairs.
+
+# Arguments
+- `config::EmbeddingLayer`: The embedding config.
+- `feature_names::AbstractVector{Symbol}`: Input feature names.
+- `cat_levels::AbstractDict`: Training levels per categorical feature name.
+"""
+function embedding_inputs(config::EmbeddingLayer, feature_names::AbstractVector{Symbol}, cat_levels::AbstractDict)
+    temp, cat = _features(config.temp), _features(config.cat)
+    for f in [temp; cat]
+        f in feature_names || throw(ArgumentError("embedding feature :$f is not in feature_names"))
+    end
+    isempty(temp) && isempty(cat) && return feature_names
+    slots = (num=setdiff(feature_names, temp, cat), temp=temp, cat=[f => cat_levels[f] for f in cat])
+    return (; (k => v for (k, v) in pairs(slots) if !isempty(v))...)
 end
 
 """
-    build_embedding_chain(config, feature_names; x_train=nothing, cat_levels=Dict{Symbol,Vector}())
+    build_embedding_chain(config, features; x_train=nothing)
 
-Build the embedding chain for `config`. A numerical-only config embeds every column. With a
-temporal or categorical branch the input is routed through a `Lux.Parallel`: `num` gets the
-columns not named by `temp` or `cat`, and the outputs are concatenated numerical, temporal,
-categorical.
+Build the embedding chain for `config`. With a vector of feature names every column is
+embedded numerically. With a NamedTuple layout from [`embedding_inputs`](@ref) each slot of
+the input feeds its own branch, and the outputs are concatenated in slot order.
 
 # Arguments
 - `config::AbstractEmbedding`: The embedding config to build.
-- `feature_names::AbstractVector{Symbol}`: Input feature names, in input row order.
-- `x_train`: Training matrix `(n_samples, nfeats)`, required when `needs_x_train(config)` (default `nothing`).
-- `cat_levels`: Training levels per categorical feature name, required when `config.cat` is set.
+- `features`: Input feature names, or the NamedTuple layout from [`embedding_inputs`](@ref).
+- `x_train`: Training input in the model input layout, required when `needs_x_train(config)` (default `nothing`).
 
 # Returns
 A `Lux` layer emitting a flat `(width, batch)` output; recover the width with [`embedding_width`](@ref).
@@ -359,25 +385,21 @@ A `Lux` layer emitting a flat `(width, batch)` output; recover the width with [`
 function build_embedding_chain(config::AbstractNumericalEmbedding, feature_names; x_train=nothing)
     build_embedding_chain(EmbeddingLayer(; num=config), feature_names; x_train)
 end
-function build_embedding_chain(
-    config::EmbeddingLayer, feature_names::AbstractVector{Symbol}; x_train=nothing, cat_levels=Dict{Symbol,Vector}()
-)
-    nfeats = length(feature_names)
-    isnothing(config.temp) && isnothing(config.cat) && return _build_num(config.num; nfeats, x_train)
-
-    temp_rows = _feature_rows(feature_names, _features(config.temp))
-    cat_rows = _feature_rows(feature_names, _features(config.cat))
-    num_rows = setdiff(1:nfeats, temp_rows, cat_rows)
+function build_embedding_chain(config::EmbeddingLayer, feature_names::AbstractVector; x_train=nothing)
+    @assert isnothing(config.temp) && isnothing(config.cat) "pass the embedding_inputs layout"
+    return _build_num(config.num; nfeats=length(feature_names), x_train)
+end
+function build_embedding_chain(config::EmbeddingLayer, features::NamedTuple; x_train=nothing)
     branches = []
-    isempty(num_rows) || push!(branches, _route(num_rows,
-        _build_num(config.num; nfeats=length(num_rows), x_train=_columns(x_train, num_rows))))
-    isnothing(config.temp) || push!(branches, _route(temp_rows,
-        _build_temp(config.temp, _columns(x_train, only(temp_rows)))))
-    isnothing(config.cat) || push!(branches, _route(cat_rows, Chain(
-        _CategoricalEmbeddings([length(cat_levels[f]) for f in config.cat.features], config.cat.d_embedding),
+    haskey(features, :num) &&
+        push!(branches, _build_num(config.num; nfeats=length(features.num), x_train=_slot(x_train, :num)))
+    haskey(features, :temp) && push!(branches, _build_temp(config.temp, _slot(x_train, :temp)))
+    haskey(features, :cat) && push!(branches, Chain(
+        _CategoricalEmbeddings([length(levels) for (_, levels) in features.cat], config.cat.d_embedding),
         FlattenLayer(),
-    )))
-    return Parallel(vcat, branches...)
+    ))
+    # `values` turns the slots into a Tuple, which `Parallel` hands out one per branch
+    return Chain(WrappedFunction(values), Parallel(vcat, branches...))
 end
 
 """
@@ -389,8 +411,7 @@ through a `vcat` connection.
 
 # Arguments
 - `layer`: The embedding layer to measure.
-- `x::AbstractMatrix`: Probe input of shape `(nfeats, batch)`. `init` passes zeros, which are
-  valid level codes for categorical rows (`0` = unseen level).
+- `x`: Probe input in the model input layout.
 - `rng::AbstractRNG`: RNG used for parameter setup.
 
 # Returns

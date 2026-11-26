@@ -78,7 +78,7 @@ false on padded slots; the default drops the mask. Architectures that mix across
 batch override to keep it.
 """
 masked_input(::Any, x) = x
-masked_input(::Any, (x, _)::Tuple{AbstractArray,AbstractVector}) = x
+masked_input(::Any, (x, _)::Tuple{Any,AbstractVector}) = x
 
 _model_x(model, data) = masked_input(model, data[1])
 

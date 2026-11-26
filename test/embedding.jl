@@ -148,7 +148,8 @@ end
 
     p = m(deval)
     @test mean((p .- deval.y) .^ 2) < 0.1 * var(deval.y)
-    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+    @test m.info[:features].cat == [:store => ["a", "b", "c", "d"]]
+    @test NeuroTabModels.Data.feature_matrix(deval, m.info[:features]).cat isa Matrix{Int32}
 
     dnew = deval[1:3, :]
     dnew.store = categorical(["unseen", "a", "d"])
@@ -171,9 +172,8 @@ end
         embedding_config=EmbeddingLayer(; num=LinearEmbeddings(), temp=TemporalEmbeddings(; feature=:t)),
     )
     m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t, :store], target_name=:y)
-    @test m.info[:cat_levels] == Dict(:store => ["a", "b", "c", "d"])
+    @test m.info[:features].cat == [:store => ["a", "b", "c", "d"]]
     m = NeuroTabModels.fit(learner, dtrain; feature_names=[:x1, :t], target_name=:y)
-    delete!(m.info, :cat_levels)
     @test !any(isnan, m(deval))
     m = NeuroTabModels.fit(
         NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=1), dtrain; feature_names=[:store], target_name=:y
@@ -187,4 +187,39 @@ end
         NeuroTabRegressor(NeuroTabModels.MLPConfig(); nrounds=1, embedding_config=EmbeddingLayer(; temp=TemporalEmbeddings(; feature=:date))),
         dtrain; feature_names=[:x1, :t], target_name=:y,
     )
+end
+
+@testset "Missing-value tokens - $embedding_type ($backend)" for embedding_type in [:linear, :periodic, :piecewise],
+    backend in [:zygote, :reactant]
+
+    Random.seed!(123)
+    X = randn(Float32, 1000, 3)
+    miss = rand(1000) .< 0.3
+    # missingness itself shifts the target: only a learned [MISS] vector can tell it from x2 = 0
+    y = X[:, 1] .+ X[:, 2] .+ 2.0f0 .* miss .+ 0.1f0 .* randn(Float32, 1000)
+    df = allowmissing(DataFrame(X, :auto))
+    df[miss, :x2] .= missing
+    df[!, :y] = y
+    feature_names = [:x1, :x2, :x3]
+    dtrain, deval = df[1:800, :], df[801:end, :]
+
+    embedding_config = Dict(
+        :num => Dict(
+            :type => embedding_type, :d_embedding => 8, :bins => 16, :activation => :identity, :missing_token => true
+        ),
+    )
+    arch = NeuroTabModels.MLPConfig(; hidden_size=32, stack_size=1)
+    learner = NeuroTabRegressor(arch; nrounds=20, lr=1e-2, embedding_config, backend, device=:cpu)
+    m = NeuroTabModels.fit(learner, dtrain; deval, target_name=:y, feature_names)
+
+    p = m(deval)
+    em = ismissing.(deval.x2)
+    # x2 itself is unknown on these rows, so even a perfect model has error var(x2) + noise ≈ 1;
+    # one that treats missing as x2 = 0 also misses the +2 shift, ≈ 5
+    @test mean((p[em] .- deval.y[em]) .^ 2) < 2.5
+
+    no_token = NeuroTabRegressor(
+        arch; nrounds=1, embedding_config=Dict(:num => Dict(:type => embedding_type, :bins => 16))
+    )
+    @test_throws "missing_token=true" NeuroTabModels.fit(no_token, dtrain; target_name=:y, feature_names)
 end

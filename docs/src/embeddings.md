@@ -66,6 +66,20 @@ EmbeddingLayer(Dict(
 Piecewise-linear and temporal embeddings need training data when the embedding chain is
 built. Use `needs_x_train` to check that requirement for a config.
 
+## Missing values
+
+A `missing` numerical feature reaches the model as `NaN`. `LinearEmbeddings`,
+`PeriodicEmbeddings` and `PiecewiseLinearEmbeddings` take `missing_token=true` to embed it as
+a learned per-feature `[MISS]` vector, following
+[MaskTab](https://arxiv.org/abs/2605.11408); without it, `fit` rejects missing numerical
+values. Prediction does not check: a missing numerical value in a model fit without the
+token gives a `NaN` prediction. A missing categorical value maps to that column's
+unseen-level vector.
+
+```julia
+EmbeddingLayer(; num=LinearEmbeddings(; missing_token=true))
+```
+
 ## API
 
 ```@autodocs

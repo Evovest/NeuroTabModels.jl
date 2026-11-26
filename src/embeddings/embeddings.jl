@@ -9,7 +9,7 @@ import Statistics: mean, quantile, std
 export AbstractNumericalEmbedding, AbstractTemporalEmbedding, AbstractCategoricalEmbedding, AbstractEmbedding
 export LinearEmbeddings, PeriodicEmbeddings, PiecewiseLinearEmbeddings
 export BatchNormEmbeddings, LayerNormEmbeddings, TemporalEmbeddings, CategoricalEmbeddings, IdentityEmbedding
-export EmbeddingLayer, build_embedding_chain, needs_x_train
+export EmbeddingLayer, embedding_inputs, build_embedding_chain, needs_x_train
 export embedding_width
 
 using ..Layers: GroupedDense
@@ -22,6 +22,7 @@ include("batchnorm.jl")
 include("layernorm.jl")
 include("temporal.jl")
 include("categorical.jl")
+include("missing.jl")
 include("config.jl")
 
 end
