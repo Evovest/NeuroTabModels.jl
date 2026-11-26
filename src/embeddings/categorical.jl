@@ -27,7 +27,7 @@ function LuxCore.initialstates(rng::AbstractRNG, l::_CategoricalEmbeddings)
 end
 
 function (l::_CategoricalEmbeddings)(x::AbstractMatrix, ps, st)
-    idx = unsafe_trunc.(Int32, x) .+ st.offsets
+    idx = x .+ st.offsets
     y, st_t = l.table(idx, ps.table, st.table)
     return y, (table=st_t, offsets=st.offsets)
 end
